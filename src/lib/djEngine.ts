@@ -1,5 +1,5 @@
 import type { Track } from '../types'
-import type { AudioAnalysis } from './audioAnalysis'
+import type { AudioAnalysis, BeatGrid } from './audioAnalysis'
 import { parseCamelot, compatibilityScore, type CamelotKey } from './camelot'
 import { isLLMConfigured } from './llm'
 
@@ -140,6 +140,30 @@ function greedyOrder(djTracks: DJTrack[], edges: CompatibilityEdge[]): number[] 
 }
 
 /**
+ * Snap a time to the nearest downbeat in the beat grid
+ */
+function snapToNearestDownbeat(time: number, beatGrid: BeatGrid): number {
+  let closest = time
+  let minDist = Infinity
+  for (const db of beatGrid.downbeats) {
+    const dist = Math.abs(db - time)
+    if (dist < minDist) {
+      minDist = dist
+      closest = db
+    }
+  }
+  return closest
+}
+
+/**
+ * Compute transition duration in seconds, using real beats-per-bar when available
+ */
+function transitionDurationSeconds(transition: Transition): number {
+  const beatsPerBar = transition.from.analysis.beatGrid?.beatsPerBar ?? 4
+  return transition.transitionBars * beatsPerBar * 60 / transition.from.analysis.bpm
+}
+
+/**
  * Compute the optimal transition between two tracks
  */
 function computeTransition(from: DJTrack, to: DJTrack): Transition {
@@ -162,14 +186,23 @@ function computeTransition(from: DJTrack, to: DJTrack): Transition {
     mixInTime = introSection.startTime
   }
 
+  // Snap mix points to nearest downbeat when beat grid is available
+  if (from.analysis.beatGrid) {
+    mixOutTime = snapToNearestDownbeat(mixOutTime, from.analysis.beatGrid)
+  }
+  if (to.analysis.beatGrid) {
+    mixInTime = snapToNearestDownbeat(mixInTime, to.analysis.beatGrid)
+  }
+
   // BPM adjustment
   const bpmRatio = from.analysis.bpm / to.analysis.bpm
   const bpmAdjustment = (bpmRatio - 1) * 100 // percentage
 
-  // Transition length in bars (assume 4 beats per bar)
+  // Transition length in bars
+  const beatsPerBar = from.analysis.beatGrid?.beatsPerBar ?? 4
   const beatsPerSecond = from.analysis.bpm / 60
   const transitionSeconds = Math.min(16, (from.track.duration - mixOutTime)) // max 16 seconds
-  const transitionBars = Math.round(transitionSeconds * beatsPerSecond / 4)
+  const transitionBars = Math.round(transitionSeconds * beatsPerSecond / beatsPerBar)
 
   // Choose technique based on context
   let technique: TransitionTechnique = 'bass-swap'
@@ -337,8 +370,8 @@ export function scheduleBassSwapTransition(
   transition: Transition,
   startTime: number
 ) {
-  const transitionDuration = transition.transitionBars * 4 * 60 / transition.from.analysis.bpm
-  const halfTime = startTime + transitionDuration / 2
+  const duration = transitionDurationSeconds(transition)
+  const halfTime = startTime + duration / 2
 
   // Phase 1: Incoming fades in with low-pass (first half)
   incomingGain.gain.setValueAtTime(0, startTime)
@@ -352,8 +385,8 @@ export function scheduleBassSwapTransition(
 
   // Phase 3: Outgoing fades out (second half)
   outgoingGain.gain.setValueAtTime(1, halfTime)
-  outgoingGain.gain.linearRampToValueAtTime(0, startTime + transitionDuration)
-  incomingGain.gain.linearRampToValueAtTime(1, startTime + transitionDuration)
+  outgoingGain.gain.linearRampToValueAtTime(0, startTime + duration)
+  incomingGain.gain.linearRampToValueAtTime(1, startTime + duration)
 }
 
 /**
@@ -367,15 +400,15 @@ export function scheduleFilterSweepTransition(
   transition: Transition,
   startTime: number
 ) {
-  const transitionDuration = transition.transitionBars * 4 * 60 / transition.from.analysis.bpm
+  const duration = transitionDurationSeconds(transition)
 
   // Gradual crossfade with filter sweep on incoming
   incomingGain.gain.setValueAtTime(0, startTime)
-  incomingGain.gain.linearRampToValueAtTime(1, startTime + transitionDuration)
+  incomingGain.gain.linearRampToValueAtTime(1, startTime + duration)
 
   outgoingGain.gain.setValueAtTime(1, startTime)
-  outgoingGain.gain.linearRampToValueAtTime(0, startTime + transitionDuration)
+  outgoingGain.gain.linearRampToValueAtTime(0, startTime + duration)
 
   lowPass.frequency.setValueAtTime(100, startTime)
-  lowPass.frequency.exponentialRampToValueAtTime(20000, startTime + transitionDuration)
+  lowPass.frequency.exponentialRampToValueAtTime(20000, startTime + duration)
 }

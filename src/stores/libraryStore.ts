@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { db } from '../db'
 import type { Track } from '../types'
-import { parseFile } from '../lib/metadata'
+import { parseFile, parseFileBlob } from '../lib/metadata'
 
 interface LibraryState {
   tracks: Track[]
@@ -11,6 +11,7 @@ interface LibraryState {
 
   loadTracks: () => Promise<void>
   importFiles: () => Promise<void>
+  importFilesViaInput: (files: FileList) => Promise<void>
   addTrack: (track: Track) => Promise<void>
   removeTrack: (id: string) => Promise<void>
 }
@@ -69,6 +70,30 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       if (err.name !== 'AbortError') {
         console.error('Import failed:', err)
       }
+    } finally {
+      set({ importing: false, importProgress: null })
+    }
+  },
+
+  importFilesViaInput: async (files: FileList) => {
+    try {
+      set({ importing: true, importProgress: { current: 0, total: files.length } })
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        set({ importProgress: { current: i + 1, total: files.length } })
+
+        try {
+          const track = await parseFileBlob(file)
+          await db.tracks.put(track)
+        } catch (err) {
+          console.error(`Failed to import ${file.name}:`, err)
+        }
+      }
+
+      await get().loadTracks()
+    } catch (err: any) {
+      console.error('Import failed:', err)
     } finally {
       set({ importing: false, importProgress: null })
     }

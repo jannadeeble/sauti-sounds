@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FolderOpen, Disc3, Sparkles, Radio, Headphones } from 'lucide-react'
+import { FolderOpen, Disc3, Sparkles, Radio, Headphones, PlayCircle } from 'lucide-react'
 import { useLibraryStore } from '../stores/libraryStore'
 import { usePlayerStore } from '../stores/playerStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -9,7 +9,7 @@ import TrackRow from '../components/TrackRow'
 export default function HomePage() {
   const navigate = useNavigate()
   const { tracks, loadTracks, importFiles, importing, importProgress } = useLibraryStore()
-  const { currentTrack, setQueue } = usePlayerStore()
+  const { setQueue } = usePlayerStore()
   const llmApiKey = useSettingsStore(s => s.llmApiKey)
 
   useEffect(() => {
@@ -42,35 +42,45 @@ export default function HomePage() {
       )}
 
       {/* Quick actions */}
-      <div className="flex gap-3 mb-6">
+      <div className="flex flex-wrap gap-3 mb-6">
         <button
-          onClick={importFiles}
+          onClick={playAll}
+          disabled={tracks.length === 0}
+          className="flex items-center gap-2 bg-surface-700 hover:bg-surface-600 rounded-xl px-4 py-3 text-sm font-medium transition-colors disabled:opacity-50"
+        >
+          <PlayCircle size={18} className="text-accent" />
+          Play All
+        </button>
+        <button
+          onClick={() => navigate('/import')}
           disabled={importing}
           className="flex items-center gap-2 bg-accent/10 hover:bg-accent/20 text-accent border border-accent/20 rounded-xl px-4 py-3 text-sm font-medium transition-colors disabled:opacity-50"
         >
           <FolderOpen size={18} />
           {importing
             ? `Importing ${importProgress?.current}/${importProgress?.total}...`
-            : 'Import Music'}
+            : 'Import'}
         </button>
-        {tracks.length > 0 && (
-          <button
-            onClick={playAll}
-            className="flex items-center gap-2 bg-surface-700 hover:bg-surface-600 rounded-xl px-4 py-3 text-sm font-medium transition-colors"
-          >
-            <Radio size={18} className="text-accent" />
-            Play All
-          </button>
-        )}
-        {tracks.filter(t => t.source === 'local').length >= 2 && (
-          <button
-            onClick={() => navigate('/dj?mode=all')}
-            className="flex items-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 rounded-xl px-4 py-3 text-sm font-medium transition-colors"
-          >
-            <Headphones size={18} />
-            DJ Mode
-          </button>
-        )}
+        <button
+          onClick={() => navigate('/dj')}
+          className="flex items-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 rounded-xl px-4 py-3 text-sm font-medium transition-colors disabled:opacity-50"
+        >
+          <Headphones size={18} />
+          DJ Mode
+        </button>
+        <button
+          onClick={() => {
+            if (tracks.length > 0) {
+              const randomTrack = tracks[Math.floor(Math.random() * tracks.length)]
+              setQueue(tracks, tracks.indexOf(randomTrack))
+            }
+          }}
+          disabled={tracks.length === 0}
+          className="flex items-center gap-2 bg-surface-700 hover:bg-surface-600 rounded-xl px-4 py-3 text-sm font-medium transition-colors disabled:opacity-50"
+        >
+          <Radio size={18} className="text-accent" />
+          Song Radio
+        </button>
       </div>
 
       {/* Empty state */}
@@ -94,7 +104,7 @@ export default function HomePage() {
       {recentTracks.length > 0 && (
         <section>
           <h2 className="text-lg font-semibold mb-3">
-            {currentTrack ? 'Recently Added' : 'Your Music'}
+            Recent Tracks
           </h2>
           <div className="space-y-0.5">
             {recentTracks.map((track, i) => (

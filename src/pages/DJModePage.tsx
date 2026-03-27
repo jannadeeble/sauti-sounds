@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useLibraryStore } from '../stores/libraryStore'
 import { usePlayerStore } from '../stores/playerStore'
+import { db } from '../db'
 import { analyzePlaylist, type AudioAnalysis } from '../lib/audioAnalysis'
 import { buildDJSet, enhanceSetWithLLM, type DJSet } from '../lib/djEngine'
 import { formatCamelot, getCamelotColor } from '../lib/camelot'
@@ -30,13 +31,77 @@ export default function DJModePage() {
   const [expandedTrack, setExpandedTrack] = useState<number | null>(null)
   const [currentDJIndex, setCurrentDJIndex] = useState(0)
 
+  const [devImporting, setDevImporting] = useState(false)
+  const loadTracks = useLibraryStore(s => s.loadTracks)
+
+  const devImportTestAudio = async () => {
+    setDevImporting(true)
+    try {
+      const testFiles = [
+        'Dandara,Anissa Damali,III - Quiero (Radio Edit).mp3',
+        'Dibidabo - San Paulo.mp3',
+        'Fakear - Red Lines.mp3',
+      ]
+      for (const filename of testFiles) {
+        const resp = await fetch(`/test-audio/${encodeURIComponent(filename)}`)
+        if (!resp.ok) { console.error(`Failed to fetch ${filename}: ${resp.status}`); continue }
+        const blob = await resp.blob()
+        const file = new File([blob], filename, { type: 'audio/mpeg' })
+        // Parse metadata
+        const mm = await import('music-metadata-browser')
+        const metadata = await mm.parseBlob(file)
+        const { common, format } = metadata
+        let artworkUrl: string | undefined
+        if (common.picture && common.picture.length > 0) {
+          const pic = common.picture[0]
+          const artBlob = new Blob([new Uint8Array(pic.data)], { type: pic.format })
+          artworkUrl = URL.createObjectURL(artBlob)
+        }
+        const track = {
+          id: `local-${file.name}-${file.size}-${file.lastModified}`,
+          title: common.title || file.name.replace(/\.[^/.]+$/, ''),
+          artist: common.artist || 'Unknown Artist',
+          album: common.album || 'Unknown Album',
+          duration: format.duration || 0,
+          source: 'local' as const,
+          audioBlob: file,
+          artworkUrl,
+          genre: common.genre?.[0],
+          year: common.year,
+          trackNumber: common.track?.no ?? undefined,
+        }
+        await db.tracks.put(track)
+        console.log(`Imported: ${track.title} by ${track.artist}`)
+      }
+      await loadTracks()
+    } catch (err) {
+      console.error('Dev import failed:', err)
+    } finally {
+      setDevImporting(false)
+    }
+  }
+
+  // Load tracks from IndexedDB on mount
+  useEffect(() => { loadTracks() }, [loadTracks])
+
   // Auto-select all tracks if coming from a playlist or "all tracks"
+  // Also auto-start analysis if autostart param is present
+  const [autoStarted, setAutoStarted] = useState(false)
   useEffect(() => {
     const mode = searchParams.get('mode')
     if (mode === 'all' && tracks.length > 0) {
-      setSelectedTrackIds(new Set(tracks.filter(t => t.source === 'local').map(t => t.id)))
+      const localIds = new Set(tracks.filter(t => t.source === 'local').map(t => t.id))
+      setSelectedTrackIds(localIds)
+      // Auto-start analysis if autostart is set
+      if (searchParams.get('autostart') === '1' && !autoStarted && localIds.size >= 2) {
+        setAutoStarted(true)
+        setTimeout(() => {
+          // Trigger analysis
+          document.getElementById('dj-analyze-btn')?.click()
+        }, 500)
+      }
     }
-  }, [searchParams, tracks])
+  }, [searchParams, tracks, autoStarted])
 
   const toggleTrack = (id: string) => {
     setSelectedTrackIds(prev => {
@@ -185,10 +250,18 @@ export default function DJModePage() {
                 <Disc3 size={40} className="mx-auto mb-3 opacity-30" />
                 <p className="text-sm">Import local music files first</p>
                 <p className="text-xs text-gray-600 mt-1">DJ Mode analyzes audio from local files</p>
+                <button
+                  onClick={devImportTestAudio}
+                  disabled={devImporting}
+                  className="mt-4 px-4 py-2 bg-accent/20 text-accent rounded-lg text-xs hover:bg-accent/30"
+                >
+                  {devImporting ? 'Importing test audio...' : 'Load Test Audio (Dev)'}
+                </button>
               </div>
             )}
 
             <button
+              id="dj-analyze-btn"
               onClick={startAnalysis}
               disabled={selectedTrackIds.size < 2}
               className="w-full bg-accent hover:bg-accent-dark disabled:opacity-30 text-white rounded-xl py-3 text-sm font-medium transition-colors mt-2"
@@ -204,7 +277,7 @@ export default function DJModePage() {
             <Loader2 size={36} className="mx-auto animate-spin text-accent mb-4" />
             <h2 className="text-lg font-medium mb-2">Analyzing Audio</h2>
             <p className="text-sm text-gray-400 mb-4">
-              Detecting BPM, key, energy, and sections...
+              Detecting BPM, key, energy, sections, and beat grid...
             </p>
             <p className="text-xs text-gray-500">
               Track {analyzeProgress.current} of {analyzeProgress.total}
@@ -378,11 +451,17 @@ export default function DJModePage() {
                             progress={isActive ? 0.3 : 0} // TODO: real progress
                             height={50}
                             mixOutPoint={transition ? transition.mixOutTime / djTrack.track.duration : undefined}
+                            beats={djTrack.analysis.beatGrid?.beats}
+                            downbeats={djTrack.analysis.beatGrid?.downbeats}
+                            duration={djTrack.track.duration}
                           />
                           <div className="flex justify-between mt-2 text-[10px] text-gray-500">
                             <span>BPM: {djTrack.analysis.bpm.toFixed(1)}</span>
                             <span>Key: {formatCamelot(djTrack.camelotKey)}</span>
                             <span>Energy: {(djTrack.analysis.energy * 100).toFixed(0)}%</span>
+                            {djTrack.analysis.beatGrid && (
+                              <span>Beats: {djTrack.analysis.beatGrid.beats.length} ({djTrack.analysis.beatGrid.beatsPerBar}/4)</span>
+                            )}
                             <span>{formatTime(djTrack.track.duration)}</span>
                           </div>
                           {/* Sections */}

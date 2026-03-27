@@ -40,7 +40,29 @@ interface PlayerState {
 
 function createHowlFromTrack(track: Track, volume: number): Promise<Howl> {
   return new Promise((resolve, reject) => {
+    if (track.source === 'tidal') {
+      // Tidal tracks: keep existing behavior (not yet implemented)
+      reject(new Error('Tidal playback not yet implemented'))
+      return
+    }
+
+    if (track.source === 'local' && track.audioBlob) {
+      // Prefer stored audio blob (from IndexedDB import)
+      const url = URL.createObjectURL(track.audioBlob)
+      const ext = track.filePath?.split('.').pop() || 'mp3'
+      const howl = new Howl({
+        src: [url],
+        html5: true,
+        volume,
+        format: [ext],
+        onloaderror: (_id, err) => reject(err),
+        onload: () => resolve(howl),
+      })
+      return
+    }
+
     if (track.source === 'local' && track.fileHandle) {
+      // Fall back to FileSystemFileHandle (backward compat)
       track.fileHandle.getFile().then(file => {
         const url = URL.createObjectURL(file)
         const howl = new Howl({
@@ -52,9 +74,10 @@ function createHowlFromTrack(track: Track, volume: number): Promise<Howl> {
           onload: () => resolve(howl),
         })
       }).catch(reject)
-    } else {
-      reject(new Error('Cannot play this track type yet'))
+      return
     }
+
+    reject(new Error('Cannot play this track: no audio source available'))
   })
 }
 

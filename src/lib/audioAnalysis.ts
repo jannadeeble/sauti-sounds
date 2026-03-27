@@ -1,5 +1,13 @@
 import type { Track } from '../types'
 import { keyToCamelot } from './camelot'
+import { detectBeatGrid } from './beatDetection'
+
+export interface BeatGrid {
+  beats: number[]         // Timestamps (seconds) of every beat
+  downbeats: number[]     // Timestamps of beat 1 of each bar (subset of beats)
+  beatsPerBar: number     // Detected meter (almost always 4 for DJ music)
+  firstBeatOffset: number // Seconds from track start to first detected beat
+}
 
 export interface AudioAnalysis {
   bpm: number
@@ -8,6 +16,7 @@ export interface AudioAnalysis {
   sections: Section[]
   energyMap: number[] // energy values at regular intervals
   waveformData: number[] // normalized amplitude data for visualization
+  beatGrid?: BeatGrid
 }
 
 export interface Section {
@@ -22,11 +31,19 @@ export interface Section {
  * Analyze an audio file using Web Audio API
  */
 export async function analyzeTrack(track: Track): Promise<AudioAnalysis | null> {
-  if (track.source !== 'local' || !track.fileHandle) return null
+  if (track.source !== 'local') return null
+  if (!track.fileHandle && !track.audioBlob) return null
 
   try {
-    const file = await track.fileHandle.getFile()
-    const arrayBuffer = await file.arrayBuffer()
+    let arrayBuffer: ArrayBuffer
+    if (track.fileHandle) {
+      const file = await track.fileHandle.getFile()
+      arrayBuffer = await file.arrayBuffer()
+    } else if (track.audioBlob) {
+      arrayBuffer = await track.audioBlob.arrayBuffer()
+    } else {
+      return null
+    }
     const audioContext = new AudioContext()
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
 
@@ -41,6 +58,7 @@ export async function analyzeTrack(track: Track): Promise<AudioAnalysis | null> 
     const sections = detectSections(energyMap, duration)
     const waveformData = generateWaveform(channelData, 800)
     const overallEnergy = energyMap.reduce((a, b) => a + b, 0) / energyMap.length
+    const beatGrid = detectBeatGrid(channelData, sampleRate, bpm, duration)
 
     audioContext.close()
 
@@ -51,6 +69,7 @@ export async function analyzeTrack(track: Track): Promise<AudioAnalysis | null> 
       sections,
       energyMap,
       waveformData,
+      beatGrid,
     }
   } catch (err) {
     console.error('Audio analysis failed:', err)
@@ -335,7 +354,7 @@ function generateWaveform(channelData: Float32Array, numBars: number): number[] 
 
 // ── Helpers ──
 
-function lowPassFilter(data: Float32Array, sampleRate: number, cutoff: number): Float32Array {
+export function lowPassFilter(data: Float32Array, sampleRate: number, cutoff: number): Float32Array {
   const rc = 1.0 / (cutoff * 2 * Math.PI)
   const dt = 1.0 / sampleRate
   const alpha = dt / (rc + dt)
@@ -372,6 +391,7 @@ export async function analyzePlaylist(
   const results = new Map<string, AudioAnalysis>()
 
   for (let i = 0; i < tracks.length; i++) {
+    await new Promise(r => setTimeout(r, 0)) // yield to event loop
     onProgress?.(i + 1, tracks.length)
     const analysis = await analyzeTrack(tracks[i])
     if (analysis) {

@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react'
-import { Upload, CheckCircle, AlertCircle, XCircle, ArrowLeft, FileJson } from 'lucide-react'
+import { useState, useCallback, useRef } from 'react'
+import { Upload, CheckCircle, AlertCircle, XCircle, ArrowLeft, FileJson, Music } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import {
   parseSpotifyLibrary,
@@ -12,11 +12,23 @@ import {
 } from '../lib/spotifyImport'
 import { isTidalConfigured } from '../lib/tidal'
 import { db } from '../db'
+import { useLibraryStore } from '../stores/libraryStore'
 
 type Step = 'upload' | 'parsing' | 'matching' | 'review' | 'done'
 
 export default function ImportPage() {
   const navigate = useNavigate()
+  const importFilesViaInput = useLibraryStore(s => s.importFilesViaInput)
+  const importing = useLibraryStore(s => s.importing)
+  const importProgress = useLibraryStore(s => s.importProgress)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleLocalImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.currentTarget.files
+    if (!files || files.length === 0) return
+    await importFilesViaInput(files)
+    navigate('/library')
+  }, [importFilesViaInput, navigate])
   const [step, setStep] = useState<Step>('upload')
   const [spotifyTracks, setSpotifyTracks] = useState<SpotifyTrackEntry[]>([])
   const [spotifyPlaylists, setSpotifyPlaylists] = useState<SpotifyPlaylist[]>([])
@@ -121,30 +133,74 @@ export default function ImportPage() {
         <button onClick={() => navigate('/settings')} className="p-2 -ml-2 hover:bg-white/10 rounded-full">
           <ArrowLeft size={20} />
         </button>
-        <h1 className="text-2xl font-bold">Spotify Import</h1>
+        <h1 className="text-2xl font-bold">Import</h1>
       </div>
 
       {/* Upload step */}
       {step === 'upload' && (
-        <div className="text-center py-12">
-          <FileJson size={48} className="mx-auto text-green-400 mb-4" />
-          <h2 className="text-lg font-medium mb-2">Import Your Spotify Data</h2>
-          <p className="text-sm text-gray-400 mb-2 max-w-sm mx-auto">
-            Upload your Spotify export JSON files (YourLibrary.json, Playlist1.json, etc.)
-          </p>
-          {!isTidalConfigured() && (
-            <p className="text-xs text-yellow-400/70 mb-4">
-              Configure Tidal in Settings first for track matching.
-              Without it, we'll only parse — no matching.
+        <div className="space-y-6 py-4">
+          {/* Local File Import */}
+          <div className="bg-surface-800 rounded-2xl p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center">
+                <Music size={20} className="text-accent" />
+              </div>
+              <div>
+                <h2 className="text-base font-medium">Local Files</h2>
+                <p className="text-xs text-gray-400">Import audio from your device</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-400 mb-4">
+              Select MP3, FLAC, WAV, AAC, OGG, or M4A files from your device.
             </p>
-          )}
-          <button
-            onClick={handleFileUpload}
-            className="bg-green-500 hover:bg-green-600 text-white rounded-full px-6 py-3 text-sm font-medium transition-colors inline-flex items-center gap-2"
-          >
-            <Upload size={18} />
-            Select Spotify JSON Files
-          </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              multiple
+              accept=".mp3,.flac,.wav,.aac,.ogg,.m4a,audio/*"
+              style={{ display: 'none' }}
+              onChange={handleLocalImport}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importing}
+              className="w-full bg-accent hover:bg-accent-dark text-white rounded-xl py-3 text-sm font-medium transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <Upload size={18} />
+              {importing && importProgress
+                ? `Importing... (${importProgress.current}/${importProgress.total})`
+                : 'Select Audio Files'}
+            </button>
+          </div>
+
+          {/* Spotify Import */}
+          <div className="bg-surface-800 rounded-2xl p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">
+                <FileJson size={20} className="text-green-400" />
+              </div>
+              <div>
+                <h2 className="text-base font-medium">Spotify Import</h2>
+                <p className="text-xs text-gray-400">Import your Spotify library data</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-400 mb-2">
+              Upload your Spotify export JSON files (YourLibrary.json, Playlist1.json, etc.)
+            </p>
+            {!isTidalConfigured() && (
+              <p className="text-xs text-yellow-400/70 mb-3">
+                Configure Tidal in Settings first for track matching.
+                Without it, we'll only parse — no matching.
+              </p>
+            )}
+            <button
+              onClick={handleFileUpload}
+              className="w-full bg-green-500 hover:bg-green-600 text-white rounded-xl py-3 text-sm font-medium transition-colors inline-flex items-center justify-center gap-2"
+            >
+              <Upload size={18} />
+              Select Spotify JSON Files
+            </button>
+          </div>
         </div>
       )}
 

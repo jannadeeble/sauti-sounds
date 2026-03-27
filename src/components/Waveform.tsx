@@ -9,6 +9,9 @@ interface Props {
   className?: string
   mixOutPoint?: number // 0-1 position for mix-out marker
   mixInPoint?: number  // 0-1 position for mix-in marker
+  beats?: number[]     // beat timestamps in seconds
+  downbeats?: number[] // downbeat timestamps in seconds
+  duration?: number    // track duration for converting timestamps to positions
 }
 
 export default function Waveform({
@@ -20,6 +23,9 @@ export default function Waveform({
   className = '',
   mixOutPoint,
   mixInPoint,
+  beats,
+  downbeats,
+  duration,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -56,6 +62,22 @@ export default function Waveform({
       ctx.fillRect(x, centerY, barWidth, amplitude * 0.6)
     }
 
+    // Beat grid markers
+    if (beats && duration && duration > 0) {
+      const downbeatSet = downbeats ? new Set(downbeats) : new Set<number>()
+      for (const beatTime of beats) {
+        const x = (beatTime / duration) * w
+        const isDownbeat = downbeatSet.has(beatTime)
+
+        ctx.strokeStyle = isDownbeat ? 'rgba(232, 133, 61, 0.5)' : 'rgba(255, 255, 255, 0.12)'
+        ctx.lineWidth = isDownbeat ? 1.5 : 0.5
+        ctx.beginPath()
+        ctx.moveTo(x, 0)
+        ctx.lineTo(x, h)
+        ctx.stroke()
+      }
+    }
+
     // Mix point markers
     if (mixOutPoint !== undefined) {
       const x = mixOutPoint * w
@@ -89,7 +111,7 @@ export default function Waveform({
       ctx.font = '9px sans-serif'
       ctx.fillText('IN', x + 3, 10)
     }
-  }, [data, progress, color, activeColor, height, mixOutPoint, mixInPoint])
+  }, [data, progress, color, activeColor, height, mixOutPoint, mixInPoint, beats, downbeats, duration])
 
   return (
     <canvas

@@ -1,21 +1,27 @@
 import { useEffect, useState } from 'react'
-import { FolderOpen, ListMusic, Grid3X3, SlidersHorizontal } from 'lucide-react'
+import { FolderOpen, ListMusic, Grid3X3, SlidersHorizontal, Disc3, Radio } from 'lucide-react'
 import { useLibraryStore } from '../stores/libraryStore'
 import TrackRow from '../components/TrackRow'
 import type { ViewMode } from '../types'
 
 type SortKey = 'title' | 'artist' | 'album' | 'duration'
 type TabKey = 'tracks' | 'albums' | 'artists'
+type SourceFilter = 'all' | 'local' | 'tidal'
 
 export default function LibraryPage() {
   const { tracks, loadTracks, importFiles } = useLibraryStore()
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [sortBy, setSortBy] = useState<SortKey>('title')
   const [tab, setTab] = useState<TabKey>('tracks')
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
 
   useEffect(() => { loadTracks() }, [loadTracks])
 
-  const sortedTracks = [...tracks].sort((a, b) => {
+  const filteredTracks = sourceFilter === 'all'
+    ? tracks
+    : tracks.filter(t => t.source === sourceFilter)
+
+  const sortedTracks = [...filteredTracks].sort((a, b) => {
     if (sortBy === 'duration') return a.duration - b.duration
     return (a[sortBy] || '').localeCompare(b[sortBy] || '')
   })
@@ -58,6 +64,42 @@ export default function LibraryPage() {
             {label} <span className="text-xs opacity-60">({count})</span>
           </button>
         ))}
+      </div>
+
+      {/* Source filter badges */}
+      <div className="flex items-center gap-2 mb-4">
+        <button
+          onClick={() => setSourceFilter('all')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+            sourceFilter === 'all'
+              ? 'bg-accent/20 text-accent border border-accent/40'
+              : 'bg-surface-700 text-gray-400 border border-transparent hover:bg-surface-600'
+          }`}
+        >
+          All
+        </button>
+        <button
+          onClick={() => setSourceFilter('local')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+            sourceFilter === 'local'
+              ? 'bg-accent/20 text-accent border border-accent/40'
+              : 'bg-surface-700 text-gray-400 border border-transparent hover:bg-surface-600'
+          }`}
+        >
+          <Disc3 size={14} />
+          Local
+        </button>
+        <button
+          onClick={() => setSourceFilter('tidal')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+            sourceFilter === 'tidal'
+              ? 'bg-accent/20 text-accent border border-accent/40'
+              : 'bg-surface-700 text-gray-400 border border-transparent hover:bg-surface-600'
+          }`}
+        >
+          <Radio size={14} />
+          Tidal
+        </button>
       </div>
 
       {/* Toolbar */}

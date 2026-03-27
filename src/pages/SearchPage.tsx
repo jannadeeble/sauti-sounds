@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { Search, Loader2 } from 'lucide-react'
 import { useLibraryStore } from '../stores/libraryStore'
 import { searchTidal, isTidalConfigured } from '../lib/tidal'
@@ -8,6 +8,9 @@ import type { Track } from '../types'
 export default function SearchPage() {
   const [query, setQuery] = useState('')
   const tracks = useLibraryStore(s => s.tracks)
+  const loadTracks = useLibraryStore(s => s.loadTracks)
+
+  useEffect(() => { loadTracks() }, [loadTracks])
   const [tidalResults, setTidalResults] = useState<Track[]>([])
   const [tidalLoading, setTidalLoading] = useState(false)
   const [tidalSearched, setTidalSearched] = useState(false)

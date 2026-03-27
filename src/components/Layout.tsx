@@ -40,6 +40,7 @@ export default function Layout() {
             <NavLink
               key={to}
               to={to}
+              end={to === '/'}
               className={({ isActive }) =>
                 `flex flex-col items-center gap-0.5 py-2 px-4 text-xs transition-colors ${
                   isActive ? 'text-accent' : 'text-gray-400 hover:text-gray-200'

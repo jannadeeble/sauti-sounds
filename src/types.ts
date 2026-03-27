@@ -14,6 +14,7 @@ export interface Track {
   // Metadata
   artworkUrl?: string
   artworkBlob?: Blob
+  audioBlob?: Blob
   genre?: string
   year?: number
   trackNumber?: number

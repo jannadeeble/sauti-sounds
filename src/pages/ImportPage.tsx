@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react'
 import { Upload, CheckCircle, AlertCircle, XCircle, ArrowLeft, FileJson, Music } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import {
+  buildPlaylistsFromMatches,
   parseSpotifyLibrary,
   parseSpotifyPlaylists,
   matchSpotifyToTidal,
@@ -10,9 +11,9 @@ import {
   type MatchResult,
   type ImportProgress,
 } from '../lib/spotifyImport'
-import { isTidalConfigured } from '../lib/tidal'
 import { db } from '../db'
 import { useLibraryStore } from '../stores/libraryStore'
+import { useTidalStore } from '../stores/tidalStore'
 
 type Step = 'upload' | 'parsing' | 'matching' | 'review' | 'done'
 
@@ -21,6 +22,7 @@ export default function ImportPage() {
   const importFilesViaInput = useLibraryStore(s => s.importFilesViaInput)
   const importing = useLibraryStore(s => s.importing)
   const importProgress = useLibraryStore(s => s.importProgress)
+  const tidalConnected = useTidalStore(s => s.tidalConnected)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleLocalImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -79,7 +81,7 @@ export default function ImportPage() {
       setSpotifyTracks(unique)
       setSpotifyPlaylists(allPlaylists)
 
-      if (!isTidalConfigured()) {
+      if (!tidalConnected) {
         setMissing(unique.map(t => ({ spotify: t, tidalMatch: null, confidence: 'none' as const })))
         setStep('review')
         return
@@ -98,21 +100,43 @@ export default function ImportPage() {
       }
       setStep('upload')
     }
-  }, [])
+  }, [tidalConnected])
 
   async function finishImport() {
-    // Save matched tracks to library
     const tracksToSave = [
       ...matched.filter(m => m.tidalMatch).map(m => m.tidalMatch!),
       ...uncertain.filter((_, i) => acceptedUncertain.has(i)).map(m => m.tidalMatch!),
     ]
 
     for (const track of tracksToSave) {
-      await db.tracks.put(track)
+      await db.tracks.put({
+        ...track,
+        addedAt: track.addedAt || Date.now(),
+      })
     }
 
-    // Save playlists
-    // TODO: Build playlists from match map
+    const matchMap = new Map<string, typeof tracksToSave[number]>()
+    for (const result of matched) {
+      if (result.tidalMatch) {
+        matchMap.set(
+          `${result.spotify.artistName}|||${result.spotify.trackName}`.toLowerCase(),
+          result.tidalMatch,
+        )
+      }
+    }
+    uncertain.forEach((result, index) => {
+      if (acceptedUncertain.has(index) && result.tidalMatch) {
+        matchMap.set(
+          `${result.spotify.artistName}|||${result.spotify.trackName}`.toLowerCase(),
+          result.tidalMatch,
+        )
+      }
+    })
+
+    const playlistsToSave = buildPlaylistsFromMatches(spotifyPlaylists, matchMap)
+    if (playlistsToSave.length > 0) {
+      await db.playlists.bulkPut(playlistsToSave)
+    }
 
     setStep('done')
   }
@@ -187,9 +211,9 @@ export default function ImportPage() {
             <p className="text-sm text-gray-400 mb-2">
               Upload your Spotify export JSON files (YourLibrary.json, Playlist1.json, etc.)
             </p>
-            {!isTidalConfigured() && (
+            {!tidalConnected && (
               <p className="text-xs text-yellow-400/70 mb-3">
-                Configure Tidal in Settings first for track matching.
+                Connect TIDAL in Settings first for track matching.
                 Without it, we'll only parse — no matching.
               </p>
             )}
@@ -339,7 +363,7 @@ export default function ImportPage() {
           <CheckCircle size={48} className="mx-auto text-green-400 mb-4" />
           <h2 className="text-lg font-medium mb-2">Import Complete!</h2>
           <p className="text-sm text-gray-400 mb-6">
-            {matched.length + acceptedUncertain.size} tracks added to your library.
+            {matched.length + acceptedUncertain.size} tracks added to your library and {spotifyPlaylists.length} playlists rebuilt.
           </p>
           <button
             onClick={() => navigate('/library')}

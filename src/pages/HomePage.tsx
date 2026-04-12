@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FolderOpen, Disc3, Sparkles, Radio, Headphones, PlayCircle } from 'lucide-react'
+import { FolderOpen, Disc3, Sparkles, Radio, PlayCircle } from 'lucide-react'
 import { useLibraryStore } from '../stores/libraryStore'
 import { usePlayerStore } from '../stores/playerStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -60,13 +60,6 @@ export default function HomePage() {
           {importing
             ? `Importing ${importProgress?.current}/${importProgress?.total}...`
             : 'Import'}
-        </button>
-        <button
-          onClick={() => navigate('/dj')}
-          className="flex items-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 rounded-xl px-4 py-3 text-sm font-medium transition-colors disabled:opacity-50"
-        >
-          <Headphones size={18} />
-          DJ Mode
         </button>
         <button
           onClick={() => {

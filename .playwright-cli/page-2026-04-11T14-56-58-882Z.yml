@@ -1,0 +1,87 @@
+- generic [ref=e3]:
+  - main [ref=e4]:
+    - generic [ref=e5]:
+      - heading "Settings" [level=1] [ref=e6]
+      - generic [ref=e7]:
+        - heading "Library" [level=2] [ref=e8]:
+          - img [ref=e9]
+          - text: Library
+        - generic [ref=e11]:
+          - generic [ref=e12]:
+            - paragraph [ref=e13]: "0"
+            - paragraph [ref=e14]: Tracks
+          - generic [ref=e15]:
+            - paragraph [ref=e16]: "0"
+            - paragraph [ref=e17]: Albums
+          - generic [ref=e18]:
+            - paragraph [ref=e19]: "0"
+            - paragraph [ref=e20]: Artists
+        - button "Clear Cached Library" [disabled] [ref=e21]:
+          - img [ref=e22]
+          - text: Clear Cached Library
+      - generic [ref=e25]:
+        - heading "Private Backend" [level=2] [ref=e26]:
+          - img [ref=e27]
+          - text: Private Backend
+        - generic [ref=e30]:
+          - generic [ref=e31]:
+            - generic [ref=e32]: App Password
+            - textbox "Enter the backend password" [ref=e33]
+          - button "Log Into Backend" [disabled] [ref=e34]:
+            - img [ref=e35]
+            - text: Log Into Backend
+      - generic [ref=e38]:
+        - heading "TIDAL Account" [level=2] [ref=e39]:
+          - img [ref=e40]
+          - text: TIDAL Account
+        - paragraph [ref=e46]: Log into your backend first. TIDAL auth is handled server-side so your access and refresh tokens never touch the browser.
+      - generic [ref=e47]:
+        - heading "AI Recommendations" [level=2] [ref=e48]:
+          - img [ref=e49]
+          - text: AI Recommendations
+        - generic [ref=e57]:
+          - generic [ref=e58]:
+            - generic [ref=e59]: Provider
+            - combobox [ref=e60] [cursor=pointer]:
+              - option "Claude (Anthropic)" [selected]
+              - option "GPT (OpenAI)"
+              - option "Gemini (Google)"
+          - generic [ref=e61]:
+            - generic [ref=e62]: API Key
+            - generic [ref=e63]:
+              - textbox "Your Anthropic API key" [ref=e64]
+              - button [ref=e65]:
+                - img [ref=e66]
+          - generic [ref=e69]:
+            - generic [ref=e70]: Model (optional)
+            - textbox "claude-sonnet-4-20250514" [ref=e71]
+          - button "Enable AI" [ref=e72]
+      - generic [ref=e73]:
+        - heading "About" [level=2] [ref=e74]:
+          - img [ref=e75]
+          - text: About
+        - paragraph [ref=e77]: Sauti Sounds v0.2
+        - paragraph [ref=e78]: Personal-use hybrid local + TIDAL player
+        - paragraph [ref=e79]:
+          - img [ref=e80]
+          - text: "Set `VITE_API_BASE_URL` in the frontend and `APP_PASSWORD` in the backend before deploying."
+    - button "Ask Sauti AI" [ref=e83]:
+      - img [ref=e84]
+  - navigation [ref=e87]:
+    - generic [ref=e88]:
+      - link "Home" [ref=e89] [cursor=pointer]:
+        - /url: /
+        - img [ref=e90]
+        - generic [ref=e93]: Home
+      - link "Library" [ref=e94] [cursor=pointer]:
+        - /url: /library
+        - img [ref=e95]
+        - generic [ref=e97]: Library
+      - link "Search" [ref=e98] [cursor=pointer]:
+        - /url: /search
+        - img [ref=e99]
+        - generic [ref=e102]: Search
+      - link "Settings" [ref=e103] [cursor=pointer]:
+        - /url: /settings
+        - img [ref=e104]
+        - generic [ref=e107]: Settings

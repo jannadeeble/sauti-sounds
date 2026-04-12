@@ -26,7 +26,7 @@ export default function AIChatPage() {
   const [loading, setLoading] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const currentTrack = usePlayerStore(s => s.currentTrack)
-  const tracks = useLibraryStore(s => s.tracks)
+  const tracks = useLibraryStore(s => s.tracks.filter(track => track.source === 'local'))
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })

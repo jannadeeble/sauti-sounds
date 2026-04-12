@@ -1,4 +1,4 @@
-import { searchTidalForMatch, isTidalConfigured } from './tidal'
+import { searchTidalForMatch } from './tidal'
 import type { Track, Playlist } from '../types'
 
 export interface SpotifyTrackEntry {
@@ -84,14 +84,6 @@ export async function matchSpotifyToTidal(
   const uncertain: MatchResult[] = []
   const missing: MatchResult[] = []
 
-  if (!isTidalConfigured()) {
-    // Without Tidal, everything is missing
-    for (const spotify of spotifyTracks) {
-      missing.push({ spotify, tidalMatch: null, confidence: 'none' })
-    }
-    return { matched, uncertain, missing }
-  }
-
   // Deduplicate by artist+title
   const seen = new Set<string>()
   const unique = spotifyTracks.filter(t => {
@@ -145,20 +137,28 @@ export function buildPlaylistsFromMatches(
   matchMap: Map<string, Track> // key: "artist|||title" -> Tidal track
 ): Playlist[] {
   return spotifyPlaylists.map(sp => {
-    const trackIds: string[] = []
+    const items: Playlist['items'] = []
     for (const t of sp.tracks) {
       const key = `${t.artistName}|||${t.trackName}`.toLowerCase()
       const match = matchMap.get(key)
-      if (match) trackIds.push(match.id)
+      if (!match) continue
+      if (match.source === 'tidal' && match.providerTrackId) {
+        items.push({ source: 'tidal', providerTrackId: match.providerTrackId })
+      } else {
+        items.push({ source: 'local', trackId: match.id })
+      }
     }
 
     return {
       id: `import-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       name: sp.name,
       description: sp.description,
-      trackIds,
+      items,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      kind: 'app',
+      writable: true,
+      trackCount: items.length,
     }
   })
 }

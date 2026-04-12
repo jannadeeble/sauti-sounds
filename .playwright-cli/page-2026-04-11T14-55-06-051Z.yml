@@ -1,0 +1,41 @@
+- generic [ref=e3]:
+  - main [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - heading "Sauti Sounds" [level=1] [ref=e7]
+        - paragraph [ref=e8]: music is the remedy
+      - generic [ref=e9]:
+        - button "Play All" [disabled] [ref=e10]:
+          - img [ref=e11]
+          - text: Play All
+        - button "Import" [ref=e14]:
+          - img [ref=e15]
+          - text: Import
+        - button "Song Radio" [disabled] [ref=e17]:
+          - img [ref=e18]
+          - text: Song Radio
+      - generic [ref=e24]:
+        - img [ref=e25]
+        - heading "Your library is empty" [level=2] [ref=e30]
+        - paragraph [ref=e31]: Import your local music files or connect Tidal to get started.
+        - button "Import Your First Songs" [ref=e32]
+    - button "Ask Sauti AI" [ref=e33]:
+      - img [ref=e34]
+  - navigation [ref=e37]:
+    - generic [ref=e38]:
+      - link "Home" [ref=e39] [cursor=pointer]:
+        - /url: /
+        - img [ref=e40]
+        - generic [ref=e43]: Home
+      - link "Library" [ref=e44] [cursor=pointer]:
+        - /url: /library
+        - img [ref=e45]
+        - generic [ref=e47]: Library
+      - link "Search" [ref=e48] [cursor=pointer]:
+        - /url: /search
+        - img [ref=e49]
+        - generic [ref=e52]: Search
+      - link "Settings" [ref=e53] [cursor=pointer]:
+        - /url: /settings
+        - img [ref=e54]
+        - generic [ref=e57]: Settings

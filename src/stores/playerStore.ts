@@ -40,12 +40,6 @@ interface PlayerState {
 
 function createHowlFromTrack(track: Track, volume: number): Promise<Howl> {
   return new Promise((resolve, reject) => {
-    if (track.source === 'tidal') {
-      // Tidal tracks: keep existing behavior (not yet implemented)
-      reject(new Error('Tidal playback not yet implemented'))
-      return
-    }
-
     if (track.source === 'local' && track.audioBlob) {
       // Prefer stored audio blob (from IndexedDB import)
       const url = URL.createObjectURL(track.audioBlob)
@@ -74,6 +68,17 @@ function createHowlFromTrack(track: Track, volume: number): Promise<Howl> {
           onload: () => resolve(howl),
         })
       }).catch(reject)
+      return
+    }
+
+    if (track.audioUrl) {
+      const howl = new Howl({
+        src: [track.audioUrl],
+        html5: true,
+        volume,
+        onloaderror: (_id, err) => reject(err),
+        onload: () => resolve(howl),
+      })
       return
     }
 

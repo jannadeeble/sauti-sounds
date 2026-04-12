@@ -1,47 +1,78 @@
 import { useState } from 'react'
-import { Disc3, HardDrive, Trash2, Info, Brain, Music, Upload, Eye, EyeOff } from 'lucide-react'
-import { useLibraryStore } from '../stores/libraryStore'
-import { useSettingsStore } from '../stores/settingsStore'
+import { Brain, Eye, EyeOff, HardDrive, Info, KeyRound, LogIn, LogOut, Radio, Server, Trash2 } from 'lucide-react'
 import { db } from '../db'
 import type { LLMProvider } from '../lib/llm'
+import { useLibraryStore } from '../stores/libraryStore'
+import { useSettingsStore } from '../stores/settingsStore'
+import { useTidalStore } from '../stores/tidalStore'
 
 export default function SettingsPage() {
   const { tracks, loadTracks } = useLibraryStore()
   const settings = useSettingsStore()
+  const {
+    backendAvailable,
+    backendAuthenticated,
+    tidalConnected,
+    tidalUser,
+    connecting,
+    loginToBackend,
+    logoutFromBackend,
+    connectTidal,
+    disconnectTidal,
+  } = useTidalStore()
+  const [backendPassword, setBackendPassword] = useState('')
   const [clearing, setClearing] = useState(false)
-  const [showTidalSecret, setShowTidalSecret] = useState(false)
   const [showApiKey, setShowApiKey] = useState(false)
-
-  // Local form state
-  const [tidalId, setTidalId] = useState(settings.tidalClientId)
-  const [tidalSecret, setTidalSecret] = useState(settings.tidalClientSecret)
   const [llmProvider, setLlmProvider] = useState<LLMProvider>(settings.llmProvider)
   const [llmKey, setLlmKey] = useState(settings.llmApiKey)
   const [llmModel, setLlmModel] = useState(settings.llmModel)
 
   async function clearLibrary() {
-    if (!confirm('Are you sure? This will remove all tracks from your library.')) return
+    if (!window.confirm('Are you sure? This will remove all locally cached tracks and playlists from the app.')) return
     setClearing(true)
     await db.tracks.clear()
+    await db.playlists.where('kind').equals('app').delete()
     await loadTracks()
     setClearing(false)
   }
 
-  function saveTidal() {
-    settings.setTidalCredentials(tidalId, tidalSecret)
+  async function handleBackendLogin() {
+    try {
+      await loginToBackend(backendPassword)
+      setBackendPassword('')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to log into backend'
+      alert(message)
+    }
+  }
+
+  async function handleBackendLogout() {
+    await logoutFromBackend()
+  }
+
+  async function handleTidalConnect() {
+    try {
+      await connectTidal()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to connect TIDAL'
+      alert(message)
+    }
+  }
+
+  async function handleTidalDisconnect() {
+    await disconnectTidal()
   }
 
   function saveLLM() {
     settings.setLLMConfig(llmProvider, llmKey, llmModel || undefined)
   }
 
-  const inputClass = "w-full bg-surface-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-accent/50"
+  const inputClass = 'w-full bg-surface-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-accent/50'
 
   return (
     <div className="px-4 pt-6 pb-4 space-y-4">
       <h1 className="text-2xl font-bold mb-6">Settings</h1>
 
-      {/* Library stats */}
       <section className="bg-surface-800 rounded-xl p-4">
         <h2 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2">
           <HardDrive size={16} />
@@ -54,77 +85,127 @@ export default function SettingsPage() {
           </div>
           <div className="bg-surface-700 rounded-lg p-3">
             <p className="text-2xl font-bold text-accent">
-              {[...new Set(tracks.map(t => t.album))].length}
+              {[...new Set(tracks.map(track => track.album))].length}
             </p>
             <p className="text-xs text-gray-400">Albums</p>
           </div>
           <div className="bg-surface-700 rounded-lg p-3">
             <p className="text-2xl font-bold text-accent">
-              {[...new Set(tracks.map(t => t.artist))].length}
+              {[...new Set(tracks.map(track => track.artist))].length}
             </p>
             <p className="text-xs text-gray-400">Artists</p>
           </div>
         </div>
         <button
-          onClick={clearLibrary}
+          onClick={() => void clearLibrary()}
           disabled={clearing || tracks.length === 0}
           className="mt-3 w-full flex items-center justify-center gap-2 text-red-400 hover:text-red-300 text-sm py-2 rounded-lg hover:bg-red-500/10 transition-colors disabled:opacity-30"
         >
           <Trash2 size={14} />
-          Clear Library
+          Clear Cached Library
         </button>
       </section>
 
-      {/* Tidal */}
       <section className="bg-surface-800 rounded-xl p-4">
         <h2 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2">
-          <Music size={16} />
-          Tidal Integration
+          <Server size={16} />
+          Private Backend
         </h2>
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs text-gray-400 mb-1 block">Client ID</label>
-            <input
-              type="text"
-              value={tidalId}
-              onChange={e => setTidalId(e.target.value)}
-              placeholder="Your Tidal API client ID"
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-400 mb-1 block">Client Secret</label>
-            <div className="relative">
+        {!backendAvailable && (
+          <p className="text-xs text-red-300 mb-3">
+            Backend unreachable. Start it locally or deploy it to Railway before using TIDAL.
+          </p>
+        )}
+        {!backendAuthenticated ? (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-gray-400 mb-1 block">App Password</label>
               <input
-                type={showTidalSecret ? 'text' : 'password'}
-                value={tidalSecret}
-                onChange={e => setTidalSecret(e.target.value)}
-                placeholder="Your Tidal API client secret"
-                className={inputClass + ' pr-10'}
+                type="password"
+                value={backendPassword}
+                onChange={e => setBackendPassword(e.target.value)}
+                placeholder="Enter the backend password"
+                className={inputClass}
               />
-              <button
-                onClick={() => setShowTidalSecret(!showTidalSecret)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
-              >
-                {showTidalSecret ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
             </div>
+            <button
+              onClick={() => void handleBackendLogin()}
+              disabled={!backendPassword.trim() || !backendAvailable}
+              className="w-full bg-accent hover:bg-accent-dark text-white rounded-lg py-2 text-sm font-medium transition-colors disabled:opacity-40 inline-flex items-center justify-center gap-2"
+            >
+              <LogIn size={16} />
+              Log Into Backend
+            </button>
           </div>
-          <button
-            onClick={saveTidal}
-            className="w-full bg-accent/10 hover:bg-accent/20 text-accent border border-accent/20 rounded-lg py-2 text-sm font-medium transition-colors"
-          >
-            {settings.tidalClientId ? 'Update Tidal Credentials' : 'Connect Tidal'}
-          </button>
-          {settings.tidalClientId && (
-            <p className="text-xs text-green-400/70 flex items-center gap-1">
-              <Disc3 size={12} /> Tidal connected
-            </p>
-          )}
-        </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-green-300">Connected to your private backend.</p>
+            <button
+              onClick={() => void handleBackendLogout()}
+              className="w-full bg-surface-700 hover:bg-surface-600 rounded-lg py-2 text-sm font-medium transition-colors inline-flex items-center justify-center gap-2"
+            >
+              <LogOut size={16} />
+              Log Out Of Backend
+            </button>
+          </div>
+        )}
       </section>
 
-      {/* LLM */}
+      <section className="bg-surface-800 rounded-xl p-4">
+        <h2 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2">
+          <Radio size={16} />
+          TIDAL Account
+        </h2>
+        {!backendAuthenticated ? (
+          <p className="text-xs text-gray-400">
+            Log into your backend first. TIDAL auth is handled server-side so your access and refresh tokens never touch the browser.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {tidalConnected ? (
+              <>
+                <div className="rounded-lg bg-surface-700 px-3 py-3">
+                  <p className="text-sm text-green-300">TIDAL connected</p>
+                  {tidalUser && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      {tidalUser.username || tidalUser.name || tidalUser.email || `User ${tidalUser.id}`}
+                    </p>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => void handleTidalConnect()}
+                    disabled={connecting}
+                    className="bg-accent/10 hover:bg-accent/20 text-accent border border-accent/20 rounded-lg py-2 text-sm font-medium transition-colors disabled:opacity-50"
+                  >
+                    Reconnect
+                  </button>
+                  <button
+                    onClick={() => void handleTidalDisconnect()}
+                    className="bg-surface-700 hover:bg-surface-600 rounded-lg py-2 text-sm font-medium transition-colors"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-gray-400">
+                  Connecting opens the TIDAL verification link in a new tab, then this app polls your backend until the account is ready.
+                </p>
+                <button
+                  onClick={() => void handleTidalConnect()}
+                  disabled={connecting}
+                  className="w-full bg-accent hover:bg-accent-dark text-white rounded-lg py-2 text-sm font-medium transition-colors disabled:opacity-50"
+                >
+                  {connecting ? 'Waiting for TIDAL login...' : 'Connect TIDAL'}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </section>
+
       <section className="bg-surface-800 rounded-xl p-4">
         <h2 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2">
           <Brain size={16} />
@@ -177,39 +258,19 @@ export default function SettingsPage() {
           >
             {settings.llmApiKey ? 'Update AI Config' : 'Enable AI'}
           </button>
-          {settings.llmApiKey && (
-            <p className="text-xs text-green-400/70 flex items-center gap-1">
-              <Brain size={12} /> AI enabled ({settings.llmProvider})
-            </p>
-          )}
         </div>
       </section>
 
-      {/* Spotify Import */}
-      <section className="bg-surface-800 rounded-xl p-4">
-        <h2 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2">
-          <Upload size={16} />
-          Spotify Import
-        </h2>
-        <p className="text-xs text-gray-500 mb-3">
-          Import your Spotify data export to match tracks on Tidal and recreate your playlists.
-        </p>
-        <a
-          href="/import"
-          className="block w-full text-center bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20 rounded-lg py-2 text-sm font-medium transition-colors"
-        >
-          Start Spotify Import
-        </a>
-      </section>
-
-      {/* About */}
       <section className="bg-surface-800 rounded-xl p-4">
         <h2 className="text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
           <Info size={16} />
           About
         </h2>
-        <p className="text-xs text-gray-500">Sauti Sounds v0.1</p>
-        <p className="text-xs text-gray-600 mt-1">music is the remedy</p>
+        <p className="text-xs text-gray-500">Sauti Sounds v0.2</p>
+        <p className="text-xs text-gray-600 mt-1">Personal-use hybrid local + TIDAL player</p>
+        <p className="text-xs text-gray-600 mt-2 flex items-center gap-1">
+          <KeyRound size={12} /> Set `VITE_API_BASE_URL` in the frontend and `APP_PASSWORD` in the backend before deploying.
+        </p>
       </section>
     </div>
   )

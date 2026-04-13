@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Generator
 
-from sqlalchemy import Integer, String, Text, create_engine
+from sqlalchemy import BigInteger, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from .config import settings
@@ -27,10 +27,12 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(120), default="")
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
-connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
+connect_args = (
+    {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
+)
 engine = create_engine(
     settings.database_url,
     connect_args=connect_args,

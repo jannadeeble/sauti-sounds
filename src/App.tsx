@@ -28,14 +28,7 @@ export default function App() {
   }, [authenticated, initializeTidal, resetTidal])
 
   if (authLoading) {
-    return (
-      <div className="workspace-shell flex min-h-screen items-center justify-center px-6">
-        <div className="rounded-[28px] border border-black/8 bg-white px-8 py-6 text-center shadow-[0_1px_0_rgba(17,17,22,0.03)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[#9c9da5]">Sauti</p>
-          <p className="deezer-display mt-3 text-[2.1rem] leading-none text-[#111116]">Checking session</p>
-        </div>
-      </div>
-    )
+    return null
   }
 
   if (!authenticated) {

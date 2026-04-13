@@ -8,8 +8,8 @@ RUN npm ci
 COPY index.html vite.config.ts tsconfig.json tsconfig.app.json tsconfig.node.json eslint.config.js ./
 COPY public ./public
 COPY src ./src
-COPY research/old-deezer-ui/repo/Mabry-Pro-Medium.woff ./research/old-deezer-ui/repo/Mabry-Pro-Medium.woff
-COPY research/old-deezer-ui/repo/Mabry-Pro-Medium.woff2 ./research/old-deezer-ui/repo/Mabry-Pro-Medium.woff2
+COPY public/fonts/Mabry-Pro-Medium.woff ./public/fonts/Mabry-Pro-Medium.woff
+COPY public/fonts/Mabry-Pro-Medium.woff2 ./public/fonts/Mabry-Pro-Medium.woff2
 
 ARG VITE_API_BASE_URL=
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}

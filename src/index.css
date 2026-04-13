@@ -4,8 +4,8 @@
 @font-face {
   font-family: "Mabry Pro Medium";
   src:
-    url("../research/old-deezer-ui/repo/Mabry-Pro-Medium.woff2") format("woff2"),
-    url("../research/old-deezer-ui/repo/Mabry-Pro-Medium.woff") format("woff");
+    url("/fonts/Mabry-Pro-Medium.woff2") format("woff2"),
+    url("/fonts/Mabry-Pro-Medium.woff") format("woff");
   font-style: normal;
   font-weight: 500;
   font-display: swap;

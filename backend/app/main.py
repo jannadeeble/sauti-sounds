@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .database import User, get_db, init_db
+from .database import User, get_db, init_db, migrate_db
 from .schemas import (
     AuthLoginRequest,
     AuthRegisterRequest,
@@ -55,6 +55,7 @@ app.add_middleware(
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    migrate_db()
     db = next(get_db())
     try:
         tidal_manager.load_from_db(db)

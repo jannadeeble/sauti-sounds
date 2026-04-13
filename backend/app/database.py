@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Generator
 
-from sqlalchemy import BigInteger, String, Text, create_engine
+from sqlalchemy import BigInteger, String, Text, text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from .config import settings
@@ -44,6 +44,22 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, futu
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
+
+
+def migrate_db() -> None:
+    if settings.database_url.startswith("sqlite"):
+        return
+    with engine.connect() as conn:
+        result = conn.execute(
+            text(
+                "SELECT data_type FROM information_schema.columns "
+                "WHERE table_name='users' AND column_name='created_at'"
+            )
+        )
+        row = result.fetchone()
+        if row and row[0] == "integer":
+            conn.execute(text("ALTER TABLE users ALTER COLUMN created_at TYPE bigint"))
+            conn.commit()
 
 
 def get_db() -> Generator[Session, None, None]:

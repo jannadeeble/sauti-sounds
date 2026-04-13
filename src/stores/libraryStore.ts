@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { db } from '../db'
+import { getStorageStatus, uploadToR2 } from '../lib/r2Storage'
 import { addTidalFavoriteTrack, getTidalFavoriteTracks, removeTidalFavoriteTrack } from '../lib/tidal'
 import { parseFile, parseFileBlob } from '../lib/metadata'
 import type { Track } from '../types'
@@ -11,6 +12,7 @@ interface LibraryState {
   importing: boolean
   syncingFavorites: boolean
   importProgress: { current: number; total: number } | null
+  r2Available: boolean
   loadTracks: () => Promise<void>
   importFiles: () => Promise<Track[]>
   importFilesViaInput: (files: FileList) => Promise<Track[]>
@@ -19,6 +21,36 @@ interface LibraryState {
   syncTidalFavorites: () => Promise<void>
   toggleTidalFavorite: (track: Track) => Promise<void>
   removeTrack: (id: string) => Promise<void>
+  checkR2Status: () => Promise<void>
+}
+
+let _r2Available = false
+
+async function uploadTrackToR2(track: Track): Promise<Partial<Track> | null> {
+  if (!_r2Available) return null
+  const blob = track.audioBlob
+  if (!blob) return null
+  try {
+    const filename = track.filePath || `${track.title}.mp3`
+    const [audioResult] = await Promise.all([
+      uploadToR2(blob, filename),
+    ])
+    const updates: Partial<Track> = {
+      r2Key: audioResult.key,
+    }
+    if (track.artworkBlob) {
+      try {
+        const artworkResult = await uploadToR2(track.artworkBlob, `${track.title}-artwork.jpg`)
+        updates.artworkR2Key = artworkResult.key
+      } catch {
+        // Artwork upload failure is non-critical
+      }
+    }
+    return updates
+  } catch (err) {
+    console.error('R2 upload failed, keeping blob locally:', err)
+    return null
+  }
 }
 
 async function upsertTracks(tracks: Track[]) {
@@ -35,6 +67,18 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   importing: false,
   syncingFavorites: false,
   importProgress: null,
+  r2Available: false,
+
+  checkR2Status: async () => {
+    try {
+      const status = await getStorageStatus()
+      _r2Available = status.r2Configured
+      set({ r2Available: status.r2Configured })
+    } catch {
+      _r2Available = false
+      set({ r2Available: false })
+    }
+  },
 
   loadTracks: async () => {
     set({ loading: true })
@@ -75,7 +119,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
         try {
           const track = await parseFile(handle)
-          const importedTrack = { ...track, addedAt: importBaseTime - i }
+          const r2Updates = await uploadTrackToR2(track)
+          const importedTrack = {
+            ...track,
+            ...(r2Updates || {}),
+            addedAt: importBaseTime - i,
+          }
           await db.tracks.put(importedTrack)
           importedTracks.push(importedTrack)
         } catch (err) {
@@ -107,7 +156,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
         try {
           const track = await parseFileBlob(file)
-          const importedTrack = { ...track, addedAt: importBaseTime - i }
+          const r2Updates = await uploadTrackToR2(track)
+          const importedTrack = {
+            ...track,
+            ...(r2Updates || {}),
+            addedAt: importBaseTime - i,
+          }
           await db.tracks.put(importedTrack)
           importedTracks.push(importedTrack)
         } catch (err) {
@@ -171,6 +225,18 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   removeTrack: async (id) => {
+    const track = await db.tracks.get(id)
+    if (track) {
+      const keysToDelete = [track.r2Key, track.artworkR2Key].filter(Boolean) as string[]
+      for (const key of keysToDelete) {
+        try {
+          const { deleteFromR2 } = await import('../lib/r2Storage')
+          await deleteFromR2(key)
+        } catch {
+          // R2 delete failure is non-critical
+        }
+      }
+    }
     await db.tracks.delete(id)
     await get().loadTracks()
   },

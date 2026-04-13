@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AudioData } from 'react-modern-audio-player'
+import { getPresignedUrl } from './r2Storage'
 import { resolveArtworkSource } from './artwork'
 import type { Track } from '../types'
 
@@ -19,6 +20,15 @@ interface ResolvedPlayerPlaylist {
 async function resolveTrackSrc(track: Track): Promise<{ src: string; ownedUrl?: string }> {
   if (track.audioUrl) {
     return { src: track.audioUrl }
+  }
+
+  if (track.r2Key) {
+    try {
+      const url = await getPresignedUrl(track.r2Key)
+      return { src: url }
+    } catch {
+      // Fall through to local blob fallback
+    }
   }
 
   if (track.audioBlob) {

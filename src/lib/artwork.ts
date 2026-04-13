@@ -5,27 +5,27 @@ function isPersistentArtworkUrl(url?: string) {
   return Boolean(url && !url.startsWith('blob:'))
 }
 
-export function resolveArtworkSource(track: Pick<Track, 'artworkBlob' | 'artworkUrl'>): {
+export function resolveArtworkSource(track: Pick<Track, 'artworkBlob' | 'artworkUrl' | 'artworkR2Key'>): {
   src?: string
   ownedUrl?: string
 } {
+  if (isPersistentArtworkUrl(track.artworkUrl)) {
+    return { src: track.artworkUrl }
+  }
+
   if (track.artworkBlob) {
     const ownedUrl = URL.createObjectURL(track.artworkBlob)
     return { src: ownedUrl, ownedUrl }
   }
 
-  if (isPersistentArtworkUrl(track.artworkUrl)) {
-    return { src: track.artworkUrl }
-  }
-
   return {}
 }
 
-export function useTrackArtworkUrl(track: Pick<Track, 'artworkBlob' | 'artworkUrl'>) {
-  const { artworkBlob, artworkUrl } = track
+export function useTrackArtworkUrl(track: Pick<Track, 'artworkBlob' | 'artworkUrl' | 'artworkR2Key'>) {
+  const { artworkBlob, artworkUrl, artworkR2Key } = track
   const artwork = useMemo(
-    () => resolveArtworkSource({ artworkBlob, artworkUrl }),
-    [artworkBlob, artworkUrl],
+    () => resolveArtworkSource({ artworkBlob, artworkUrl, artworkR2Key }),
+    [artworkBlob, artworkUrl, artworkR2Key],
   )
 
   useEffect(() => {

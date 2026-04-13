@@ -23,6 +23,8 @@ export interface Track {
   artworkBlob?: Blob
   audioBlob?: Blob
   audioUrl?: string
+  r2Key?: string
+  artworkR2Key?: string
   genre?: string
   year?: number
   trackNumber?: number

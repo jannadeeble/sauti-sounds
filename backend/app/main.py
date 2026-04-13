@@ -13,7 +13,12 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .database import User, get_db, init_db
-from .schemas import AuthLoginRequest, AuthRegisterRequest, PlaylistAddItemsRequest, PlaylistCreateRequest
+from .schemas import (
+    AuthLoginRequest,
+    AuthRegisterRequest,
+    PlaylistAddItemsRequest,
+    PlaylistCreateRequest,
+)
 from .security import (
     clear_session_cookie,
     get_session_user_id,
@@ -23,6 +28,13 @@ from .security import (
     set_session_cookie,
     verify_password,
     verify_playback_token,
+)
+from .r2_storage import (
+    delete_object,
+    generate_key,
+    get_presigned_url,
+    is_configured as r2_is_configured,
+    upload_fileobj,
 )
 from .tidal_service import tidal_manager
 
@@ -59,7 +71,9 @@ def playback_allowed(request: Request, track_id: str, token: str | None) -> None
         return
     if verify_playback_token(track_id, token):
         return
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Stream access denied")
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED, detail="Stream access denied"
+    )
 
 
 @app.get("/api/health")
@@ -70,7 +84,10 @@ def health() -> dict[str, str]:
 def normalize_email(email: str) -> str:
     normalized = email.strip().lower()
     if "@" not in normalized or "." not in normalized.split("@")[-1]:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enter a valid email address")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Enter a valid email address",
+        )
     return normalized
 
 
@@ -127,7 +144,9 @@ def auth_login(
     email = normalize_email(payload.email)
     user = db.scalar(select(User).where(User.email == email))
     if user is None or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
+        )
 
     set_session_cookie(response, user.id)
     return build_auth_session_payload(db, request, user=user)
@@ -141,15 +160,22 @@ def auth_register(
     db: Session = Depends(get_db),
 ) -> dict:
     if not registration_open(db):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Registration is closed")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Registration is closed"
+        )
 
     if settings.auth_invite_code and payload.invite_code != settings.auth_invite_code:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid invite code")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid invite code"
+        )
 
     email = normalize_email(payload.email)
     existing = db.scalar(select(User).where(User.email == email))
     if existing is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="That email is already registered")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That email is already registered",
+        )
 
     name = payload.name.strip() or email.split("@", 1)[0]
     user = User(
@@ -197,8 +223,12 @@ def tidal_login_start(request: Request) -> dict:
     attempt = tidal_manager.start_login()
     return {
         "attemptId": attempt.attempt_id,
-        "verificationUri": tidal_manager.normalize_external_url(attempt.login.verification_uri),
-        "verificationUriComplete": tidal_manager.normalize_external_url(attempt.login.verification_uri_complete),
+        "verificationUri": tidal_manager.normalize_external_url(
+            attempt.login.verification_uri
+        ),
+        "verificationUriComplete": tidal_manager.normalize_external_url(
+            attempt.login.verification_uri_complete
+        ),
         "expiresIn": attempt.login.expires_in,
         "interval": attempt.login.interval,
     }
@@ -341,9 +371,74 @@ def tidal_track_stream(
     return StreamingResponse(content(), status_code=status_code, headers=headers)
 
 
+@app.get("/api/storage/status")
+def storage_status(request: Request) -> dict:
+    auth_required(request)
+    return {"r2Configured": r2_is_configured()}
+
+
+@app.post("/api/storage/upload")
+async def storage_upload(request: Request) -> dict:
+    auth_required(request)
+    if not r2_is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="R2 storage is not configured",
+        )
+
+    content_type = request.headers.get("Content-Type", "")
+    if not content_type.startswith("multipart/form-data"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Expected multipart/form-data",
+        )
+
+    form = await request.form()
+    file = form.get("file")
+    if file is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No file provided"
+        )
+
+    filename = file.filename or "upload"
+    key = generate_key(filename)
+    content_type_value = file.content_type or "application/octet-stream"
+
+    upload_fileobj(key, file.file, content_type_value)
+
+    presigned = get_presigned_url(key)
+    return {"key": key, "url": presigned}
+
+
+@app.get("/api/storage/{key:path}/url")
+def storage_get_url(key: str, request: Request) -> dict:
+    auth_required(request)
+    url = get_presigned_url(key)
+    if url is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Object not found or R2 not configured",
+        )
+    return {"key": key, "url": url}
+
+
+@app.delete("/api/storage/{key:path}")
+def storage_delete(key: str, request: Request) -> dict:
+    auth_required(request)
+    if not r2_is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="R2 storage is not configured",
+        )
+    delete_object(key)
+    return {"ok": True}
+
+
 @app.exception_handler(ValueError)
 def value_error_handler(_request: Request, exc: ValueError) -> JSONResponse:
-    return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"detail": str(exc)})
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST, content={"detail": str(exc)}
+    )
 
 
 @app.get("/{full_path:path}", include_in_schema=False)
@@ -356,7 +451,9 @@ def serve_spa(full_path: str) -> FileResponse:
         try:
             candidate.relative_to(DIST_DIR.resolve())
         except ValueError as exc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found") from exc
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Not found"
+            ) from exc
 
         if candidate.is_file():
             return FileResponse(candidate)

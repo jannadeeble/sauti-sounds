@@ -42,4 +42,9 @@ db.version(2).stores({
   })
 })
 
+db.version(3).stores({
+  tracks: 'id, title, artist, album, source, genre, bpm, energy, providerTrackId, isFavorite, addedAt, r2Key, artworkR2Key',
+  playlists: 'id, name, kind, createdAt, updatedAt, providerPlaylistId',
+})
+
 export { db }

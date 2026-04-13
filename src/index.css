@@ -1,42 +1,403 @@
 @import "tailwindcss";
+@import "react-modern-audio-player/dist/index.css";
 
-@theme {
-  --color-surface-900: #0a0a0f;
-  --color-surface-800: #12121a;
-  --color-surface-700: #1a1a26;
-  --color-surface-600: #252533;
-  --color-surface-500: #33334a;
-  --color-accent: #e8853d;
-  --color-accent-light: #f0a060;
-  --color-accent-dark: #c46a28;
+@font-face {
+  font-family: "Mabry Pro Medium";
+  src:
+    url("../research/old-deezer-ui/repo/Mabry-Pro-Medium.woff2") format("woff2"),
+    url("../research/old-deezer-ui/repo/Mabry-Pro-Medium.woff") format("woff");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
 }
 
-html, body, #root {
+@theme {
+  --color-surface-900: #111116;
+  --color-surface-800: #ffffff;
+  --color-surface-700: #f8f8f9;
+  --color-surface-600: #efeff2;
+  --color-surface-500: #c9cad1;
+  --color-accent: #ef5466;
+  --color-accent-light: #f36f7e;
+  --color-accent-dark: #e0364a;
+}
+
+:root {
+  --deezer-bg: #f8f8f9;
+  --deezer-panel: #ffffff;
+  --deezer-panel-muted: #f3f3f6;
+  --deezer-border: rgba(17, 17, 22, 0.08);
+  --deezer-border-strong: rgba(17, 17, 22, 0.14);
+  --deezer-text: #111116;
+  --deezer-muted: #7a7b86;
+  --deezer-player-bg: #121216;
+  --deezer-player-panel: #1b1b22;
+  --deezer-player-border: rgba(255, 255, 255, 0.08);
+}
+
+html,
+body,
+#root {
   height: 100%;
   overflow: hidden;
 }
 
 body {
   margin: 0;
-  background: var(--color-surface-900);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--deezer-bg);
+  color: var(--deezer-text);
+  font-family: "Avenir Next", "Helvetica Neue", "Segoe UI", sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+img {
+  display: block;
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
+  height: 8px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: var(--color-surface-500);
-  border-radius: 3px;
+  background: rgba(17, 17, 22, 0.14);
+  border-radius: 999px;
 }
 
-.glass {
-  background: rgba(18, 18, 26, 0.8);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+.deezer-display {
+  font-family: "Mabry Pro Medium", "Avenir Next", "Helvetica Neue", sans-serif;
+  letter-spacing: -0.06em;
+}
+
+.workspace-shell {
+  min-height: 100%;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(248, 248, 249, 0.98)),
+    var(--deezer-bg);
+}
+
+.deezer-brand-bars {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 2px;
+  width: 24px;
+  height: 18px;
+}
+
+.deezer-brand-bars span {
+  border-radius: 999px;
+  align-self: end;
+}
+
+.deezer-brand-bars span:nth-child(1) {
+  height: 35%;
+  background: #ff9b2f;
+}
+
+.deezer-brand-bars span:nth-child(2) {
+  height: 55%;
+  background: #ff7d48;
+}
+
+.deezer-brand-bars span:nth-child(3) {
+  height: 80%;
+  background: #ef5466;
+}
+
+.deezer-brand-bars span:nth-child(4) {
+  height: 68%;
+  background: #9558d6;
+}
+
+.deezer-brand-bars span:nth-child(5) {
+  height: 48%;
+  background: #5686ef;
+}
+
+.deezer-search-shell {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 54px;
+  width: 100%;
+  border-radius: 999px;
+  border: 1px solid var(--deezer-border);
+  background: var(--deezer-panel);
+  padding: 0 1rem;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.deezer-search-shell:hover,
+.deezer-search-shell:focus-within {
+  border-color: var(--deezer-border-strong);
+  background: #fff;
+}
+
+.deezer-search-shell input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--deezer-text);
+  outline: none;
+}
+
+.deezer-search-shell input::placeholder {
+  color: #a2a3ad;
+}
+
+.deezer-tab-link {
+  position: relative;
+  padding: 0.75rem 0;
+  color: var(--deezer-muted);
+  transition: color 0.2s ease;
+}
+
+.deezer-tab-link:hover {
+  color: var(--deezer-text);
+}
+
+.deezer-tab-link[data-active="true"] {
+  color: var(--deezer-text);
+}
+
+.deezer-tab-link[data-active="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--color-accent);
+}
+
+.deezer-player.rmap-player-provider,
+.workspace-player.rmap-player-provider {
+  --rm-audio-player-text-color: #f7f7fb;
+  --rm-audio-player-shadow: 0 0 0;
+  --rm-audio-player-interface-container: var(--deezer-player-bg);
+  --rm-audio-player-volume-background: #3f4048;
+  --rm-audio-player-volume-panel-background: #1e1f27;
+  --rm-audio-player-volume-panel-border: rgba(255, 255, 255, 0.08);
+  --rm-audio-player-volume-thumb: #ffffff;
+  --rm-audio-player-volume-fill: var(--color-accent);
+  --rm-audio-player-volume-track: #4a4b54;
+  --rm-audio-player-track-current-time: #ffffff;
+  --rm-audio-player-track-duration: rgba(255, 255, 255, 0.55);
+  --rm-audio-player-progress-bar: var(--color-accent);
+  --rm-audio-player-progress-bar-background: rgba(255, 255, 255, 0.14);
+  --rm-audio-player-waveform-cursor: #ffffff;
+  --rm-audio-player-waveform-background: rgba(255, 255, 255, 0.1);
+  --rm-audio-player-waveform-bar: var(--color-accent);
+  --rm-audio-player-sortable-list: var(--deezer-player-panel);
+  --rm-audio-player-sortable-list-button-active: var(--color-accent);
+  --rm-audio-player-selected-list-item-background: rgba(239, 84, 102, 0.16);
+  border-top: 1px solid var(--deezer-player-border);
+  box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.2);
+}
+
+.workspace-player .rmap-interface-container {
+  border-radius: 0;
+  background: var(--deezer-player-bg);
+}
+
+.workspace-player .rmap-interface-grid {
+  padding: 10px 16px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.workspace-player .rmap-ctrl-btn-wrapper {
+  gap: 14px;
+}
+
+.workspace-player .rmap-artwork-container img,
+.workspace-player .rmap-artwork-container .rmap-artwork-fallback {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+}
+
+.workspace-player .rmap-track-info-container {
+  row-gap: 1px;
+}
+
+.workspace-player .rmap-track-info-container .title {
+  font-family: "Mabry Pro Medium", "Avenir Next", sans-serif;
+  font-size: 16px;
+  letter-spacing: -0.04em;
+}
+
+.workspace-player .rmap-track-info-container .writer {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+}
+
+.workspace-player .styled-btn {
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.workspace-player .styled-btn.rmap-play-btn {
+  width: 40px;
+  height: 40px;
+  padding: 11px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.workspace-player .styled-btn.rmap-play-btn:hover {
+  background: var(--color-accent-dark);
+}
+
+.workspace-player .rmap-bar-progress-wrapper {
+  height: 12px;
+  padding: 4px 0;
+}
+
+.workspace-player .rmap-bar-progress-wrapper .rmap-progress-bar {
+  height: 2px;
+  border-radius: 999px;
+}
+
+.workspace-player .rmap-bar-progress-wrapper .rmap-progress-handle {
+  width: 9px;
+  height: 9px;
+}
+
+.workspace-player .rmap-track-time-container {
+  font-size: 12px !important;
+}
+
+.workspace-player .rmap-playlist-container {
+  max-height: min(30vh, 280px);
+  background: #17171d;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.workspace-player .rmap-sortable-playlist {
+  box-shadow: none;
+}
+
+.workspace-player .rmap-playlist-item {
+  padding: 10px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.workspace-player .rmap-playlist-item .rmap-playlist-item-contents {
+  align-items: center;
+}
+
+.workspace-player .rmap-playlist-item .rmap-playlist-album-cover img {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+
+.workspace-player .rmap-playlist-item .rmap-playlist-album-info {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.workspace-player .rmap-playlist-item .rmap-playlist-album-info span:last-child {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.workspace-player-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+  padding-bottom: 0.35rem;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.workspace-player-chip__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.workspace-player-chip__context,
+.workspace-player-chip__queue,
+.workspace-player-chip__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0.35rem 0.75rem;
+}
+
+.workspace-player-chip__context {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.workspace-player-chip__queue {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.workspace-player-chip__toggle {
+  flex-shrink: 0;
+  border: 0;
+  color: #fff;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.workspace-player-chip__toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.workspace-player-chip__toggle:focus-visible {
+  outline: 2px solid rgba(239, 84, 102, 0.7);
+  outline-offset: 2px;
+}
+
+@media (max-width: 720px) {
+  .workspace-player .rmap-interface-grid {
+    padding: 10px 14px 12px;
+  }
+
+  .workspace-player .rmap-track-info-container .title {
+    font-size: 14px;
+  }
+
+  .workspace-player .rmap-track-time-container {
+    font-size: 11px !important;
+  }
+
+  .workspace-player-chip {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .workspace-player-chip__toggle {
+    align-self: stretch;
+    justify-content: center;
+  }
+}
+
+.workspace-player-chip button {
+  font: inherit;
+  color: #fff;
 }
 
 input[type="range"] {
@@ -45,16 +406,32 @@ input[type="range"] {
   background: transparent;
   cursor: pointer;
 }
+
 input[type="range"]::-webkit-slider-track {
   height: 4px;
-  border-radius: 2px;
-  background: var(--color-surface-500);
+  border-radius: 999px;
+  background: rgba(17, 17, 22, 0.14);
 }
+
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   height: 14px;
   width: 14px;
+  margin-top: -5px;
   border-radius: 50%;
   background: var(--color-accent);
-  margin-top: -5px;
+}
+
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(17, 17, 22, 0.14);
+}
+
+input[type="range"]::-moz-range-thumb {
+  height: 14px;
+  width: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-accent);
 }

@@ -1,26 +1,35 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
+import time
+import uuid
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .database import get_db, init_db
-from .schemas import AppLoginRequest, PlaylistAddItemsRequest, PlaylistCreateRequest
+from .database import User, get_db, init_db
+from .schemas import AuthLoginRequest, AuthRegisterRequest, PlaylistAddItemsRequest, PlaylistCreateRequest
 from .security import (
     clear_session_cookie,
+    get_session_user_id,
     has_valid_session,
+    hash_password,
     require_session,
     set_session_cookie,
-    verify_app_password,
+    verify_password,
     verify_playback_token,
 )
 from .tidal_service import tidal_manager
 
 app = FastAPI(title="Sauti Sounds Backend", version="0.1.0")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DIST_DIR = PROJECT_ROOT / "dist"
+INDEX_FILE = DIST_DIR / "index.html"
 
 app.add_middleware(
     CORSMiddleware,
@@ -58,23 +67,116 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/api/app/session")
-def app_session(request: Request) -> dict[str, bool]:
-    return {"authenticated": has_valid_session(request)}
+def normalize_email(email: str) -> str:
+    normalized = email.strip().lower()
+    if "@" not in normalized or "." not in normalized.split("@")[-1]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enter a valid email address")
+    return normalized
 
 
-@app.post("/api/app/login")
-def app_login(payload: AppLoginRequest, response: Response) -> dict[str, bool]:
-    if not verify_app_password(payload.password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password")
-    set_session_cookie(response)
-    return {"authenticated": True}
+def serialize_user(user: User) -> dict[str, str]:
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+    }
 
 
-@app.post("/api/app/logout")
-def app_logout(response: Response) -> dict[str, bool]:
+def count_users(db: Session) -> int:
+    return int(db.scalar(select(func.count()).select_from(User)) or 0)
+
+
+def registration_open(db: Session) -> bool:
+    return count_users(db) < settings.auth_max_users
+
+
+def build_auth_session_payload(
+    db: Session,
+    request: Request,
+    *,
+    user: User | None = None,
+) -> dict:
+    session_user = user
+    if session_user is None:
+        user_id = get_session_user_id(request)
+        session_user = db.get(User, user_id) if user_id else None
+
+    user_count = count_users(db)
+    return {
+        "authenticated": session_user is not None,
+        "user": serialize_user(session_user) if session_user else None,
+        "canRegister": user_count < settings.auth_max_users,
+        "userCount": user_count,
+        "maxUsers": settings.auth_max_users,
+        "requiresInviteCode": bool(settings.auth_invite_code),
+    }
+
+
+@app.get("/api/auth/session")
+def auth_session(request: Request, db: Session = Depends(get_db)) -> dict:
+    return build_auth_session_payload(db, request)
+
+
+@app.post("/api/auth/login")
+def auth_login(
+    payload: AuthLoginRequest,
+    response: Response,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    email = normalize_email(payload.email)
+    user = db.scalar(select(User).where(User.email == email))
+    if user is None or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+
+    set_session_cookie(response, user.id)
+    return build_auth_session_payload(db, request, user=user)
+
+
+@app.post("/api/auth/register")
+def auth_register(
+    payload: AuthRegisterRequest,
+    response: Response,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    if not registration_open(db):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Registration is closed")
+
+    if settings.auth_invite_code and payload.invite_code != settings.auth_invite_code:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid invite code")
+
+    email = normalize_email(payload.email)
+    existing = db.scalar(select(User).where(User.email == email))
+    if existing is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="That email is already registered")
+
+    name = payload.name.strip() or email.split("@", 1)[0]
+    user = User(
+        id=str(uuid.uuid4()),
+        email=email,
+        name=name,
+        password_hash=hash_password(payload.password),
+        created_at=int(time.time() * 1000),
+    )
+    db.add(user)
+    db.commit()
+
+    set_session_cookie(response, user.id)
+    return build_auth_session_payload(db, request, user=user)
+
+
+@app.post("/api/auth/logout")
+def auth_logout(response: Response, db: Session = Depends(get_db)) -> dict:
     clear_session_cookie(response)
-    return {"authenticated": False}
+    return {
+        "authenticated": False,
+        "user": None,
+        "canRegister": registration_open(db),
+        "userCount": count_users(db),
+        "maxUsers": settings.auth_max_users,
+        "requiresInviteCode": bool(settings.auth_invite_code),
+    }
 
 
 @app.get("/api/tidal/session")
@@ -242,3 +344,27 @@ def tidal_track_stream(
 @app.exception_handler(ValueError)
 def value_error_handler(_request: Request, exc: ValueError) -> JSONResponse:
     return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"detail": str(exc)})
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+def serve_spa(full_path: str) -> FileResponse:
+    if full_path == "api" or full_path.startswith("api/"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    if full_path:
+        candidate = (DIST_DIR / full_path).resolve()
+        try:
+            candidate.relative_to(DIST_DIR.resolve())
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found") from exc
+
+        if candidate.is_file():
+            return FileResponse(candidate)
+
+    if INDEX_FILE.is_file():
+        return FileResponse(INDEX_FILE)
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Frontend bundle not found. Build the app before serving it.",
+    )

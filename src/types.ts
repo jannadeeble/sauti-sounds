@@ -1,5 +1,11 @@
 export type TrackSource = 'local' | 'tidal'
 
+export interface AppUser {
+  id: string
+  email: string
+  name: string
+}
+
 export interface Track {
   id: string
   title: string

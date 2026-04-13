@@ -21,13 +21,14 @@ def _normalize_database_url(url: str) -> str:
 @dataclass(frozen=True)
 class Settings:
     database_url: str
-    app_password: str
     session_secret: str
     playback_secret: str
     cookie_secure: bool
     cors_origins: list[str]
     tidal_quality: str
     playback_token_max_age: int
+    auth_invite_code: str | None
+    auth_max_users: int
 
 
 def get_settings() -> Settings:
@@ -45,13 +46,14 @@ def get_settings() -> Settings:
 
     return Settings(
         database_url=database_url,
-        app_password=os.getenv("APP_PASSWORD", "changeme"),
         session_secret=os.getenv("APP_SESSION_SECRET", "sauti-dev-session-secret"),
         playback_secret=os.getenv("PLAYBACK_TOKEN_SECRET", "sauti-dev-playback-secret"),
         cookie_secure=_parse_bool(os.getenv("COOKIE_SECURE"), False),
         cors_origins=cors_origins,
         tidal_quality=os.getenv("TIDAL_QUALITY", "HIGH"),
         playback_token_max_age=int(os.getenv("PLAYBACK_TOKEN_MAX_AGE", str(60 * 60 * 24 * 30))),
+        auth_invite_code=os.getenv("AUTH_INVITE_CODE") or None,
+        auth_max_users=max(1, int(os.getenv("AUTH_MAX_USERS", "2"))),
     )
 
 

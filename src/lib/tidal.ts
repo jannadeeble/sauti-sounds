@@ -1,10 +1,6 @@
 import type { Playlist, Track } from '../types'
 import { apiDelete, apiFetch, apiPost, toApiUrl } from './api'
 
-interface AppSessionResponse {
-  authenticated: boolean
-}
-
 export interface TidalUser {
   id: number
   username?: string
@@ -48,18 +44,6 @@ function normalizeTrack(track: Track): Track {
 
 function normalizePlaylist(playlist: Playlist): Playlist {
   return { ...playlist }
-}
-
-export async function getAppSession(): Promise<AppSessionResponse> {
-  return apiFetch<AppSessionResponse>('/api/app/session')
-}
-
-export async function loginApp(password: string): Promise<AppSessionResponse> {
-  return apiPost<AppSessionResponse>('/api/app/login', { password })
-}
-
-export async function logoutApp(): Promise<AppSessionResponse> {
-  return apiPost<AppSessionResponse>('/api/app/logout')
 }
 
 export async function getTidalSession(): Promise<TidalSessionResponse> {

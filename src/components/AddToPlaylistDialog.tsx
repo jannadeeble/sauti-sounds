@@ -60,31 +60,31 @@ export default function AddToPlaylistDialog({ open, track, onClose }: Props) {
   return (
     <>
       <button
-        className="fixed inset-0 z-50 bg-black/60"
+        className="fixed inset-0 z-50 bg-black/35"
         onClick={onClose}
         aria-label="Close playlist picker"
       />
-      <div className="fixed inset-x-4 bottom-4 z-[60] rounded-2xl border border-white/10 bg-surface-800 p-4 shadow-2xl">
-        <div className="flex items-center justify-between mb-4">
+      <div className="fixed inset-x-4 bottom-4 z-[60] rounded-[24px] border border-black/8 bg-white p-4 shadow-[0_20px_40px_rgba(17,17,22,0.16)]">
+        <div className="mb-4 flex items-center justify-between">
           <div>
-            <p className="text-sm font-semibold">Add To Playlist</p>
-            <p className="text-xs text-gray-400 truncate">{track.title} · {track.artist}</p>
+            <p className="deezer-display text-[1.5rem] leading-none text-[#111116]">Add to playlist</p>
+            <p className="mt-1 truncate text-xs text-[#7a7b86]">{track.title} · {track.artist}</p>
           </div>
           <button
             onClick={onClose}
-            className="text-xs text-gray-400 hover:text-white transition-colors"
+            className="text-xs text-[#7a7b86] transition-colors hover:text-[#111116]"
           >
             Close
           </button>
         </div>
 
-        <div className="space-y-3 max-h-[50vh] overflow-y-auto">
+        <div className="max-h-[50vh] space-y-4 overflow-y-auto">
           <section>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs uppercase tracking-wider text-gray-400">App Playlists</p>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-xs uppercase tracking-[0.24em] text-[#8b8c95]">App playlists</p>
               <button
                 onClick={() => void handleCreateAppPlaylist()}
-                className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent-light"
+                className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent-dark"
               >
                 <Plus size={12} />
                 New
@@ -94,7 +94,7 @@ export default function AddToPlaylistDialog({ open, track, onClose }: Props) {
               {appPlaylists.length === 0 ? (
                 <button
                   onClick={() => void handleCreateAppPlaylist()}
-                  className="w-full rounded-xl border border-dashed border-white/15 px-3 py-3 text-left text-sm text-gray-300 hover:border-accent/40 hover:bg-white/5"
+                  className="w-full rounded-2xl border border-dashed border-black/10 px-3 py-3 text-left text-sm text-[#686973] transition-colors hover:border-black/16 hover:bg-[#f8f8f9]"
                 >
                   Create your first mixed playlist
                 </button>
@@ -103,10 +103,10 @@ export default function AddToPlaylistDialog({ open, track, onClose }: Props) {
                   <button
                     key={playlist.id}
                     onClick={() => void handleAdd(playlist.id, 'app')}
-                    className="w-full rounded-xl bg-surface-700 px-3 py-3 text-left hover:bg-surface-600 transition-colors"
+                    className="w-full rounded-2xl border border-black/6 bg-[#f8f8f9] px-3 py-3 text-left transition-colors hover:bg-[#f1f1f4]"
                   >
-                    <span className="text-sm font-medium block">{playlist.name}</span>
-                    <span className="text-xs text-gray-400">
+                    <span className="block text-sm font-medium text-[#111116]">{playlist.name}</span>
+                    <span className="text-xs text-[#7a7b86]">
                       {playlist.items.length} item{playlist.items.length === 1 ? '' : 's'}
                     </span>
                   </button>
@@ -117,12 +117,12 @@ export default function AddToPlaylistDialog({ open, track, onClose }: Props) {
 
           {tidalConnected && (
             <section>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs uppercase tracking-wider text-gray-400">TIDAL Playlists</p>
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-xs uppercase tracking-[0.24em] text-[#8b8c95]">TIDAL playlists</p>
                 {track.source === 'tidal' && (
                   <button
                     onClick={() => void handleCreateTidalPlaylist()}
-                    className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent-light"
+                    className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent-dark"
                   >
                     <Plus size={12} />
                     New
@@ -131,7 +131,7 @@ export default function AddToPlaylistDialog({ open, track, onClose }: Props) {
               </div>
               <div className="space-y-2">
                 {tidalPlaylists.length === 0 ? (
-                  <div className="rounded-xl border border-white/10 px-3 py-3 text-sm text-gray-400">
+                  <div className="rounded-2xl border border-black/8 bg-[#f8f8f9] px-3 py-3 text-sm text-[#686973]">
                     {track.source === 'tidal'
                       ? 'Create a TIDAL playlist to save this track.'
                       : 'Local tracks can only be added to app playlists.'}
@@ -144,13 +144,13 @@ export default function AddToPlaylistDialog({ open, track, onClose }: Props) {
                         key={playlist.id}
                         disabled={disabled}
                         onClick={() => void handleAdd(playlist.id, 'tidal')}
-                        className="w-full rounded-xl bg-surface-700 px-3 py-3 text-left hover:bg-surface-600 transition-colors disabled:opacity-50 disabled:hover:bg-surface-700"
+                        className="w-full rounded-2xl border border-black/6 bg-[#f8f8f9] px-3 py-3 text-left transition-colors hover:bg-[#f1f1f4] disabled:opacity-50 disabled:hover:bg-[#f8f8f9]"
                       >
-                        <span className="text-sm font-medium flex items-center gap-2">
+                        <span className="flex items-center gap-2 text-sm font-medium text-[#111116]">
                           <Radio size={12} className="text-cyan-400" />
                           {playlist.name}
                         </span>
-                        <span className="text-xs text-gray-400 flex items-center gap-1 mt-1">
+                        <span className="mt-1 flex items-center gap-1 text-xs text-[#7a7b86]">
                           <Shapes size={12} />
                           {playlist.trackCount || 0} track{playlist.trackCount === 1 ? '' : 's'}
                           {!playlist.writable ? ' · read only' : ''}

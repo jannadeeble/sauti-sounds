@@ -12,8 +12,8 @@ interface LibraryState {
   syncingFavorites: boolean
   importProgress: { current: number; total: number } | null
   loadTracks: () => Promise<void>
-  importFiles: () => Promise<void>
-  importFilesViaInput: (files: FileList) => Promise<void>
+  importFiles: () => Promise<Track[]>
+  importFilesViaInput: (files: FileList) => Promise<Track[]>
   addTrack: (track: Track) => Promise<void>
   cacheTidalTracks: (tracks: Track[]) => Promise<void>
   syncTidalFavorites: () => Promise<void>
@@ -49,7 +49,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   importFiles: async () => {
     if (!('showOpenFilePicker' in window)) {
       alert('Your browser does not support the File System Access API. Please use Chrome on Android or desktop.')
-      return
+      return []
     }
 
     try {
@@ -66,6 +66,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       })
 
       set({ importing: true, importProgress: { current: 0, total: handles.length } })
+      const importedTracks: Track[] = []
+      const importBaseTime = Date.now() + handles.length
 
       for (let i = 0; i < handles.length; i++) {
         const handle = handles[i]
@@ -73,17 +75,21 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
         try {
           const track = await parseFile(handle)
-          await db.tracks.put({ ...track, addedAt: Date.now() })
+          const importedTrack = { ...track, addedAt: importBaseTime - i }
+          await db.tracks.put(importedTrack)
+          importedTracks.push(importedTrack)
         } catch (err) {
           console.error(`Failed to import ${handle.name}:`, err)
         }
       }
 
       await get().loadTracks()
+      return importedTracks
     } catch (err: unknown) {
       if (!(err instanceof DOMException) || err.name !== 'AbortError') {
         console.error('Import failed:', err)
       }
+      return []
     } finally {
       set({ importing: false, importProgress: null })
     }
@@ -92,6 +98,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   importFilesViaInput: async (files) => {
     try {
       set({ importing: true, importProgress: { current: 0, total: files.length } })
+      const importedTracks: Track[] = []
+      const importBaseTime = Date.now() + files.length
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
@@ -99,13 +107,16 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
         try {
           const track = await parseFileBlob(file)
-          await db.tracks.put({ ...track, addedAt: Date.now() })
+          const importedTrack = { ...track, addedAt: importBaseTime - i }
+          await db.tracks.put(importedTrack)
+          importedTracks.push(importedTrack)
         } catch (err) {
           console.error(`Failed to import ${file.name}:`, err)
         }
       }
 
       await get().loadTracks()
+      return importedTracks
     } finally {
       set({ importing: false, importProgress: null })
     }

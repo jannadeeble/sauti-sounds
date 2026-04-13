@@ -1,16 +1,13 @@
 import { Buffer } from 'buffer'
-;(globalThis as any).Buffer = Buffer
+;(globalThis as typeof globalThis & { Buffer: typeof Buffer }).Buffer = Buffer
 
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import './index.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <App />
   </StrictMode>,
 )

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import secrets
 from typing import Any
 
@@ -13,20 +15,41 @@ COOKIE_MAX_AGE = 60 * 60 * 24 * 30
 
 _session_serializer = URLSafeTimedSerializer(settings.session_secret, salt="app-session")
 _playback_serializer = URLSafeTimedSerializer(settings.playback_secret, salt="playback-token")
+PASSWORD_ITERATIONS = 310_000
 
 
-def verify_app_password(password: str) -> bool:
-    return secrets.compare_digest(password, settings.app_password)
+def hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS)
+    return "pbkdf2_sha256${iterations}${salt}${digest}".format(
+        iterations=PASSWORD_ITERATIONS,
+        salt=base64.urlsafe_b64encode(salt).decode("ascii"),
+        digest=base64.urlsafe_b64encode(digest).decode("ascii"),
+    )
+
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        algorithm, iterations_raw, salt_raw, digest_raw = password_hash.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        iterations = int(iterations_raw)
+        salt = base64.urlsafe_b64decode(salt_raw.encode("ascii"))
+        expected = base64.urlsafe_b64decode(digest_raw.encode("ascii"))
+    except (ValueError, TypeError):
+        return False
+
+    actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return secrets.compare_digest(actual, expected)
 
 
-def create_session_token() -> str:
-    return _session_serializer.dumps({"role": "user"})
+def create_session_token(user_id: str) -> str:
+    return _session_serializer.dumps({"user_id": str(user_id)})
 
 
-def set_session_cookie(response: Response) -> None:
+def set_session_cookie(response: Response, user_id: str) -> None:
     response.set_cookie(
         key=COOKIE_NAME,
-        value=create_session_token(),
+        value=create_session_token(user_id),
         httponly=True,
         max_age=COOKIE_MAX_AGE,
         samesite="none" if settings.cookie_secure else "lax",
@@ -45,15 +68,29 @@ def clear_session_cookie(response: Response) -> None:
     )
 
 
-def has_valid_session(request: Request) -> bool:
-    token = request.cookies.get(COOKIE_NAME)
+def read_session_payload(token: str | None) -> dict[str, Any] | None:
     if not token:
-        return False
+        return None
     try:
-        _session_serializer.loads(token, max_age=COOKIE_MAX_AGE)
-        return True
+        payload = _session_serializer.loads(token, max_age=COOKIE_MAX_AGE)
     except (BadSignature, BadTimeSignature):
-        return False
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def get_session_user_id(request: Request) -> str | None:
+    payload = read_session_payload(request.cookies.get(COOKIE_NAME))
+    if not payload:
+        return None
+    user_id = payload.get("user_id")
+    return str(user_id) if user_id else None
+
+
+def has_valid_session(request: Request) -> bool:
+    return get_session_user_id(request) is not None
 
 
 def require_session(request: Request) -> None:

@@ -1,33 +1,28 @@
 import { create } from 'zustand'
 import {
-  getAppSession,
   getTidalLoginStatus,
   getTidalSession,
-  loginApp,
-  logoutApp,
   logoutTidal,
   startTidalLogin,
   type TidalUser,
 } from '../lib/tidal'
+import { ApiError } from '../lib/api'
 
 interface TidalStoreState {
   backendAvailable: boolean
-  backendAuthenticated: boolean
   tidalConnected: boolean
   tidalUser: TidalUser | null
   loading: boolean
   connecting: boolean
   initialize: () => Promise<void>
   refresh: () => Promise<void>
-  loginToBackend: (password: string) => Promise<void>
-  logoutFromBackend: () => Promise<void>
+  reset: () => void
   connectTidal: () => Promise<void>
   disconnectTidal: () => Promise<void>
 }
 
 export const useTidalStore = create<TidalStoreState>((set, get) => ({
   backendAvailable: true,
-  backendAuthenticated: false,
   tidalConnected: false,
   tidalUser: null,
   loading: false,
@@ -36,30 +31,17 @@ export const useTidalStore = create<TidalStoreState>((set, get) => ({
   initialize: async () => {
     set({ loading: true })
     try {
-      const appSession = await getAppSession()
-      if (!appSession.authenticated) {
-        set({
-          backendAvailable: true,
-          backendAuthenticated: false,
-          tidalConnected: false,
-          tidalUser: null,
-          loading: false,
-        })
-        return
-      }
-
       const tidalSession = await getTidalSession()
       set({
         backendAvailable: true,
-        backendAuthenticated: true,
         tidalConnected: tidalSession.connected,
         tidalUser: tidalSession.user,
         loading: false,
       })
-    } catch {
+    } catch (error) {
+      const backendAvailable = error instanceof ApiError ? error.status !== 0 : false
       set({
-        backendAvailable: false,
-        backendAuthenticated: false,
+        backendAvailable,
         tidalConnected: false,
         tidalUser: null,
         loading: false,
@@ -71,18 +53,13 @@ export const useTidalStore = create<TidalStoreState>((set, get) => ({
     await get().initialize()
   },
 
-  loginToBackend: async (password) => {
-    set({ loading: true })
-    await loginApp(password)
-    await get().initialize()
-  },
-
-  logoutFromBackend: async () => {
-    await logoutApp()
+  reset: () => {
     set({
-      backendAuthenticated: false,
+      backendAvailable: true,
       tidalConnected: false,
       tidalUser: null,
+      loading: false,
+      connecting: false,
     })
   },
 
@@ -104,7 +81,6 @@ export const useTidalStore = create<TidalStoreState>((set, get) => ({
           set({
             tidalConnected: true,
             tidalUser: status.user || null,
-            backendAuthenticated: true,
             backendAvailable: true,
             connecting: false,
           })

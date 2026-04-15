@@ -217,6 +217,46 @@ img {
   border-top: 1px solid rgba(255, 255, 255, 0.03);
 }
 
+.workspace-player--floating .rmap-interface-container {
+  border-radius: 16px;
+}
+
+.workspace-player--floating .rmap-interface-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px 12px;
+  border-top: none;
+}
+
+.workspace-player--floating .rmap-ctrl-btn-wrapper {
+  order: 1;
+}
+
+.workspace-player--floating .rmap-artwork-container {
+  order: 2;
+}
+
+.workspace-player--floating .rmap-track-info-container {
+  order: 3;
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.workspace-player--floating .rmap-bar-progress-wrapper {
+  order: 5;
+  flex-basis: 100%;
+}
+
+.workspace-player--floating .rmap-track-time-container {
+  order: 4;
+}
+
+.workspace-player--floating .rmap-volume-container {
+  order: 6;
+}
+
 .workspace-player .rmap-ctrl-btn-wrapper {
   gap: 14px;
 }

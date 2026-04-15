@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import AudioPlayer, { type InterfacePlacement, useAudioPlayer } from 'react-modern-audio-player'
-import { ChevronDown, ChevronUp, HardDrive, ListMusic, Radio } from 'lucide-react'
+import { ChevronDown, ChevronUp, ListMusic, Radio } from 'lucide-react'
 import { useTrackArtworkUrl } from '../lib/artwork'
 import { useResolvedPlayerTracks } from '../lib/playerTracks'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
@@ -17,7 +17,6 @@ function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
     togglePlay,
     playList,
   } = useAudioPlayer()
-  const context = usePlaybackSessionStore((state) => state.context)
   const playerOpen = usePlaybackSessionStore((state) => state.playerOpen)
   const setPlayerOpen = usePlaybackSessionStore((state) => state.setPlayerOpen)
   const syncPlayerState = usePlaybackSessionStore((state) => state.syncPlayerState)
@@ -79,32 +78,15 @@ function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
     }
   }, [artworkUrl, currentTime, currentTrack, duration, isPlaying, next, prev, togglePlay])
 
-  const contextLabel = useMemo(() => {
-    switch (context) {
-      case 'app-playlist':
-        return 'App playlist'
-      case 'tidal-playlist':
-        return 'TIDAL playlist'
-      case 'search-local':
-        return 'Local search'
-      case 'search-tidal':
-        return 'TIDAL search'
-      default:
-        return 'Library'
-    }
-  }, [context])
-
   return (
     <div className="workspace-player-chip">
       <div className="workspace-player-chip__meta">
-        <span className="workspace-player-chip__context">
-          {currentTrack?.source === 'tidal' ? <Radio size={11} className="text-cyan-300" /> : <HardDrive size={11} className="text-gray-300" />}
-          {contextLabel}
-        </span>
-        <span className="workspace-player-chip__queue">
-          <ListMusic size={12} />
-          {playList.length} queued
-        </span>
+        {currentTrack?.source === 'tidal' ? (
+          <span className="workspace-player-chip__context">
+            <Radio size={11} className="text-cyan-300" />
+            TIDAL
+          </span>
+        ) : null}
       </div>
       <button
         type="button"
@@ -112,8 +94,9 @@ function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
         onClick={() => setPlayerOpen(!playerOpen)}
         aria-label={playerOpen ? 'Hide queue' : 'Show queue'}
       >
-        <span>{playerOpen ? 'Hide queue' : 'Show queue'}</span>
-        {playerOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+        <ListMusic size={14} />
+        <span>{playList.length}</span>
+        {playerOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
       </button>
     </div>
   )
@@ -178,8 +161,10 @@ export default function WorkspacePlayer() {
 
   if (loading && playlist.length === 0) {
     return (
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-surface-900/95 px-5 py-4 backdrop-blur-2xl">
-        <p className="text-sm text-gray-400">Preparing playback…</p>
+      <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 px-4">
+        <div className="pointer-events-auto mx-auto max-w-[980px] rounded-2xl border border-white/10 bg-surface-900/95 px-5 py-4 shadow-[0_12px_40px_rgba(17,17,22,0.22)] backdrop-blur-2xl">
+          <p className="text-sm text-gray-400">Preparing playback…</p>
+        </div>
       </div>
     )
   }
@@ -189,20 +174,22 @@ export default function WorkspacePlayer() {
   }
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30">
-      <AudioPlayer<11>
-        key={sessionId}
-        playList={playlist}
-        colorScheme="dark"
-        rootContainerProps={{ className: 'workspace-player deezer-player' }}
-        placement={placement}
-        activeUI={activeUI}
-        audioInitialState={audioInitialState}
-      >
-        <AudioPlayer.CustomComponent id="sessionMeta">
-          <PlayerSessionChip tracks={playableTracks} />
-        </AudioPlayer.CustomComponent>
-      </AudioPlayer>
+    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 px-4">
+      <div className="pointer-events-auto mx-auto max-w-[980px] overflow-hidden rounded-2xl border border-black/8 bg-[#121216] shadow-[0_12px_40px_rgba(17,17,22,0.22)]">
+        <AudioPlayer<11>
+          key={sessionId}
+          playList={playlist}
+          colorScheme="dark"
+          rootContainerProps={{ className: 'workspace-player workspace-player--floating deezer-player' }}
+          placement={placement}
+          activeUI={activeUI}
+          audioInitialState={audioInitialState}
+        >
+          <AudioPlayer.CustomComponent id="sessionMeta">
+            <PlayerSessionChip tracks={playableTracks} />
+          </AudioPlayer.CustomComponent>
+        </AudioPlayer>
+      </div>
     </div>
   )
 }

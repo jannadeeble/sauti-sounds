@@ -264,8 +264,8 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
 
           <section className="rounded-[24px] border border-black/8 bg-white p-5">
             <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-green-500/15">
-                <FileJson size={20} className="text-green-400" />
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f3f3f6]">
+                <FileJson size={20} className="text-[#1db954]" />
               </div>
               <div>
                 <h3 className="font-semibold">Spotify import</h3>
@@ -277,7 +277,7 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
               Upload your Spotify export JSON files. If TIDAL is connected, Sauti will try to match tracks automatically.
             </p>
             {!tidalConnected ? (
-              <p className="mb-4 text-xs text-yellow-300/80">
+              <p className="mb-4 text-xs text-[#8c8d96]">
                 TIDAL is not connected, so this run will only parse and review exported tracks.
               </p>
             ) : null}
@@ -285,7 +285,7 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
             <button
               type="button"
               onClick={() => void handleSpotifyUpload()}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-green-500 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-green-600"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#111116] px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-[#2a2a32]"
             >
               <Upload size={18} />
               Select Spotify JSON files
@@ -316,17 +316,17 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
       {step === 'review' ? (
         <div>
           <div className="mb-6 grid grid-cols-3 gap-3">
-            <div className="rounded-2xl border border-green-500/20 bg-green-500/10 p-3 text-center">
-              <p className="text-2xl font-semibold text-green-400">{matched.length}</p>
-              <p className="text-xs text-green-300/80">Matched</p>
+            <div className="rounded-2xl border border-black/8 bg-[#f8f8f9] p-3 text-center">
+              <p className="text-2xl font-semibold text-[#111116]">{matched.length}</p>
+              <p className="text-xs text-[#7a7b86]">Matched</p>
             </div>
-            <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-3 text-center">
-              <p className="text-2xl font-semibold text-yellow-400">{uncertain.length}</p>
-              <p className="text-xs text-yellow-300/80">Uncertain</p>
+            <div className="rounded-2xl border border-[#f4c6cc] bg-[#fff4f6] p-3 text-center">
+              <p className="text-2xl font-semibold text-[#8d3140]">{uncertain.length}</p>
+              <p className="text-xs text-[#8d3140]">Uncertain</p>
             </div>
-            <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-center">
-              <p className="text-2xl font-semibold text-red-400">{missing.length}</p>
-              <p className="text-xs text-red-300/80">Missing</p>
+            <div className="rounded-2xl border border-black/8 bg-[#f8f8f9] p-3 text-center">
+              <p className="text-2xl font-semibold text-[#686973]">{missing.length}</p>
+              <p className="text-xs text-[#7a7b86]">Missing</p>
             </div>
           </div>
 

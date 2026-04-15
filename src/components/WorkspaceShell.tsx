@@ -354,14 +354,10 @@ export default function WorkspaceShell() {
     }
 
     return {
-      eyebrow: currentTrack ? 'Now playing' : 'My music',
-      title: currentTrack ? currentTrack.title : 'Library',
-      meta: currentTrack
-        ? `${currentTrack.artist}${currentTrack.album ? ` • ${currentTrack.album}` : ''}`
-        : `${tracks.length} tracks • ${localTrackCount} local • ${tidalTrackCount} TIDAL`,
-      description: currentTrack
-        ? `Pulled from your ${isPlaying ? 'active queue' : 'library'} and shown in a Deezer-style editorial layout.`
-        : 'A cleaner old-Deezer-inspired library surface for local files, TIDAL caches, playlists, and search.',
+      eyebrow: 'My music',
+      title: 'Library',
+      meta: 'All local',
+      description: '',
       actions: [
         sortedTracks.length > 0
           ? {
@@ -440,26 +436,14 @@ export default function WorkspaceShell() {
             />
           </nav>
 
-          <section className="mt-8 px-6">
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-[#8b8c95]">Playlists</p>
-              <span className="text-xs text-[#8b8c95]">{appPlaylists.length}</span>
-            </div>
-            <div className="space-y-1.5">
-              {desktopPlaylistLinks.length === 0 ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('playlists')
-                    void handleCreatePlaylist('app')
-                  }}
-                  className="flex w-full items-center justify-between rounded-2xl border border-dashed border-black/10 px-4 py-3 text-left text-sm text-[#686973] transition-colors hover:border-black/16 hover:bg-white"
-                >
-                  <span>Create your first playlist</span>
-                  <Plus size={14} />
-                </button>
-              ) : (
-                desktopPlaylistLinks.map((playlist) => (
+          {desktopPlaylistLinks.length > 0 ? (
+            <section className="mt-8 px-6">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-[11px] uppercase tracking-[0.24em] text-[#8b8c95]">Playlists</p>
+                <span className="text-xs text-[#8b8c95]">{appPlaylists.length}</span>
+              </div>
+              <div className="space-y-1.5">
+                {desktopPlaylistLinks.map((playlist) => (
                   <button
                     key={playlist.id}
                     type="button"
@@ -476,10 +460,10 @@ export default function WorkspaceShell() {
                     <span className="truncate text-sm">{playlist.name}</span>
                     <span className="text-xs">{formatPlaylistCount(playlist)}</span>
                   </button>
-                ))
-              )}
-            </div>
-          </section>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <div className="mt-auto grid gap-2 p-4">
             <SidebarUtilityButton
@@ -501,7 +485,7 @@ export default function WorkspaceShell() {
           </div>
         </aside>
 
-        <div className="min-h-0 flex flex-col">
+        <div className="min-h-0 flex h-full flex-col">
           <header className="border-b border-black/8 bg-[#fbfbfc]/95 backdrop-blur-md">
             <div className="px-4 py-4 lg:px-8 lg:py-5">
               <div className="flex items-center justify-between gap-3 lg:hidden">
@@ -568,17 +552,33 @@ export default function WorkspaceShell() {
             </div>
           </header>
 
-          <main ref={mainContentRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-[12rem] pt-6 lg:px-8 lg:pt-8">
+          <main
+            ref={mainContentRef}
+            className="min-h-0 flex-1 overflow-y-auto px-4 pb-[10rem] pt-6 lg:px-8 lg:pt-8"
+            style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}
+          >
             <div className="space-y-8">
-              <WorkspaceHero
-                artworkUrl={heroArtwork}
-                artworkLabel={heroTrack ? `${heroTrack.artist} - ${heroTrack.title}` : undefined}
-                eyebrow={hero.eyebrow}
-                title={hero.title}
-                meta={hero.meta}
-                description={hero.description}
-                actions={hero.actions}
-              />
+              {activeTab === 'playlists' && !selectedPlaylist ? (
+                <div className="flex flex-wrap items-end justify-between gap-4 px-1">
+                  <h1 className="deezer-display text-[2.4rem] leading-none text-[#111116]">Playlists</h1>
+                  <ActionPill
+                    label="New playlist"
+                    icon={<Plus size={15} />}
+                    onClick={() => void handleCreatePlaylist('app')}
+                    accent
+                  />
+                </div>
+              ) : (
+                <WorkspaceHero
+                  artworkUrl={heroArtwork}
+                  artworkLabel={heroTrack ? `${heroTrack.artist} - ${heroTrack.title}` : undefined}
+                  eyebrow={hero.eyebrow}
+                  title={hero.title}
+                  meta={hero.meta}
+                  description={hero.description}
+                  actions={hero.actions}
+                />
+              )}
 
               {errorMessage ? (
                 <div className="rounded-[22px] border border-[#f4c6cc] bg-[#fff4f6] px-5 py-4 text-sm text-[#8d3140]">
@@ -982,9 +982,9 @@ function WorkspaceHero({
   actions: HeroAction[]
 }) {
   return (
-    <section className={`${panelClass} overflow-hidden`}>
-      <div className="grid gap-8 px-6 py-6 sm:px-8 sm:py-8 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-center">
-        <div className="mx-auto flex h-[180px] w-[180px] items-center justify-center overflow-hidden rounded-[40px] bg-[#111116] text-white lg:h-[220px] lg:w-[220px]">
+    <section className={`${panelClass} overflow-hidden rounded-[20px]`}>
+      <div className="grid gap-8 px-7 py-7 sm:px-10 sm:py-9 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-center">
+        <div className="mx-auto flex h-[180px] w-[180px] items-center justify-center overflow-hidden rounded-[24px] bg-[#111116] text-white lg:h-[220px] lg:w-[220px]">
           {artworkUrl ? (
             <img src={artworkUrl} alt={artworkLabel || ''} className="h-full w-full object-cover" />
           ) : (
@@ -1000,7 +1000,9 @@ function WorkspaceHero({
             {title}
           </h1>
           <p className="mt-3 text-sm font-medium text-[#686973]">{meta}</p>
-          <p className="mt-4 max-w-2xl text-sm leading-6 text-[#686973]">{description}</p>
+          {description ? (
+            <p className="mt-4 max-w-2xl text-sm leading-6 text-[#686973]">{description}</p>
+          ) : null}
 
           {actions.length > 0 ? (
             <div className="mt-6 flex flex-wrap gap-3">
@@ -1086,78 +1088,52 @@ function PlaylistCollectionsView({
   tidalPlaylists: Playlist[]
   onOpen: (kind: 'app' | 'tidal', id: string) => void
 }) {
+  type Row = { kind: 'app' | 'tidal'; id: string; playlist: Playlist }
+  const rows: Row[] = [
+    ...appPlaylists.map((playlist) => ({ kind: 'app' as const, id: playlist.id, playlist })),
+    ...tidalPlaylists
+      .filter((playlist) => !!playlist.providerPlaylistId)
+      .map((playlist) => ({ kind: 'tidal' as const, id: playlist.providerPlaylistId as string, playlist })),
+  ].sort((a, b) => a.playlist.name.localeCompare(b.playlist.name))
+
+  if (rows.length === 0) {
+    return (
+      <div className={`${mutedPanelClass} px-5 py-6 text-sm text-[#686973]`}>
+        No playlists yet. Create one above.
+      </div>
+    )
+  }
+
   return (
-    <div className="grid gap-5 xl:grid-cols-2">
-      <section className={panelClass}>
-        <div className="flex items-center justify-between px-5 pb-3 pt-5 sm:px-6">
-          <div>
-            <h2 className="deezer-display text-[1.7rem] leading-none text-[#111116]">App playlists</h2>
-            <p className="mt-1 text-sm text-[#7a7b86]">{appPlaylists.length} editable mixes</p>
-          </div>
-        </div>
-
-        {appPlaylists.length === 0 ? (
-          <div className="px-5 pb-6 sm:px-6">
-            <div className={`${mutedPanelClass} px-4 py-5 text-sm text-[#686973]`}>
-              No app playlists yet. Create one and it will appear here like an old Deezer collection list.
+    <section className={panelClass}>
+      <div className="divide-y divide-black/6">
+        {rows.map((row) => (
+          <button
+            key={`${row.kind}:${row.id}`}
+            type="button"
+            onClick={() => onOpen(row.kind, row.id)}
+            className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-[#fafafb] sm:px-6"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <p className="truncate text-sm font-medium text-[#111116]">{row.playlist.name}</p>
+                {row.kind === 'tidal' ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-cyan-500/8 px-2 py-0.5 text-[10px] uppercase tracking-wide text-cyan-700">
+                    TIDAL
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-1 text-xs text-[#7a7b86]">
+                {row.kind === 'app'
+                  ? `${formatPlaylistCount(row.playlist)} items`
+                  : `${row.playlist.trackCount || 0} tracks${row.playlist.writable ? '' : ' • read only'}`}
+              </p>
             </div>
-          </div>
-        ) : (
-          <div className="divide-y divide-black/6">
-            {appPlaylists.map((playlist) => (
-              <button
-                key={playlist.id}
-                type="button"
-                onClick={() => onOpen('app', playlist.id)}
-                className="flex w-full items-center justify-between px-5 py-4 text-left transition-colors hover:bg-[#fafafb] sm:px-6"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-[#111116]">{playlist.name}</p>
-                  <p className="mt-1 text-xs text-[#7a7b86]">{formatPlaylistCount(playlist)} items</p>
-                </div>
-                <ChevronRight size={16} className="shrink-0 text-[#a2a3ad]" />
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className={panelClass}>
-        <div className="flex items-center justify-between px-5 pb-3 pt-5 sm:px-6">
-          <div>
-            <h2 className="deezer-display text-[1.7rem] leading-none text-[#111116]">TIDAL playlists</h2>
-            <p className="mt-1 text-sm text-[#7a7b86]">{tidalPlaylists.length} synced collections</p>
-          </div>
-        </div>
-
-        {tidalPlaylists.length === 0 ? (
-          <div className="px-5 pb-6 sm:px-6">
-            <div className={`${mutedPanelClass} px-4 py-5 text-sm text-[#686973]`}>
-              Connect TIDAL in Settings to browse remote playlists here.
-            </div>
-          </div>
-        ) : (
-          <div className="divide-y divide-black/6">
-            {tidalPlaylists.map((playlist) => (
-              <button
-                key={playlist.id}
-                type="button"
-                onClick={() => playlist.providerPlaylistId && onOpen('tidal', playlist.providerPlaylistId)}
-                className="flex w-full items-center justify-between px-5 py-4 text-left transition-colors hover:bg-[#fafafb] sm:px-6"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-[#111116]">{playlist.name}</p>
-                  <p className="mt-1 text-xs text-[#7a7b86]">
-                    {playlist.trackCount || 0} tracks{playlist.writable ? '' : ' • read only'}
-                  </p>
-                </div>
-                <ChevronRight size={16} className="shrink-0 text-[#a2a3ad]" />
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
+            <ChevronRight size={16} className="shrink-0 text-[#a2a3ad]" />
+          </button>
+        ))}
+      </div>
+    </section>
   )
 }
 

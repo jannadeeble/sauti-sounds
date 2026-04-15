@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import type { Track } from '../types'
 
 function isPersistentArtworkUrl(url?: string) {
@@ -28,13 +28,22 @@ export function useTrackArtworkUrl(track: Pick<Track, 'artworkBlob' | 'artworkUr
     [artworkBlob, artworkUrl, artworkR2Key],
   )
 
+  const allOwnedUrlsRef = useRef<string[]>([])
+
   useEffect(() => {
-    return () => {
-      if (artwork.ownedUrl) {
-        URL.revokeObjectURL(artwork.ownedUrl)
-      }
+    if (artwork.ownedUrl) {
+      allOwnedUrlsRef.current.push(artwork.ownedUrl)
     }
   }, [artwork.ownedUrl])
+
+  useEffect(() => {
+    const urls = allOwnedUrlsRef.current
+    return () => {
+      for (const url of urls) {
+        URL.revokeObjectURL(url)
+      }
+    }
+  }, [])
 
   return artwork.src
 }

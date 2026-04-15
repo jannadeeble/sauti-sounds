@@ -134,7 +134,7 @@ export default function AddToPlaylistDialog({ open, track, onClose }: Props) {
                   <div className="rounded-2xl border border-black/8 bg-[#f8f8f9] px-3 py-3 text-sm text-[#686973]">
                     {track.source === 'tidal'
                       ? 'Create a TIDAL playlist to save this track.'
-                      : 'Local tracks can only be added to app playlists.'}
+                      : 'No TIDAL playlists yet.'}
                   </div>
                 ) : (
                   tidalPlaylists.map(playlist => {

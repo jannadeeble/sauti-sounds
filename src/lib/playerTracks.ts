@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AudioData } from 'react-modern-audio-player'
 import { getPresignedUrl } from './r2Storage'
 import { resolveArtworkSource } from './artwork'
@@ -61,6 +61,16 @@ export function useResolvedPlayerTracks(
     errors: [],
     loading: false,
   })
+  const allOwnedUrlsRef = useRef<string[]>([])
+
+  useEffect(() => {
+    return () => {
+      for (const url of allOwnedUrlsRef.current) {
+        URL.revokeObjectURL(url)
+      }
+      allOwnedUrlsRef.current = []
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -136,9 +146,10 @@ export function useResolvedPlayerTracks(
 
     return () => {
       cancelled = true
-      for (const ownedUrl of ownedUrls) {
-        URL.revokeObjectURL(ownedUrl)
-      }
+      // Defer revocation to component unmount — the audio element may still
+      // be loading these URLs in the DOM. Revoking now would cause
+      // ERR_FILE_NOT_FOUND during normal session transitions.
+      allOwnedUrlsRef.current.push(...ownedUrls)
     }
   }, [tracks, sessionId, startIndex])
 

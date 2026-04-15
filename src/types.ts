@@ -14,6 +14,7 @@ export interface Track {
   duration: number
   source: TrackSource
   filePath?: string
+  folderPath?: string
   fileHandle?: FileSystemFileHandle
   providerTrackId?: string
   providerAlbumId?: string

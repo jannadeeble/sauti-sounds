@@ -12,6 +12,7 @@ import {
 } from '../lib/spotifyImport'
 import { db } from '../db'
 import { useLibraryStore } from '../stores/libraryStore'
+import { usePlaylistStore } from '../stores/playlistStore'
 import { useTidalStore } from '../stores/tidalStore'
 import type { Track } from '../types'
 
@@ -27,6 +28,7 @@ interface ImportPanelProps {
 
 export default function ImportPanel({ onDone }: ImportPanelProps) {
   const importFilesViaInput = useLibraryStore((state) => state.importFilesViaInput)
+  const importFolder = useLibraryStore((state) => state.importFolder)
   const importing = useLibraryStore((state) => state.importing)
   const importProgress = useLibraryStore((state) => state.importProgress)
   const tidalConnected = useTidalStore((state) => state.tidalConnected)
@@ -51,6 +53,28 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
     input.value = ''
     onDone({ importedTracks })
   }, [importFilesViaInput, onDone])
+
+  const handleFolderImport = useCallback(async () => {
+    try {
+      const pickerWindow = window as unknown as Window & {
+        showDirectoryPicker: (options?: object) => Promise<FileSystemDirectoryHandle>
+      }
+
+      const handle = await pickerWindow.showDirectoryPicker()
+      const result = await importFolder(handle)
+      
+      if (result.playlists.length > 0) {
+        await usePlaylistStore.getState().loadPlaylists()
+      }
+      
+      onDone({ importedTracks: result.tracks })
+    } catch (error) {
+      if (!(error instanceof DOMException) || error.name !== 'AbortError') {
+        const message = error instanceof Error ? error.message : 'Failed to import folder.'
+        alert(message)
+      }
+    }
+  }, [importFolder, onDone])
 
   const handleSpotifyUpload = useCallback(async () => {
     try {
@@ -203,13 +227,25 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
                 : 'Select audio files'}
             </button>
 
+            <button
+              type="button"
+              onClick={() => void handleFolderImport()}
+              disabled={importing}
+              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-accent/30 bg-accent/5 px-4 py-3 text-sm font-medium text-accent transition-colors hover:bg-accent/10 disabled:opacity-50"
+            >
+              <Upload size={18} />
+              {importing && importProgress
+                ? `Importing ${importProgress.current}/${importProgress.total}`
+                : 'Select folder to import'}
+            </button>
+
             {importing && importProgress ? (
               <div className="mt-4 rounded-[22px] border border-[#f4c6cc] bg-[#fff4f6] p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-[#8d3140]">Importing into your library</p>
                     <p className="mt-1 text-xs text-[#b25563]">
-                      Sauti is caching the audio and artwork so playback works immediately after import.
+                      {importProgress.currentFile ? `Processing: ${importProgress.currentFile}` : 'Caching audio and artwork...'}
                     </p>
                   </div>
                   <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#8d3140]">

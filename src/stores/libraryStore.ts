@@ -3,19 +3,26 @@ import { db } from '../db'
 import { getStorageStatus, uploadToR2 } from '../lib/r2Storage'
 import { addTidalFavoriteTrack, getTidalFavoriteTracks, removeTidalFavoriteTrack } from '../lib/tidal'
 import { parseFile, parseFileBlob } from '../lib/metadata'
-import type { Track } from '../types'
+import type { Playlist, Track } from '../types'
 import { useTidalStore } from './tidalStore'
+
+interface ImportProgress {
+  current: number
+  total: number
+  currentFile: string
+}
 
 interface LibraryState {
   tracks: Track[]
   loading: boolean
   importing: boolean
   syncingFavorites: boolean
-  importProgress: { current: number; total: number } | null
+  importProgress: ImportProgress | null
   r2Available: boolean
   loadTracks: () => Promise<void>
   importFiles: () => Promise<Track[]>
   importFilesViaInput: (files: FileList) => Promise<Track[]>
+  importFolder: (handle: FileSystemDirectoryHandle, basePath?: string) => Promise<{ tracks: Track[]; playlists: Playlist[] }>
   addTrack: (track: Track) => Promise<void>
   cacheTidalTracks: (tracks: Track[]) => Promise<void>
   syncTidalFavorites: () => Promise<void>
@@ -109,13 +116,13 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         ],
       })
 
-      set({ importing: true, importProgress: { current: 0, total: handles.length } })
+      set({ importing: true, importProgress: { current: 0, total: handles.length, currentFile: '' } })
       const importedTracks: Track[] = []
       const importBaseTime = Date.now() + handles.length
 
       for (let i = 0; i < handles.length; i++) {
         const handle = handles[i]
-        set({ importProgress: { current: i + 1, total: handles.length } })
+        set({ importProgress: { current: i + 1, total: handles.length, currentFile: handle.name } })
 
         try {
           const track = await parseFile(handle)
@@ -146,13 +153,13 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   importFilesViaInput: async (files) => {
     try {
-      set({ importing: true, importProgress: { current: 0, total: files.length } })
+      set({ importing: true, importProgress: { current: 0, total: files.length, currentFile: '' } })
       const importedTracks: Track[] = []
       const importBaseTime = Date.now() + files.length
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
-        set({ importProgress: { current: i + 1, total: files.length } })
+        set({ importProgress: { current: i + 1, total: files.length, currentFile: file.name } })
 
         try {
           const track = await parseFileBlob(file)
@@ -171,6 +178,152 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
       await get().loadTracks()
       return importedTracks
+    } finally {
+      set({ importing: false, importProgress: null })
+    }
+  },
+
+  importFolder: async (handle, basePath = '') => {
+    const audioExtensions = ['.mp3', '.flac', '.wav', '.aac', '.ogg', '.m4a']
+
+    async function hasAudioFiles(dirHandle: FileSystemDirectoryHandle): Promise<boolean> {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const entries = (dirHandle as any).entries()
+      for await (const entry of entries) {
+        if (entry[1].kind === 'directory') {
+          try {
+            const subDir = await dirHandle.getDirectoryHandle(entry[0])
+            if (await hasAudioFiles(subDir)) return true
+          } catch {
+            // Skip
+          }
+        } else if (entry[1].kind === 'file') {
+          const name = entry[0] as string
+          const ext = name.toLowerCase().slice(name.lastIndexOf('.'))
+          if (audioExtensions.includes(ext)) return true
+        }
+      }
+      return false
+    }
+
+    async function collectTracksAndPlaylists(
+      dirHandle: FileSystemDirectoryHandle
+    ): Promise<{ tracks: Track[]; folderPlaylistMap: Map<string, Playlist> }> {
+      const tracks: Track[] = []
+      const folderPlaylistMap = new Map<string, Playlist>()
+
+      async function processFolder(
+        folderHandle: FileSystemDirectoryHandle,
+        currentPath: string
+      ): Promise<void> {
+        const audioFiles: { file: File; name: string }[] = []
+        const subfolders: { handle: FileSystemDirectoryHandle; name: string }[] = []
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const entries = (folderHandle as any).entries()
+        for await (const entry of entries) {
+          const name = entry[0] as string
+          const item = entry[1]
+
+          if (item.kind === 'directory') {
+            try {
+              const subDir = await folderHandle.getDirectoryHandle(name)
+              if (await hasAudioFiles(subDir)) {
+                subfolders.push({ handle: subDir, name })
+              }
+            } catch {
+              // Skip
+            }
+          } else if (item.kind === 'file') {
+            const ext = name.toLowerCase().slice(name.lastIndexOf('.'))
+            if (audioExtensions.includes(ext)) {
+              try {
+                const file = await item.getFile()
+                audioFiles.push({ file, name })
+              } catch {
+                // Skip
+              }
+            }
+          }
+        }
+
+        for (const { handle: subDir, name: subName } of subfolders) {
+          await processFolder(subDir, `${currentPath}/${subName}`)
+        }
+
+        if (audioFiles.length > 0) {
+          const now = Date.now()
+          const folderName = currentPath.split('/').pop() || 'Unknown'
+          const playlist: Playlist = {
+            id: `folder-${now}-${Math.random().toString(36).slice(2, 8)}`,
+            name: folderName,
+            description: `Folder: ${currentPath}`,
+            items: [],
+            createdAt: now,
+            updatedAt: now,
+            kind: 'app',
+            writable: true,
+            trackCount: 0,
+          }
+          folderPlaylistMap.set(currentPath, playlist)
+
+          for (const { file } of audioFiles) {
+            try {
+              const track = await parseFileBlob(file)
+              track.folderPath = currentPath
+              const r2Updates = await uploadTrackToR2(track)
+              const importedTrack: Track = {
+                ...track,
+                ...(r2Updates || {}),
+                addedAt: now,
+              }
+              tracks.push(importedTrack)
+              playlist.items.push({ source: 'local', trackId: importedTrack.id })
+              playlist.trackCount = playlist.items.length
+            } catch (err) {
+              console.error(`Failed to import ${file.name}:`, err)
+            }
+          }
+        }
+      }
+
+      await processFolder(dirHandle, basePath || handle.name)
+      return { tracks, folderPlaylistMap }
+    }
+
+    try {
+      if (!(await hasAudioFiles(handle))) {
+        return { tracks: [], playlists: [] }
+      }
+
+      const { tracks, folderPlaylistMap } = await collectTracksAndPlaylists(handle)
+      const totalFiles = tracks.length
+
+      if (totalFiles === 0) {
+        return { tracks: [], playlists: [] }
+      }
+
+      set({ importing: true, importProgress: { current: 0, total: totalFiles, currentFile: '' } })
+
+      for (let i = 0; i < tracks.length; i++) {
+        set({
+          importProgress: {
+            current: i + 1,
+            total: totalFiles,
+            currentFile: tracks[i].title || 'Unknown',
+          }
+        })
+
+        await db.tracks.put(tracks[i])
+      }
+
+      const playlists = Array.from(folderPlaylistMap.values())
+      if (playlists.length > 0) {
+        await db.playlists.bulkPut(playlists)
+      }
+
+      await get().loadTracks()
+      return { tracks, playlists }
     } finally {
       set({ importing: false, importProgress: null })
     }

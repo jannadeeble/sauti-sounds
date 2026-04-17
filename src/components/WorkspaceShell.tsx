@@ -215,14 +215,6 @@ export default function WorkspaceShell() {
       .slice(0, 8)
   }, [tracks])
 
-  const heroTrack =
-    currentTrack
-    ?? (selectedPlaylist?.kind === 'app' ? appPlaylistTracks[0]?.track : selectedTidalDetail?.tracks[0])
-    ?? sortedTracks[0]
-    ?? recentTracks[0]
-    ?? null
-  const heroArtwork = useTrackArtworkUrl(heroTrack ?? EMPTY_ARTWORK)
-
   const localTrackCount = tracks.filter((track) => track.source === 'local').length
   const tidalTrackCount = tracks.length - localTrackCount
   const desktopPlaylistLinks = appPlaylists.slice(0, 6)
@@ -616,39 +608,15 @@ export default function WorkspaceShell() {
               </div>
             </div>
 
-            <div className="overflow-x-auto px-4 pb-2 lg:hidden">
-              <div className="flex min-w-max gap-6">
-                <MobileNavButton
-                  label="Home"
-                  active={activeTab === 'home'}
-                  onClick={() => {
-                    setActiveTab('home')
-                    selectPlaylist(undefined)
-                  }}
-                />
-                <MobileNavButton
-                  label="Library"
-                  active={activeTab === 'library'}
-                  onClick={() => {
-                    setActiveTab('library')
-                    selectPlaylist(undefined)
-                  }}
-                />
-              </div>
-            </div>
           </header>
 
           <main ref={mainContentRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-[12rem] pt-6 lg:px-8 lg:pt-8">
             <div className="space-y-8">
-              <WorkspaceHero
-                artworkUrl={heroArtwork}
-                artworkLabel={heroTrack ? `${heroTrack.artist} - ${heroTrack.title}` : undefined}
-                eyebrow={hero.eyebrow}
-                title={hero.title}
-                meta={hero.meta}
-                description={hero.description}
-                actions={hero.actions}
-              />
+              <header>
+                <h1 className="deezer-display text-[2.25rem] leading-none text-[#111116] sm:text-[2.75rem]">
+                  {hero.title}
+                </h1>
+              </header>
 
               {errorMessage ? (
                 <div className="rounded-[22px] border border-[#f4c6cc] bg-[#fff4f6] px-5 py-4 text-sm text-[#8d3140]">
@@ -825,6 +793,29 @@ export default function WorkspaceShell() {
         </div>
       </div>
 
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-black/8 bg-white/95 backdrop-blur-md lg:hidden">
+        <div className="flex items-stretch">
+          <BottomTabButton
+            label="Home"
+            icon={<Home size={20} />}
+            active={activeTab === 'home'}
+            onClick={() => {
+              setActiveTab('home')
+              selectPlaylist(undefined)
+            }}
+          />
+          <BottomTabButton
+            label="Library"
+            icon={<Library size={20} />}
+            active={activeTab === 'library'}
+            onClick={() => {
+              setActiveTab('library')
+              selectPlaylist(undefined)
+            }}
+          />
+        </div>
+      </nav>
+
       <WorkspacePlayer />
 
       <BottomSheet
@@ -983,18 +974,27 @@ function TopbarActionButton({
   )
 }
 
-function MobileNavButton({
+function BottomTabButton({
   label,
+  icon,
   active,
   onClick,
 }: {
   label: string
+  icon: ReactNode
   active: boolean
   onClick: () => void
 }) {
   return (
-    <button type="button" className="deezer-tab-link text-sm font-medium" data-active={active} onClick={onClick}>
-      {label}
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex flex-1 flex-col items-center justify-center gap-1 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] text-[11px] font-medium transition-colors ${
+        active ? 'text-[#ef5466]' : 'text-[#686973] hover:text-[#111116]'
+      }`}
+    >
+      {icon}
+      <span>{label}</span>
     </button>
   )
 }
@@ -1020,57 +1020,6 @@ function FilterPill({
     >
       {children}
     </button>
-  )
-}
-
-function WorkspaceHero({
-  artworkUrl,
-  artworkLabel,
-  eyebrow,
-  title,
-  meta,
-  description,
-  actions,
-}: {
-  artworkUrl?: string
-  artworkLabel?: string
-  eyebrow: string
-  title: string
-  meta: string
-  description: string
-  actions: HeroAction[]
-}) {
-  return (
-    <section className={`${panelClass} overflow-hidden`}>
-      <div className="grid gap-8 px-6 py-6 sm:px-8 sm:py-8 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-center">
-        <div className="mx-auto flex h-[180px] w-[180px] items-center justify-center overflow-hidden rounded-[40px] bg-[#111116] text-white lg:h-[220px] lg:w-[220px]">
-          {artworkUrl ? (
-            <img src={artworkUrl} alt={artworkLabel || ''} className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,#32323d,#121216)]">
-              <Disc3 size={56} className="text-white/80" />
-            </div>
-          )}
-        </div>
-
-        <div className="min-w-0">
-          <p className="mb-3 text-[11px] uppercase tracking-[0.26em] text-[#8b8c95]">{eyebrow}</p>
-          <h1 className="deezer-display text-[2.9rem] leading-[0.95] text-[#111116] sm:text-[4rem]">
-            {title}
-          </h1>
-          <p className="mt-3 text-sm font-medium text-[#686973]">{meta}</p>
-          <p className="mt-4 max-w-2xl text-sm leading-6 text-[#686973]">{description}</p>
-
-          {actions.length > 0 ? (
-            <div className="mt-6 flex flex-wrap gap-3">
-              {actions.map((action) => (
-                <ActionPill key={action.label} {...action} />
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </section>
   )
 }
 

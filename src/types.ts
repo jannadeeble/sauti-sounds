@@ -54,6 +54,26 @@ export interface Playlist {
   providerPlaylistId?: string
   writable?: boolean
   trackCount?: number
+  folderId?: string
+}
+
+export interface PlaylistFolder {
+  id: string
+  name: string
+  parentId?: string
+  createdAt: number
+  updatedAt: number
+}
+
+export type NotificationKind = 'info' | 'success' | 'warning' | 'error'
+
+export interface AppNotification {
+  id: string
+  kind: NotificationKind
+  title: string
+  body?: string
+  createdAt: number
+  readAt?: number
 }
 
 export type RepeatMode = 'off' | 'all' | 'one'

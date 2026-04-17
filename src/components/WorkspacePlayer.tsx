@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import AudioPlayer, { type InterfacePlacement, useAudioPlayer } from 'react-modern-audio-player'
-import { ChevronDown, ChevronUp, ListMusic, Radio } from 'lucide-react'
+import { ChevronUp, ListMusic, Radio } from 'lucide-react'
 import { useTrackArtworkUrl } from '../lib/artwork'
 import { useResolvedPlayerTracks } from '../lib/playerTracks'
 import { useHistoryStore } from '../stores/historyStore'
@@ -18,7 +18,6 @@ function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
     togglePlay,
     playList,
   } = useAudioPlayer()
-  const playerOpen = usePlaybackSessionStore((state) => state.playerOpen)
   const setPlayerOpen = usePlaybackSessionStore((state) => state.setPlayerOpen)
   const syncPlayerState = usePlaybackSessionStore((state) => state.syncPlayerState)
   const recordPlay = useHistoryStore((state) => state.recordPlay)
@@ -101,12 +100,12 @@ function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
       <button
         type="button"
         className="workspace-player-chip__toggle"
-        onClick={() => setPlayerOpen(!playerOpen)}
-        aria-label={playerOpen ? 'Hide queue' : 'Show queue'}
+        onClick={() => setPlayerOpen(true)}
+        aria-label="Open queue"
       >
         <ListMusic size={14} />
         <span>{playList.length}</span>
-        {playerOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+        <ChevronUp size={14} />
       </button>
     </div>
   )
@@ -116,7 +115,6 @@ export default function WorkspacePlayer() {
   const tracks = usePlaybackSessionStore((state) => state.tracks)
   const sessionId = usePlaybackSessionStore((state) => state.sessionId)
   const startIndex = usePlaybackSessionStore((state) => state.startIndex)
-  const playerOpen = usePlaybackSessionStore((state) => state.playerOpen)
   const setErrorMessage = usePlaybackSessionStore((state) => state.setErrorMessage)
 
   const { playableTracks, playlist, currentPlayId, errors, loading } = useResolvedPlayerTracks(
@@ -153,9 +151,9 @@ export default function WorkspacePlayer() {
       trackTime: true,
       trackInfo: true,
       progress: 'bar' as const,
-      playList: playerOpen ? ('sortable' as const) : (false as const),
+      playList: false as const,
     }),
-    [playerOpen],
+    [],
   )
 
   const audioInitialState = useMemo(

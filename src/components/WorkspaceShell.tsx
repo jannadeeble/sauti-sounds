@@ -21,6 +21,7 @@ import BottomSheet from './BottomSheet'
 import ImportPanel, { type ImportDoneResult } from './ImportPanel'
 import NotificationBell from './NotificationBell'
 import PlaylistTree from './PlaylistTree'
+import QueueSheet from './QueueSheet'
 import SettingsPanel from './SettingsPanel'
 import TrackRow, { type TrackAction } from './TrackRow'
 import WorkspacePlayer from './WorkspacePlayer'
@@ -111,6 +112,8 @@ export default function WorkspaceShell() {
   const errorMessage = usePlaybackSessionStore((state) => state.errorMessage)
   const currentTrack = usePlaybackSessionStore((state) => state.currentTrack)
   const isPlaying = usePlaybackSessionStore((state) => state.isPlaying)
+  const playerOpen = usePlaybackSessionStore((state) => state.playerOpen)
+  const setPlayerOpen = usePlaybackSessionStore((state) => state.setPlayerOpen)
 
   const loadHistory = useHistoryStore((state) => state.loadHistory)
   const historyEntries = useHistoryStore((state) => state.entries)
@@ -903,6 +906,8 @@ export default function WorkspaceShell() {
       >
         <AIChatPanel />
       </BottomSheet>
+
+      <QueueSheet open={playerOpen} onClose={() => setPlayerOpen(false)} />
     </div>
   )
 }

@@ -48,7 +48,6 @@ export default function WorkspaceShell() {
   const tracks = useLibraryStore((state) => state.tracks)
   const libraryLoading = useLibraryStore((state) => state.loading)
   const loadTracks = useLibraryStore((state) => state.loadTracks)
-  const cacheTidalTracks = useLibraryStore((state) => state.cacheTidalTracks)
   const importFiles = useLibraryStore((state) => state.importFiles)
   const importing = useLibraryStore((state) => state.importing)
   const importProgress = useLibraryStore((state) => state.importProgress)
@@ -73,8 +72,6 @@ export default function WorkspaceShell() {
   const playPlaylist = usePlaybackSessionStore((state) => state.playPlaylist)
   const playTracks = usePlaybackSessionStore((state) => state.playTracks)
   const errorMessage = usePlaybackSessionStore((state) => state.errorMessage)
-  const currentTrack = usePlaybackSessionStore((state) => state.currentTrack)
-  const isPlaying = usePlaybackSessionStore((state) => state.isPlaying)
 
   useEffect(() => {
     void loadTracks()
@@ -690,22 +687,6 @@ function TopbarActionButton({
       }`}
     >
       {icon}
-    </button>
-  )
-}
-
-function MobileNavButton({
-  label,
-  active,
-  onClick,
-}: {
-  label: string
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button type="button" className="deezer-tab-link text-sm font-medium" data-active={active} onClick={onClick}>
-      {label}
     </button>
   )
 }

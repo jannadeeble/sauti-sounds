@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { HardDrive, Heart, ListPlus, MoreVertical, Play, Radio } from 'lucide-react'
+import { Heart, ListPlus, MoreVertical, Play, Radio } from 'lucide-react'
 import AddToPlaylistDialog from './AddToPlaylistDialog'
 import { useTrackArtworkUrl } from '../lib/artwork'
 import { formatTime } from '../lib/metadata'
@@ -112,12 +112,7 @@ export default function TrackRow({
                   <Radio size={10} />
                   TIDAL
                 </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-[#f3f3f6] px-2 py-0.5 text-[10px] uppercase tracking-wide text-[#686973]">
-                  <HardDrive size={10} />
-                  Local
-                </span>
-              )}
+              ) : null}
               {track.isFavorite ? <Heart size={12} className="fill-red-400 text-red-400" /> : null}
             </div>
             <p className="truncate text-xs text-[#7a7b86]">

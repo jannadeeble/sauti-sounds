@@ -18,6 +18,8 @@ import {
 import AIChatPanel from './AIChatPanel'
 import BottomSheet from './BottomSheet'
 import ImportPanel, { type ImportDoneResult } from './ImportPanel'
+import NotificationBell from './NotificationBell'
+import PlaylistTree from './PlaylistTree'
 import SettingsPanel from './SettingsPanel'
 import TrackRow, { type TrackAction } from './TrackRow'
 import WorkspacePlayer from './WorkspacePlayer'
@@ -27,7 +29,7 @@ import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
 import { usePlaylistStore } from '../stores/playlistStore'
 import { searchTidal } from '../lib/tidal'
 import { useTidalStore } from '../stores/tidalStore'
-import type { Playlist, Track } from '../types'
+import type { Playlist, PlaylistFolder, Track } from '../types'
 
 type WorkspaceTab = 'home' | 'library'
 type LibraryFilter = 'all' | 'tidal' | 'local' | 'playlists' | 'artists'
@@ -84,6 +86,7 @@ export default function WorkspaceShell() {
 
   const {
     appPlaylists,
+    appPlaylistFolders,
     tidalPlaylists,
     tidalPlaylistDetails,
     loadPlaylists,
@@ -597,17 +600,61 @@ export default function WorkspaceShell() {
 
                 <div className="flex items-center gap-2">
                   <TopbarActionButton label="Import" icon={<FolderOpen size={16} />} onClick={() => setShowImport(true)} />
-                  <TopbarActionButton label="Search" icon={<Search size={16} />} onClick={openSearch} />
+                  <NotificationBell />
                   <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
                   <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
                 </div>
               </div>
 
-              <div className="hidden items-center justify-end gap-2 lg:flex">
-                <TopbarActionButton label="Import" icon={<FolderOpen size={16} />} onClick={() => setShowImport(true)} />
-                <TopbarActionButton label="Search" icon={<Search size={16} />} onClick={openSearch} />
-                <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
-                <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
+              <div className="mt-4 lg:hidden">
+                <label className="deezer-search-shell">
+                  <Search size={18} className="shrink-0 text-[#8b8c95]" />
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(event) => {
+                      setQuery(event.target.value)
+                      setTidalSearched(false)
+                    }}
+                    onFocus={openSearch}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        openSearch()
+                        void handleTidalSearch()
+                      }
+                    }}
+                    placeholder="Artists, tracks, playlists..."
+                  />
+                </label>
+              </div>
+
+              <div className="hidden items-center gap-3 lg:flex">
+                <label className="deezer-search-shell">
+                  <Search size={18} className="shrink-0 text-[#8b8c95]" />
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(event) => {
+                      setQuery(event.target.value)
+                      setTidalSearched(false)
+                    }}
+                    onFocus={openSearch}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        openSearch()
+                        void handleTidalSearch()
+                      }
+                    }}
+                    placeholder="Artists, tracks, playlists..."
+                  />
+                </label>
+
+                <div className="flex items-center gap-2">
+                  <TopbarActionButton label="Import" icon={<FolderOpen size={16} />} onClick={() => setShowImport(true)} />
+                  <NotificationBell />
+                  <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
+                  <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
+                </div>
               </div>
             </div>
 
@@ -751,6 +798,7 @@ export default function WorkspaceShell() {
                     ) : (
                       <PlaylistCollectionsView
                         appPlaylists={appPlaylists}
+                        appPlaylistFolders={appPlaylistFolders}
                         tidalPlaylists={tidalPlaylists}
                         onOpen={(kind, id) => selectPlaylist({ kind, id })}
                       />
@@ -1367,45 +1415,42 @@ function SearchPanel({
 
 function PlaylistCollectionsView({
   appPlaylists,
+  appPlaylistFolders,
   tidalPlaylists,
   onOpen,
 }: {
   appPlaylists: Playlist[]
+  appPlaylistFolders: PlaylistFolder[]
   tidalPlaylists: Playlist[]
   onOpen: (kind: 'app' | 'tidal', id: string) => void
 }) {
+  const folderSummary = appPlaylistFolders.length > 0
+    ? `${appPlaylists.length} editable mixes • ${appPlaylistFolders.length} ${appPlaylistFolders.length === 1 ? 'folder' : 'folders'}`
+    : `${appPlaylists.length} editable mixes`
+
   return (
     <div className="grid gap-5 xl:grid-cols-2">
       <section className={panelClass}>
         <div className="flex items-center justify-between px-5 pb-3 pt-5 sm:px-6">
           <div>
             <h2 className="deezer-display text-[1.7rem] leading-none text-[#111116]">App playlists</h2>
-            <p className="mt-1 text-sm text-[#7a7b86]">{appPlaylists.length} editable mixes</p>
+            <p className="mt-1 text-sm text-[#7a7b86]">{folderSummary}</p>
           </div>
         </div>
 
-        {appPlaylists.length === 0 ? (
+        {appPlaylists.length === 0 && appPlaylistFolders.length === 0 ? (
           <div className="px-5 pb-6 sm:px-6">
             <div className={`${mutedPanelClass} px-4 py-5 text-sm text-[#686973]`}>
               No app playlists yet. Create one and it will appear here.
             </div>
           </div>
         ) : (
-          <div className="divide-y divide-black/6">
-            {appPlaylists.map((playlist) => (
-              <button
-                key={playlist.id}
-                type="button"
-                onClick={() => onOpen('app', playlist.id)}
-                className="flex w-full items-center justify-between px-5 py-4 text-left transition-colors hover:bg-[#fafafb] sm:px-6"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-[#111116]">{playlist.name}</p>
-                  <p className="mt-1 text-xs text-[#7a7b86]">{formatPlaylistCount(playlist)} items</p>
-                </div>
-                <ChevronRight size={16} className="shrink-0 text-[#a2a3ad]" />
-              </button>
-            ))}
+          <div className="pb-2">
+            <PlaylistTree
+              folders={appPlaylistFolders}
+              playlists={appPlaylists}
+              onOpen={(id) => onOpen('app', id)}
+            />
           </div>
         )}
       </section>

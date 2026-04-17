@@ -38,8 +38,11 @@ export default function TrackRow({
   const appendTrack = usePlaybackSessionStore((state) => state.appendTrack)
   const currentTrack = usePlaybackSessionStore((state) => state.currentTrack)
   const queuedTracks = usePlaybackSessionStore((state) => state.tracks)
+  const libraryTracks = useLibraryStore((state) => state.tracks)
   const toggleTidalFavorite = useLibraryStore((state) => state.toggleTidalFavorite)
+  const removeTrack = useLibraryStore((state) => state.removeTrack)
   const tidalConnected = useTidalStore((state) => state.tidalConnected)
+  const isInLibrary = libraryTracks.some((candidate) => candidate.id === track.id)
 
   const [showActions, setShowActions] = useState(false)
   const [showPlaylistDialog, setShowPlaylistDialog] = useState(false)
@@ -61,6 +64,16 @@ export default function TrackRow({
       ? [{
           label: track.isFavorite ? 'Remove from TIDAL favorites' : 'Add to TIDAL favorites',
           onClick: () => void toggleTidalFavorite(track),
+        } satisfies TrackAction]
+      : []),
+    ...(isInLibrary
+      ? [{
+          label: 'Remove from library',
+          destructive: true,
+          onClick: () => {
+            if (!window.confirm(`Remove "${track.title}" from your library?`)) return
+            void removeTrack(track.id)
+          },
         } satisfies TrackAction]
       : []),
     ...extraActions,

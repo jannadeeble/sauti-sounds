@@ -175,12 +175,12 @@ export default function WorkspacePlayer() {
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-[76px] z-30 px-4 lg:bottom-4">
-      <div className="pointer-events-auto mx-auto max-w-[980px] rounded-2xl border border-black/8 bg-[#121216] shadow-[0_12px_40px_rgba(17,17,22,0.22)]">
+      <div className="pointer-events-auto mx-auto max-w-[980px] overflow-hidden rounded-2xl border border-white/50 bg-white/55 shadow-[0_12px_40px_rgba(17,17,22,0.15)] backdrop-blur-2xl backdrop-saturate-150">
         <AudioPlayer<11>
           key={sessionId}
           playList={playlist}
-          colorScheme="dark"
-          rootContainerProps={{ className: 'workspace-player workspace-player--floating deezer-player' }}
+          colorScheme="light"
+          rootContainerProps={{ className: 'workspace-player workspace-player--floating workspace-player--glass deezer-player' }}
           placement={placement}
           activeUI={activeUI}
           audioInitialState={audioInitialState}

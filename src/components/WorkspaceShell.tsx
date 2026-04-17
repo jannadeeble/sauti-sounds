@@ -2,14 +2,18 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bot,
   ChevronRight,
+  Disc3,
   FolderOpen,
+  Home,
   Library,
   ListMusic,
   Play,
   Plus,
+  Radio,
   Search,
   Settings,
   SlidersHorizontal,
+  Sparkles,
 } from 'lucide-react'
 import AIChatPanel from './AIChatPanel'
 import BottomSheet from './BottomSheet'
@@ -17,30 +21,55 @@ import ImportPanel, { type ImportDoneResult } from './ImportPanel'
 import SettingsPanel from './SettingsPanel'
 import TrackRow, { type TrackAction } from './TrackRow'
 import WorkspacePlayer from './WorkspacePlayer'
+import { useTrackArtworkUrl } from '../lib/artwork'
 import { useLibraryStore } from '../stores/libraryStore'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
 import { usePlaylistStore } from '../stores/playlistStore'
+import { searchTidal } from '../lib/tidal'
+import { useTidalStore } from '../stores/tidalStore'
 import type { Playlist, Track } from '../types'
 
-type WorkspaceTab = 'library' | 'playlists'
-type LibraryFilter = 'all' | 'local' | 'tidal'
+type WorkspaceTab = 'home' | 'library'
+type LibraryFilter = 'all' | 'tidal' | 'local' | 'playlists' | 'artists'
 type LibrarySort = 'recent' | 'title' | 'artist'
 
+const EMPTY_ARTWORK = { artworkBlob: undefined, artworkUrl: undefined }
 const panelClass = 'rounded-[28px] border border-black/8 bg-white shadow-[0_1px_0_rgba(17,17,22,0.03)]'
 const mutedPanelClass = 'rounded-[22px] border border-black/6 bg-[#f8f8f9]'
+
+const LIBRARY_FILTERS: { value: LibraryFilter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'tidal', label: 'TIDAL' },
+  { value: 'local', label: 'Local' },
+  { value: 'playlists', label: 'Playlists' },
+  { value: 'artists', label: 'Artists' },
+]
+
+interface HeroAction {
+  label: string
+  icon: ReactNode
+  onClick: () => void
+  accent?: boolean
+  disabled?: boolean
+}
 
 function formatPlaylistCount(playlist: Playlist) {
   return playlist.trackCount ?? playlist.items.length
 }
 
 export default function WorkspaceShell() {
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>('library')
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('home')
   const [showImport, setShowImport] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showAI, setShowAI] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('all')
   const [librarySort, setLibrarySort] = useState<LibrarySort>('recent')
+  const [selectedArtist, setSelectedArtist] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [tidalResults, setTidalResults] = useState<Track[]>([])
+  const [tidalLoading, setTidalLoading] = useState(false)
+  const [tidalSearched, setTidalSearched] = useState(false)
   const [importNotice, setImportNotice] = useState<string | null>(null)
   const [highlightedImportIds, setHighlightedImportIds] = useState<string[]>([])
   const mainContentRef = useRef<HTMLElement | null>(null)
@@ -48,6 +77,7 @@ export default function WorkspaceShell() {
   const tracks = useLibraryStore((state) => state.tracks)
   const libraryLoading = useLibraryStore((state) => state.loading)
   const loadTracks = useLibraryStore((state) => state.loadTracks)
+  const cacheTidalTracks = useLibraryStore((state) => state.cacheTidalTracks)
   const importFiles = useLibraryStore((state) => state.importFiles)
   const importing = useLibraryStore((state) => state.importing)
   const importProgress = useLibraryStore((state) => state.importProgress)
@@ -67,11 +97,15 @@ export default function WorkspaceShell() {
     renameAppPlaylist,
   } = usePlaylistStore()
 
+  const tidalConnected = useTidalStore((state) => state.tidalConnected)
+
   const selectedPlaylist = usePlaybackSessionStore((state) => state.selectedPlaylist)
   const selectPlaylist = usePlaybackSessionStore((state) => state.selectPlaylist)
   const playPlaylist = usePlaybackSessionStore((state) => state.playPlaylist)
   const playTracks = usePlaybackSessionStore((state) => state.playTracks)
   const errorMessage = usePlaybackSessionStore((state) => state.errorMessage)
+  const currentTrack = usePlaybackSessionStore((state) => state.currentTrack)
+  const isPlaying = usePlaybackSessionStore((state) => state.isPlaying)
 
   useEffect(() => {
     void loadTracks()
@@ -95,12 +129,15 @@ export default function WorkspaceShell() {
     return () => window.clearTimeout(timeoutId)
   }, [highlightedImportIds, importNotice])
 
-  const sortedTracks = useMemo(() => {
-    const filtered = tracks.filter((track) => {
-      if (libraryFilter === 'all') return true
+  const trackFilter = (track: Track) => {
+    if (libraryFilter === 'local' || libraryFilter === 'tidal') {
       return track.source === libraryFilter
-    })
+    }
+    return true
+  }
 
+  const sortedTracks = useMemo(() => {
+    const filtered = tracks.filter(trackFilter)
     const next = [...filtered]
     if (librarySort === 'title') {
       next.sort((left, right) => left.title.localeCompare(right.title))
@@ -111,6 +148,7 @@ export default function WorkspaceShell() {
     }
 
     return next
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [libraryFilter, librarySort, tracks])
 
   const localSearchResults = useMemo(() => {
@@ -151,7 +189,58 @@ export default function WorkspaceShell() {
     ? tidalPlaylistDetails[selectedPlaylist.id]
     : undefined
 
+  const artistGroups = useMemo(() => {
+    const groups = new Map<string, Track[]>()
+    for (const track of tracks) {
+      const key = track.artist || 'Unknown artist'
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(track)
+    }
+    return Array.from(groups.entries())
+      .map(([artist, list]) => ({ artist, tracks: list }))
+      .sort((a, b) => a.artist.localeCompare(b.artist))
+  }, [tracks])
+
+  const selectedArtistTracks = useMemo(() => {
+    if (!selectedArtist) return []
+    return tracks.filter((track) => (track.artist || 'Unknown artist') === selectedArtist)
+  }, [tracks, selectedArtist])
+
+  const recentTracks = useMemo(() => {
+    return [...tracks]
+      .sort((left, right) => (right.addedAt || 0) - (left.addedAt || 0))
+      .slice(0, 8)
+  }, [tracks])
+
+  const heroTrack =
+    currentTrack
+    ?? (selectedPlaylist?.kind === 'app' ? appPlaylistTracks[0]?.track : selectedTidalDetail?.tracks[0])
+    ?? sortedTracks[0]
+    ?? recentTracks[0]
+    ?? null
+  const heroArtwork = useTrackArtworkUrl(heroTrack ?? EMPTY_ARTWORK)
+
+  const localTrackCount = tracks.filter((track) => track.source === 'local').length
+  const tidalTrackCount = tracks.length - localTrackCount
   const desktopPlaylistLinks = appPlaylists.slice(0, 6)
+
+  async function handleTidalSearch() {
+    if (!query.trim() || !tidalConnected) return
+
+    setTidalLoading(true)
+    setTidalSearched(true)
+
+    try {
+      const results = await searchTidal(query)
+      setTidalResults(results.tracks)
+      await cacheTidalTracks(results.tracks)
+    } catch (error) {
+      console.error('TIDAL search failed:', error)
+      setTidalResults([])
+    } finally {
+      setTidalLoading(false)
+    }
+  }
 
   async function handleCreatePlaylist(kind: 'app' | 'tidal') {
     const name = window.prompt(kind === 'app' ? 'Name your new playlist' : 'Name your new TIDAL playlist')
@@ -160,14 +249,16 @@ export default function WorkspaceShell() {
     if (kind === 'app') {
       const playlist = await createAppPlaylist(name.trim())
       selectPlaylist({ kind: 'app', id: playlist.id })
-      setActiveTab('playlists')
+      setActiveTab('library')
+      setLibraryFilter('playlists')
       return
     }
 
     const playlist = await createProviderPlaylist(name.trim())
     if (playlist.providerPlaylistId) {
       selectPlaylist({ kind: 'tidal', id: playlist.providerPlaylistId })
-      setActiveTab('playlists')
+      setActiveTab('library')
+      setLibraryFilter('playlists')
     }
   }
 
@@ -176,8 +267,13 @@ export default function WorkspaceShell() {
     playPlaylist(kind, playlistId, playlistTracks, 0)
   }
 
-  function handleSearchChange(value: string) {
-    setQuery(value)
+  function openSearch() {
+    setShowSearch(true)
+    setTidalSearched(false)
+  }
+
+  function closeSearch() {
+    setShowSearch(false)
   }
 
   function finalizeImport(result?: ImportDoneResult) {
@@ -188,6 +284,7 @@ export default function WorkspaceShell() {
     selectPlaylist(undefined)
     setLibraryFilter('all')
     setLibrarySort('recent')
+    setSelectedArtist(null)
 
     if (importedTracks.length > 0) {
       playTracks(importedTracks, 'library', 0)
@@ -219,9 +316,178 @@ export default function WorkspaceShell() {
     }
   }
 
-  const selectedPlaylistName = selectedPlaylist?.kind === 'app'
-    ? (selectedAppPlaylist?.name ?? 'Playlist')
-    : (selectedTidalDetail?.playlist.name ?? tidalPlaylists.find((p) => p.providerPlaylistId === selectedPlaylist?.id)?.name ?? 'Playlist')
+  const hero = useMemo(() => {
+    if (activeTab === 'home') {
+      return {
+        eyebrow: 'Welcome back',
+        title: 'Home',
+        meta: `${tracks.length} tracks in your library`,
+        description: 'Jump straight back into recent plays, or let Sauti suggest something new.',
+        actions: [
+          recentTracks.length > 0
+            ? {
+                label: 'Resume',
+                icon: <Play size={15} />,
+                onClick: () => playTracks(recentTracks, 'library', 0),
+                accent: true,
+              }
+            : {
+                label: 'Import music',
+                icon: <FolderOpen size={15} />,
+                onClick: () => void handleQuickImport(),
+                accent: true,
+              },
+          {
+            label: 'Ask Sauti',
+            icon: <Sparkles size={15} />,
+            onClick: () => setShowAI(true),
+          },
+        ] satisfies HeroAction[],
+      }
+    }
+
+    if (libraryFilter === 'playlists' && selectedPlaylist) {
+      const playlist = selectedPlaylist.kind === 'app'
+        ? selectedAppPlaylist
+        : selectedTidalDetail?.playlist || tidalPlaylists.find((item) => item.providerPlaylistId === selectedPlaylist.id)
+      const playlistTracks = selectedPlaylist.kind === 'app'
+        ? appPlaylistTracks.map((entry) => entry.track)
+        : selectedTidalDetail?.tracks || []
+
+      return {
+        eyebrow: selectedPlaylist.kind === 'app' ? 'App playlist' : 'TIDAL playlist',
+        title: playlist?.name || 'Playlist',
+        meta: `${playlistTracks.length} tracks${selectedPlaylist.kind === 'tidal' ? ' • synced from TIDAL' : ''}`,
+        description: playlist?.description || 'Open the queue and play the playlist straight through.',
+        actions: [
+          {
+            label: 'Play all',
+            icon: <Play size={15} />,
+            onClick: () => {
+              if (selectedPlaylist.kind === 'app') handlePlaylistPlayback('app', playlist?.id || '', playlistTracks)
+              else handlePlaylistPlayback('tidal', selectedPlaylist.id, playlistTracks)
+            },
+            accent: true,
+            disabled: playlistTracks.length === 0,
+          },
+          {
+            label: 'Back to playlists',
+            icon: <ListMusic size={15} />,
+            onClick: () => selectPlaylist(undefined),
+          },
+        ] satisfies HeroAction[],
+      }
+    }
+
+    if (libraryFilter === 'playlists') {
+      return {
+        eyebrow: 'Collections',
+        title: 'Playlists',
+        meta: `${appPlaylists.length} app • ${tidalPlaylists.length} TIDAL`,
+        description: 'Mixed playlists stay editable while remote TIDAL collections sit beside them.',
+        actions: [
+          {
+            label: 'New app playlist',
+            icon: <Plus size={15} />,
+            onClick: () => void handleCreatePlaylist('app'),
+            accent: true,
+          },
+          {
+            label: tidalConnected ? 'New TIDAL playlist' : 'Import music',
+            icon: tidalConnected ? <Radio size={15} /> : <FolderOpen size={15} />,
+            onClick: tidalConnected ? () => void handleCreatePlaylist('tidal') : () => setShowImport(true),
+          },
+        ] satisfies HeroAction[],
+      }
+    }
+
+    if (libraryFilter === 'artists' && selectedArtist) {
+      return {
+        eyebrow: 'Artist',
+        title: selectedArtist,
+        meta: `${selectedArtistTracks.length} tracks`,
+        description: 'Every track from this artist in your library, grouped in one place.',
+        actions: [
+          {
+            label: 'Play all',
+            icon: <Play size={15} />,
+            onClick: () => playTracks(selectedArtistTracks, 'library', 0),
+            accent: true,
+            disabled: selectedArtistTracks.length === 0,
+          },
+          {
+            label: 'Back to artists',
+            icon: <ListMusic size={15} />,
+            onClick: () => setSelectedArtist(null),
+          },
+        ] satisfies HeroAction[],
+      }
+    }
+
+    if (libraryFilter === 'artists') {
+      return {
+        eyebrow: 'Library',
+        title: 'Artists',
+        meta: `${artistGroups.length} artists`,
+        description: 'Browse your library by artist and open any of them to dig in.',
+        actions: [],
+      }
+    }
+
+    return {
+      eyebrow: currentTrack ? 'Now playing' : 'My music',
+      title: currentTrack ? currentTrack.title : 'Library',
+      meta: currentTrack
+        ? `${currentTrack.artist}${currentTrack.album ? ` • ${currentTrack.album}` : ''}`
+        : `${tracks.length} tracks • ${localTrackCount} local • ${tidalTrackCount} TIDAL`,
+      description: currentTrack
+        ? `Pulled from your ${isPlaying ? 'active queue' : 'library'}.`
+        : 'Your full library across local files and cached TIDAL tracks.',
+      actions: [
+        sortedTracks.length > 0
+          ? {
+              label: 'Play library',
+              icon: <Play size={15} />,
+              onClick: () => playTracks(sortedTracks, 'library', 0),
+              accent: true,
+            }
+          : {
+              label: 'Import music',
+              icon: <FolderOpen size={15} />,
+              onClick: () => void handleQuickImport(),
+              accent: true,
+            },
+        {
+          label: 'Ask Sauti',
+          icon: <Sparkles size={15} />,
+          onClick: () => setShowAI(true),
+        },
+      ] satisfies HeroAction[],
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeTab,
+    appPlaylistTracks,
+    appPlaylists.length,
+    artistGroups.length,
+    currentTrack,
+    handleQuickImport,
+    isPlaying,
+    libraryFilter,
+    localTrackCount,
+    playTracks,
+    recentTracks,
+    selectedAppPlaylist,
+    selectedArtist,
+    selectedArtistTracks,
+    selectedPlaylist,
+    selectedTidalDetail,
+    sortedTracks,
+    tidalConnected,
+    tidalPlaylists,
+    tidalTrackCount,
+    tracks.length,
+  ])
 
   return (
     <div className="workspace-shell">
@@ -233,6 +499,15 @@ export default function WorkspaceShell() {
 
           <nav className="space-y-1 px-4">
             <SidebarNavButton
+              label="Home"
+              icon={<Home size={18} />}
+              active={activeTab === 'home'}
+              onClick={() => {
+                setActiveTab('home')
+                selectPlaylist(undefined)
+              }}
+            />
+            <SidebarNavButton
               label="Library"
               icon={<Library size={18} />}
               active={activeTab === 'library'}
@@ -242,26 +517,40 @@ export default function WorkspaceShell() {
               }}
             />
             <SidebarNavButton
-              label="Playlists"
-              icon={<ListMusic size={18} />}
-              active={activeTab === 'playlists'}
-              onClick={() => setActiveTab('playlists')}
+              label="Search"
+              icon={<Search size={18} />}
+              active={false}
+              onClick={openSearch}
             />
           </nav>
 
-          {desktopPlaylistLinks.length > 0 ? (
-            <section className="mt-8 px-6">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-[11px] uppercase tracking-[0.24em] text-[#8b8c95]">Playlists</p>
-                <span className="text-xs text-[#8b8c95]">{appPlaylists.length}</span>
-              </div>
-              <div className="space-y-1.5">
-                {desktopPlaylistLinks.map((playlist) => (
+          <section className="mt-8 px-6">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-[#8b8c95]">Playlists</p>
+              <span className="text-xs text-[#8b8c95]">{appPlaylists.length}</span>
+            </div>
+            <div className="space-y-1.5">
+              {desktopPlaylistLinks.length === 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('library')
+                    setLibraryFilter('playlists')
+                    void handleCreatePlaylist('app')
+                  }}
+                  className="flex w-full items-center justify-between rounded-2xl border border-dashed border-black/10 px-4 py-3 text-left text-sm text-[#686973] transition-colors hover:border-black/16 hover:bg-white"
+                >
+                  <span>Create your first playlist</span>
+                  <Plus size={14} />
+                </button>
+              ) : (
+                desktopPlaylistLinks.map((playlist) => (
                   <button
                     key={playlist.id}
                     type="button"
                     onClick={() => {
-                      setActiveTab('playlists')
+                      setActiveTab('library')
+                      setLibraryFilter('playlists')
                       selectPlaylist({ kind: 'app', id: playlist.id })
                     }}
                     className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left transition-colors ${
@@ -273,10 +562,10 @@ export default function WorkspaceShell() {
                     <span className="truncate text-sm">{playlist.name}</span>
                     <span className="text-xs">{formatPlaylistCount(playlist)}</span>
                   </button>
-                ))}
-              </div>
-            </section>
-          ) : null}
+                ))
+              )}
+            </div>
+          </section>
 
           <div className="mt-auto grid gap-2 p-4">
             <SidebarUtilityButton
@@ -298,7 +587,7 @@ export default function WorkspaceShell() {
           </div>
         </aside>
 
-        <div className="min-h-0 flex h-full flex-col">
+        <div className="min-h-0 flex flex-col">
           <header className="border-b border-black/8 bg-[#fbfbfc]/95 backdrop-blur-md">
             <div className="px-4 py-4 lg:px-8 lg:py-5">
               <div className="flex items-center justify-between gap-3 lg:hidden">
@@ -308,69 +597,53 @@ export default function WorkspaceShell() {
 
                 <div className="flex items-center gap-2">
                   <TopbarActionButton label="Import" icon={<FolderOpen size={16} />} onClick={() => setShowImport(true)} />
+                  <TopbarActionButton label="Search" icon={<Search size={16} />} onClick={openSearch} />
                   <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
                   <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
                 </div>
               </div>
 
-              <div className="mt-4 lg:hidden">
-                <label className="deezer-search-shell">
-                  <Search size={18} className="shrink-0 text-[#8b8c95]" />
-                  <input
-                    type="text"
-                    value={query}
-                    onChange={(event) => handleSearchChange(event.target.value)}
-                    placeholder="Artists, tracks, playlists..."
-                  />
-                </label>
-              </div>
-
-              <div className="hidden items-center gap-3 lg:flex">
-                <label className="deezer-search-shell">
-                  <Search size={18} className="shrink-0 text-[#8b8c95]" />
-                  <input
-                    type="text"
-                    value={query}
-                    onChange={(event) => handleSearchChange(event.target.value)}
-                    placeholder="Artists, tracks, playlists..."
-                  />
-                </label>
-
-                <div className="flex items-center gap-2">
-                  <TopbarActionButton label="Import" icon={<FolderOpen size={16} />} onClick={() => setShowImport(true)} />
-                  <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
-                  <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
-                </div>
+              <div className="hidden items-center justify-end gap-2 lg:flex">
+                <TopbarActionButton label="Import" icon={<FolderOpen size={16} />} onClick={() => setShowImport(true)} />
+                <TopbarActionButton label="Search" icon={<Search size={16} />} onClick={openSearch} />
+                <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
+                <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
               </div>
             </div>
 
+            <div className="overflow-x-auto px-4 pb-2 lg:hidden">
+              <div className="flex min-w-max gap-6">
+                <MobileNavButton
+                  label="Home"
+                  active={activeTab === 'home'}
+                  onClick={() => {
+                    setActiveTab('home')
+                    selectPlaylist(undefined)
+                  }}
+                />
+                <MobileNavButton
+                  label="Library"
+                  active={activeTab === 'library'}
+                  onClick={() => {
+                    setActiveTab('library')
+                    selectPlaylist(undefined)
+                  }}
+                />
+              </div>
+            </div>
           </header>
 
-          <main
-            ref={mainContentRef}
-            className="min-h-0 flex-1 overflow-y-auto px-4 pb-[13rem] pt-6 lg:pb-[10rem] lg:px-8 lg:pt-8"
-            style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}
-          >
+          <main ref={mainContentRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-[12rem] pt-6 lg:px-8 lg:pt-8">
             <div className="space-y-8">
-              {activeTab === 'library' ? (
-                <div className="px-1">
-                  <h1 className="deezer-display text-[2.4rem] leading-none text-[#111116]">Library</h1>
-                </div>
-              ) : activeTab === 'playlists' && !selectedPlaylist ? (
-                <div className="flex flex-wrap items-end justify-between gap-4 px-1">
-                  <h1 className="deezer-display text-[2.4rem] leading-none text-[#111116]">Playlists</h1>
-                  <ActionPill
-                    label="New playlist"
-                    icon={<Plus size={15} />}
-                    onClick={() => void handleCreatePlaylist('app')}
-                    accent
-                  />
-                </div>
-              ) : activeTab === 'playlists' && selectedPlaylist ? (
-                <div className="px-1">
-                  <h1 className="deezer-display text-[2.4rem] leading-none text-[#111116]">{selectedPlaylistName}</h1>
-                </div>
-              ) : null}
+              <WorkspaceHero
+                artworkUrl={heroArtwork}
+                artworkLabel={heroTrack ? `${heroTrack.artist} - ${heroTrack.title}` : undefined}
+                eyebrow={hero.eyebrow}
+                title={hero.title}
+                meta={hero.meta}
+                description={hero.description}
+                actions={hero.actions}
+              />
 
               {errorMessage ? (
                 <div className="rounded-[22px] border border-[#f4c6cc] bg-[#fff4f6] px-5 py-4 text-sm text-[#8d3140]">
@@ -406,22 +679,35 @@ export default function WorkspaceShell() {
                 </div>
               ) : null}
 
+              {activeTab === 'home' ? (
+                <HomeView
+                  recentTracks={recentTracks}
+                  onPlayTrack={(track, list) => playTracks(list, 'library', list.indexOf(track))}
+                  onImport={() => void handleQuickImport()}
+                  onOpenLibrary={() => setActiveTab('library')}
+                />
+              ) : null}
+
               {activeTab === 'library' ? (
                 <section className="space-y-5">
-                  <div className={`${panelClass} px-5 py-4 sm:px-6`}>
-                    <div className="flex flex-wrap items-center gap-6">
-                      <div className="flex gap-6">
-                        <UnderlinedSwitch active={libraryFilter === 'all'} onClick={() => setLibraryFilter('all')}>
-                          All
-                        </UnderlinedSwitch>
-                        <UnderlinedSwitch active={libraryFilter === 'local'} onClick={() => setLibraryFilter('local')}>
-                          Local
-                        </UnderlinedSwitch>
-                        <UnderlinedSwitch active={libraryFilter === 'tidal'} onClick={() => setLibraryFilter('tidal')}>
-                          TIDAL
-                        </UnderlinedSwitch>
-                      </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex flex-wrap gap-2">
+                      {LIBRARY_FILTERS.map((filter) => (
+                        <FilterPill
+                          key={filter.value}
+                          active={libraryFilter === filter.value}
+                          onClick={() => {
+                            setLibraryFilter(filter.value)
+                            setSelectedArtist(null)
+                            if (filter.value !== 'playlists') selectPlaylist(undefined)
+                          }}
+                        >
+                          {filter.label}
+                        </FilterPill>
+                      ))}
+                    </div>
 
+                    {libraryFilter === 'all' || libraryFilter === 'tidal' || libraryFilter === 'local' ? (
                       <label className="ml-auto inline-flex items-center gap-2 rounded-full border border-black/8 bg-[#f8f8f9] px-3 py-2 text-sm text-[#686973]">
                         <SlidersHorizontal size={14} />
                         <select
@@ -434,29 +720,63 @@ export default function WorkspaceShell() {
                           <option value="artist">Artist</option>
                         </select>
                       </label>
-                    </div>
+                    ) : null}
                   </div>
 
-                  {query.trim() ? (
-                    localSearchResults.length > 0 ? (
-                      <SurfacePanel title="Search results" meta={`${localSearchResults.length} matches`}>
+                  {libraryFilter === 'playlists' ? (
+                    selectedPlaylist ? (
+                      <PlaylistDetailView
+                        selectedPlaylist={selectedPlaylist}
+                        appPlaylists={appPlaylists}
+                        tidalPlaylists={tidalPlaylists}
+                        appPlaylistTracks={appPlaylistTracks}
+                        tidalDetail={selectedTidalDetail}
+                        onBack={() => selectPlaylist(undefined)}
+                        onPlayAppPlaylist={(playlistId, playlistTracks) => handlePlaylistPlayback('app', playlistId, playlistTracks)}
+                        onPlayTidalPlaylist={(playlistId, playlistTracks) => handlePlaylistPlayback('tidal', playlistId, playlistTracks)}
+                        onRenameAppPlaylist={(playlistId, currentName, currentDescription) => void renamePlaylist(playlistId, currentName, currentDescription, renameAppPlaylist)}
+                        onDeleteAppPlaylist={async (playlistId) => {
+                          if (!window.confirm('Delete this playlist?')) return
+                          await deleteAppPlaylist(playlistId)
+                          selectPlaylist(undefined)
+                        }}
+                        onMoveItem={(playlistId, fromIndex, toIndex) => void moveAppPlaylistItem(playlistId, fromIndex, toIndex)}
+                        onRemoveItem={(playlist, item, index) => void removeTrackFromPlaylist(playlist, item, index)}
+                      />
+                    ) : playlistsLoading && appPlaylists.length === 0 && tidalPlaylists.length === 0 ? (
+                      <EmptyPanel
+                        title="Loading playlists..."
+                        description="Fetching app playlists and any connected TIDAL collections."
+                      />
+                    ) : (
+                      <PlaylistCollectionsView
+                        appPlaylists={appPlaylists}
+                        tidalPlaylists={tidalPlaylists}
+                        onOpen={(kind, id) => selectPlaylist({ kind, id })}
+                      />
+                    )
+                  ) : libraryFilter === 'artists' ? (
+                    selectedArtist ? (
+                      <SurfacePanel title={selectedArtist} meta={`${selectedArtistTracks.length} tracks`}>
                         <div className="divide-y divide-black/6">
-                          {localSearchResults.map((track, index) => (
+                          {selectedArtistTracks.map((track, index) => (
                             <TrackRow
                               key={track.id}
                               track={track}
-                              tracks={localSearchResults}
-                              playContext="search-local"
+                              tracks={selectedArtistTracks}
+                              playContext="library"
                               index={index}
                             />
                           ))}
                         </div>
                       </SurfacePanel>
-                    ) : (
+                    ) : artistGroups.length === 0 ? (
                       <EmptyPanel
-                        title="No matches"
-                        description="Try a different search term."
+                        title="No artists yet"
+                        description="Import tracks or connect TIDAL to group your library by artist."
                       />
+                    ) : (
+                      <ArtistsGrid groups={artistGroups} onSelect={setSelectedArtist} />
                     )
                   ) : libraryLoading && sortedTracks.length === 0 ? (
                     <EmptyPanel
@@ -466,7 +786,7 @@ export default function WorkspaceShell() {
                   ) : sortedTracks.length === 0 ? (
                     <EmptyPanel
                       title="Your library is empty"
-                      description="Import local files or connect TIDAL in Settings to rebuild the classic library view."
+                      description="Import local files or connect TIDAL in Settings to fill the library."
                       action={{
                         label: 'Import music',
                         icon: <FolderOpen size={15} />,
@@ -494,68 +814,34 @@ export default function WorkspaceShell() {
                   )}
                 </section>
               ) : null}
-
-              {activeTab === 'playlists' ? (
-                <section className="space-y-5">
-                  {selectedPlaylist ? (
-                    <PlaylistDetailView
-                      selectedPlaylist={selectedPlaylist}
-                      appPlaylists={appPlaylists}
-                      tidalPlaylists={tidalPlaylists}
-                      appPlaylistTracks={appPlaylistTracks}
-                      tidalDetail={selectedTidalDetail}
-                      onBack={() => selectPlaylist(undefined)}
-                      onPlayAppPlaylist={(playlistId, playlistTracks) => handlePlaylistPlayback('app', playlistId, playlistTracks)}
-                      onPlayTidalPlaylist={(playlistId, playlistTracks) => handlePlaylistPlayback('tidal', playlistId, playlistTracks)}
-                      onRenameAppPlaylist={(playlistId, currentName, currentDescription) => void renamePlaylist(playlistId, currentName, currentDescription, renameAppPlaylist)}
-                      onDeleteAppPlaylist={async (playlistId) => {
-                        if (!window.confirm('Delete this playlist?')) return
-                        await deleteAppPlaylist(playlistId)
-                        selectPlaylist(undefined)
-                      }}
-                      onMoveItem={(playlistId, fromIndex, toIndex) => void moveAppPlaylistItem(playlistId, fromIndex, toIndex)}
-                      onRemoveItem={(playlist, item, index) => void removeTrackFromPlaylist(playlist, item, index)}
-                    />
-                  ) : playlistsLoading && appPlaylists.length === 0 && tidalPlaylists.length === 0 ? (
-                    <EmptyPanel
-                      title="Loading playlists..."
-                      description="Fetching app playlists and any connected TIDAL collections."
-                    />
-                  ) : (
-                    <PlaylistCollectionsView
-                      appPlaylists={appPlaylists}
-                      tidalPlaylists={tidalPlaylists}
-                      onOpen={(kind, id) => selectPlaylist({ kind, id })}
-                    />
-                  )}
-                </section>
-              ) : null}
-
             </div>
           </main>
         </div>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 flex border-t border-black/8 bg-[#fbfbfc]/95 backdrop-blur-md lg:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-        <button
-          type="button"
-          onClick={() => { setActiveTab('library'); selectPlaylist(undefined) }}
-          className={`flex flex-1 flex-col items-center gap-1 py-3 transition-colors ${activeTab === 'library' ? 'text-accent' : 'text-[#8b8c95]'}`}
-        >
-          <Library size={22} />
-          <span className="text-[10px] font-medium uppercase tracking-wide">Library</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('playlists')}
-          className={`flex flex-1 flex-col items-center gap-1 py-3 transition-colors ${activeTab === 'playlists' ? 'text-accent' : 'text-[#8b8c95]'}`}
-        >
-          <ListMusic size={22} />
-          <span className="text-[10px] font-medium uppercase tracking-wide">Playlists</span>
-        </button>
-      </nav>
-
       <WorkspacePlayer />
+
+      <BottomSheet
+        open={showSearch}
+        title="Search"
+        description="Local results appear instantly, TIDAL matches on demand."
+        onClose={closeSearch}
+        maxHeightClassName="max-h-[90vh]"
+      >
+        <SearchPanel
+          query={query}
+          setQuery={(value) => {
+            setQuery(value)
+            setTidalSearched(false)
+          }}
+          localResults={localSearchResults}
+          tidalResults={tidalResults}
+          tidalConnected={tidalConnected}
+          tidalLoading={tidalLoading}
+          tidalSearched={tidalSearched}
+          onTidalSearch={() => void handleTidalSearch()}
+        />
+      </BottomSheet>
 
       <BottomSheet
         open={showImport}
@@ -691,7 +977,23 @@ function TopbarActionButton({
   )
 }
 
-function UnderlinedSwitch({
+function MobileNavButton({
+  label,
+  active,
+  onClick,
+}: {
+  label: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button type="button" className="deezer-tab-link text-sm font-medium" data-active={active} onClick={onClick}>
+      {label}
+    </button>
+  )
+}
+
+function FilterPill({
   active,
   onClick,
   children,
@@ -701,13 +1003,72 @@ function UnderlinedSwitch({
   children: ReactNode
 }) {
   return (
-    <button type="button" className="deezer-tab-link text-sm font-medium" data-active={active} onClick={onClick}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+        active
+          ? 'border-transparent bg-[#ef5466] text-white hover:bg-[#e0364a]'
+          : 'border-black/8 bg-white text-[#555661] hover:border-black/16 hover:text-[#111116]'
+      }`}
+    >
       {children}
     </button>
   )
 }
 
-function ActionPill({ label, icon, onClick, accent = false, disabled = false }: { label: string; icon: ReactNode; onClick: () => void; accent?: boolean; disabled?: boolean }) {
+function WorkspaceHero({
+  artworkUrl,
+  artworkLabel,
+  eyebrow,
+  title,
+  meta,
+  description,
+  actions,
+}: {
+  artworkUrl?: string
+  artworkLabel?: string
+  eyebrow: string
+  title: string
+  meta: string
+  description: string
+  actions: HeroAction[]
+}) {
+  return (
+    <section className={`${panelClass} overflow-hidden`}>
+      <div className="grid gap-8 px-6 py-6 sm:px-8 sm:py-8 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-center">
+        <div className="mx-auto flex h-[180px] w-[180px] items-center justify-center overflow-hidden rounded-[40px] bg-[#111116] text-white lg:h-[220px] lg:w-[220px]">
+          {artworkUrl ? (
+            <img src={artworkUrl} alt={artworkLabel || ''} className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,#32323d,#121216)]">
+              <Disc3 size={56} className="text-white/80" />
+            </div>
+          )}
+        </div>
+
+        <div className="min-w-0">
+          <p className="mb-3 text-[11px] uppercase tracking-[0.26em] text-[#8b8c95]">{eyebrow}</p>
+          <h1 className="deezer-display text-[2.9rem] leading-[0.95] text-[#111116] sm:text-[4rem]">
+            {title}
+          </h1>
+          <p className="mt-3 text-sm font-medium text-[#686973]">{meta}</p>
+          <p className="mt-4 max-w-2xl text-sm leading-6 text-[#686973]">{description}</p>
+
+          {actions.length > 0 ? (
+            <div className="mt-6 flex flex-wrap gap-3">
+              {actions.map((action) => (
+                <ActionPill key={action.label} {...action} />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function ActionPill({ label, icon, onClick, accent = false, disabled = false }: HeroAction) {
   return (
     <button
       type="button"
@@ -769,6 +1130,241 @@ function EmptyPanel({
   )
 }
 
+function HomeView({
+  recentTracks,
+  onPlayTrack,
+  onImport,
+  onOpenLibrary,
+}: {
+  recentTracks: Track[]
+  onPlayTrack: (track: Track, list: Track[]) => void
+  onImport: () => void
+  onOpenLibrary: () => void
+}) {
+  return (
+    <div className="space-y-8">
+      <section className={`${panelClass} px-5 py-5 sm:px-6`}>
+        <div className="flex items-end justify-between pb-4">
+          <div>
+            <h2 className="deezer-display text-[1.7rem] leading-none text-[#111116]">Recently played</h2>
+            <p className="mt-1 text-sm text-[#7a7b86]">Jump straight back in</p>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenLibrary}
+            className="text-sm font-medium text-[#ef5466] hover:text-[#e0364a]"
+          >
+            Open library
+          </button>
+        </div>
+
+        {recentTracks.length === 0 ? (
+          <div className={`${mutedPanelClass} px-4 py-6 text-center text-sm text-[#686973]`}>
+            <p>No plays yet. Import music or search TIDAL to start filling this space.</p>
+            <div className="mt-4 flex justify-center">
+              <ActionPill label="Import music" icon={<FolderOpen size={15} />} onClick={onImport} accent />
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+            {recentTracks.map((track) => (
+              <SpeedDialTile key={track.id} track={track} onClick={() => onPlayTrack(track, recentTracks)} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className={`${panelClass} px-5 py-5 sm:px-6`}>
+        <div className="pb-4">
+          <h2 className="deezer-display text-[1.7rem] leading-none text-[#111116]">Suggested for you</h2>
+          <p className="mt-1 text-sm text-[#7a7b86]">AI-picked tracks, playlists, and mixes will appear here.</p>
+        </div>
+
+        <div className={`${mutedPanelClass} flex min-h-[180px] flex-col items-center justify-center gap-3 px-4 py-10 text-center text-sm text-[#686973]`}>
+          <Sparkles size={22} className="text-[#ef5466]" />
+          <p className="max-w-md">
+            Sauti will learn your taste and suggest things to play next. This space is reserved for those picks.
+          </p>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function SpeedDialTile({ track, onClick }: { track: Track; onClick: () => void }) {
+  const artworkUrl = useTrackArtworkUrl(track)
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex flex-col gap-2 rounded-2xl p-2 text-left transition-colors hover:bg-[#fafafb]"
+    >
+      <div className="aspect-square w-full overflow-hidden rounded-2xl bg-[#111116]">
+        {artworkUrl ? (
+          <img src={artworkUrl} alt="" className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,#32323d,#121216)] text-white/70">
+            <Disc3 size={36} />
+          </div>
+        )}
+      </div>
+      <div className="min-w-0 px-1">
+        <p className="truncate text-sm font-medium text-[#111116]">{track.title}</p>
+        <p className="truncate text-xs text-[#7a7b86]">{track.artist}</p>
+      </div>
+    </button>
+  )
+}
+
+function ArtistsGrid({
+  groups,
+  onSelect,
+}: {
+  groups: { artist: string; tracks: Track[] }[]
+  onSelect: (artist: string) => void
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+      {groups.map((group) => (
+        <ArtistTile key={group.artist} group={group} onClick={() => onSelect(group.artist)} />
+      ))}
+    </div>
+  )
+}
+
+function ArtistTile({
+  group,
+  onClick,
+}: {
+  group: { artist: string; tracks: Track[] }
+  onClick: () => void
+}) {
+  const artworkTrack = group.tracks[0]
+  const artworkUrl = useTrackArtworkUrl(artworkTrack ?? EMPTY_ARTWORK)
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex flex-col gap-2 rounded-2xl p-2 text-left transition-colors hover:bg-[#fafafb]"
+    >
+      <div className="aspect-square w-full overflow-hidden rounded-full bg-[#111116]">
+        {artworkUrl ? (
+          <img src={artworkUrl} alt="" className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,#32323d,#121216)] text-white/70">
+            <Disc3 size={32} />
+          </div>
+        )}
+      </div>
+      <div className="min-w-0 px-1 text-center">
+        <p className="truncate text-sm font-medium text-[#111116]">{group.artist}</p>
+        <p className="truncate text-xs text-[#7a7b86]">{group.tracks.length} tracks</p>
+      </div>
+    </button>
+  )
+}
+
+function SearchPanel({
+  query,
+  setQuery,
+  localResults,
+  tidalResults,
+  tidalConnected,
+  tidalLoading,
+  tidalSearched,
+  onTidalSearch,
+}: {
+  query: string
+  setQuery: (value: string) => void
+  localResults: Track[]
+  tidalResults: Track[]
+  tidalConnected: boolean
+  tidalLoading: boolean
+  tidalSearched: boolean
+  onTidalSearch: () => void
+}) {
+  return (
+    <div className="space-y-5 pb-2">
+      <label className="deezer-search-shell">
+        <Search size={18} className="shrink-0 text-[#8b8c95]" />
+        <input
+          type="text"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') onTidalSearch()
+          }}
+          placeholder="Artists, tracks, playlists..."
+          autoFocus
+        />
+      </label>
+
+      {!query.trim() ? (
+        <div className={`${mutedPanelClass} px-4 py-5 text-sm text-[#686973]`}>
+          Start typing to search your library. Press enter to extend the search to TIDAL.
+        </div>
+      ) : null}
+
+      {query.trim() && localResults.length > 0 ? (
+        <SurfacePanel title="Library results" meta={`${localResults.length} matches`}>
+          <div className="divide-y divide-black/6">
+            {localResults.map((track, index) => (
+              <TrackRow
+                key={track.id}
+                track={track}
+                tracks={localResults}
+                playContext="search-local"
+                index={index}
+              />
+            ))}
+          </div>
+        </SurfacePanel>
+      ) : null}
+
+      {query.trim() && tidalConnected ? (
+        <div className="space-y-3">
+          {!tidalSearched && !tidalLoading ? (
+            <button
+              type="button"
+              onClick={onTidalSearch}
+              className="inline-flex items-center gap-2 rounded-full border border-[#f6c8cf] bg-[#fff4f6] px-4 py-2 text-sm text-[#b03a4d] transition-colors hover:bg-[#ffecef]"
+            >
+              <Radio size={15} />
+              Search TIDAL for "{query}"
+            </button>
+          ) : null}
+
+          {tidalLoading ? (
+            <div className={`${mutedPanelClass} px-4 py-4 text-sm text-[#686973]`}>Searching TIDAL...</div>
+          ) : null}
+
+          {tidalSearched && tidalResults.length > 0 ? (
+            <SurfacePanel title="TIDAL results" meta={`${tidalResults.length} matches`}>
+              <div className="divide-y divide-black/6">
+                {tidalResults.map((track, index) => (
+                  <TrackRow
+                    key={`${track.id}-${index}`}
+                    track={track}
+                    tracks={tidalResults}
+                    playContext="search-tidal"
+                    index={index}
+                  />
+                ))}
+              </div>
+            </SurfacePanel>
+          ) : null}
+        </div>
+      ) : null}
+
+      {query.trim() && !localResults.length && (!tidalSearched || !tidalResults.length) && !tidalLoading ? (
+        <div className={`${mutedPanelClass} px-4 py-5 text-sm text-[#686973]`}>
+          No matches yet. {tidalConnected ? 'Try another term or run the TIDAL search.' : 'Connect TIDAL to widen the catalog.'}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function PlaylistCollectionsView({
   appPlaylists,
   tidalPlaylists,
@@ -778,52 +1374,78 @@ function PlaylistCollectionsView({
   tidalPlaylists: Playlist[]
   onOpen: (kind: 'app' | 'tidal', id: string) => void
 }) {
-  type Row = { kind: 'app' | 'tidal'; id: string; playlist: Playlist }
-  const rows: Row[] = [
-    ...appPlaylists.map((playlist) => ({ kind: 'app' as const, id: playlist.id, playlist })),
-    ...tidalPlaylists
-      .filter((playlist) => !!playlist.providerPlaylistId)
-      .map((playlist) => ({ kind: 'tidal' as const, id: playlist.providerPlaylistId as string, playlist })),
-  ].sort((a, b) => a.playlist.name.localeCompare(b.playlist.name))
-
-  if (rows.length === 0) {
-    return (
-      <div className={`${mutedPanelClass} px-5 py-6 text-sm text-[#686973]`}>
-        No playlists yet. Create one above.
-      </div>
-    )
-  }
-
   return (
-    <section className={panelClass}>
-      <div className="divide-y divide-black/6">
-        {rows.map((row) => (
-          <button
-            key={`${row.kind}:${row.id}`}
-            type="button"
-            onClick={() => onOpen(row.kind, row.id)}
-            className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-[#fafafb] sm:px-6"
-          >
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <p className="truncate text-sm font-medium text-[#111116]">{row.playlist.name}</p>
-                {row.kind === 'tidal' ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-cyan-500/8 px-2 py-0.5 text-[10px] uppercase tracking-wide text-cyan-700">
-                    TIDAL
-                  </span>
-                ) : null}
-              </div>
-              <p className="mt-1 text-xs text-[#7a7b86]">
-                {row.kind === 'app'
-                  ? `${formatPlaylistCount(row.playlist)} items`
-                  : `${row.playlist.trackCount || 0} tracks${row.playlist.writable ? '' : ' • read only'}`}
-              </p>
+    <div className="grid gap-5 xl:grid-cols-2">
+      <section className={panelClass}>
+        <div className="flex items-center justify-between px-5 pb-3 pt-5 sm:px-6">
+          <div>
+            <h2 className="deezer-display text-[1.7rem] leading-none text-[#111116]">App playlists</h2>
+            <p className="mt-1 text-sm text-[#7a7b86]">{appPlaylists.length} editable mixes</p>
+          </div>
+        </div>
+
+        {appPlaylists.length === 0 ? (
+          <div className="px-5 pb-6 sm:px-6">
+            <div className={`${mutedPanelClass} px-4 py-5 text-sm text-[#686973]`}>
+              No app playlists yet. Create one and it will appear here.
             </div>
-            <ChevronRight size={16} className="shrink-0 text-[#a2a3ad]" />
-          </button>
-        ))}
-      </div>
-    </section>
+          </div>
+        ) : (
+          <div className="divide-y divide-black/6">
+            {appPlaylists.map((playlist) => (
+              <button
+                key={playlist.id}
+                type="button"
+                onClick={() => onOpen('app', playlist.id)}
+                className="flex w-full items-center justify-between px-5 py-4 text-left transition-colors hover:bg-[#fafafb] sm:px-6"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-[#111116]">{playlist.name}</p>
+                  <p className="mt-1 text-xs text-[#7a7b86]">{formatPlaylistCount(playlist)} items</p>
+                </div>
+                <ChevronRight size={16} className="shrink-0 text-[#a2a3ad]" />
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className={panelClass}>
+        <div className="flex items-center justify-between px-5 pb-3 pt-5 sm:px-6">
+          <div>
+            <h2 className="deezer-display text-[1.7rem] leading-none text-[#111116]">TIDAL playlists</h2>
+            <p className="mt-1 text-sm text-[#7a7b86]">{tidalPlaylists.length} synced collections</p>
+          </div>
+        </div>
+
+        {tidalPlaylists.length === 0 ? (
+          <div className="px-5 pb-6 sm:px-6">
+            <div className={`${mutedPanelClass} px-4 py-5 text-sm text-[#686973]`}>
+              Connect TIDAL in Settings to browse remote playlists here.
+            </div>
+          </div>
+        ) : (
+          <div className="divide-y divide-black/6">
+            {tidalPlaylists.map((playlist) => (
+              <button
+                key={playlist.id}
+                type="button"
+                onClick={() => playlist.providerPlaylistId && onOpen('tidal', playlist.providerPlaylistId)}
+                className="flex w-full items-center justify-between px-5 py-4 text-left transition-colors hover:bg-[#fafafb] sm:px-6"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-[#111116]">{playlist.name}</p>
+                  <p className="mt-1 text-xs text-[#7a7b86]">
+                    {playlist.trackCount || 0} tracks{playlist.writable ? '' : ' • read only'}
+                  </p>
+                </div>
+                <ChevronRight size={16} className="shrink-0 text-[#a2a3ad]" />
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
   )
 }
 
@@ -952,7 +1574,6 @@ function PlaylistDetailView({
                     tracks={tracks}
                     playContext="app-playlist"
                     index={index}
-                    showIndex
                     extraActions={extraActions}
                   />
                 )
@@ -970,7 +1591,6 @@ function PlaylistDetailView({
                 tracks={tidalDetail.tracks}
                 playContext="tidal-playlist"
                 index={index}
-                showIndex
               />
             ))}
           </div>

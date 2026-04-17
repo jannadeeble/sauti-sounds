@@ -600,61 +600,19 @@ export default function WorkspaceShell() {
 
                 <div className="flex items-center gap-2">
                   <TopbarActionButton label="Import" icon={<FolderOpen size={16} />} onClick={() => setShowImport(true)} />
+                  <TopbarActionButton label="Search" icon={<Search size={16} />} onClick={openSearch} />
                   <NotificationBell />
                   <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
                   <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
                 </div>
               </div>
 
-              <div className="mt-4 lg:hidden">
-                <label className="deezer-search-shell">
-                  <Search size={18} className="shrink-0 text-[#8b8c95]" />
-                  <input
-                    type="text"
-                    value={query}
-                    onChange={(event) => {
-                      setQuery(event.target.value)
-                      setTidalSearched(false)
-                    }}
-                    onFocus={openSearch}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        openSearch()
-                        void handleTidalSearch()
-                      }
-                    }}
-                    placeholder="Artists, tracks, playlists..."
-                  />
-                </label>
-              </div>
-
-              <div className="hidden items-center gap-3 lg:flex">
-                <label className="deezer-search-shell">
-                  <Search size={18} className="shrink-0 text-[#8b8c95]" />
-                  <input
-                    type="text"
-                    value={query}
-                    onChange={(event) => {
-                      setQuery(event.target.value)
-                      setTidalSearched(false)
-                    }}
-                    onFocus={openSearch}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        openSearch()
-                        void handleTidalSearch()
-                      }
-                    }}
-                    placeholder="Artists, tracks, playlists..."
-                  />
-                </label>
-
-                <div className="flex items-center gap-2">
-                  <TopbarActionButton label="Import" icon={<FolderOpen size={16} />} onClick={() => setShowImport(true)} />
-                  <NotificationBell />
-                  <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
-                  <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
-                </div>
+              <div className="hidden items-center justify-end gap-2 lg:flex">
+                <TopbarActionButton label="Import" icon={<FolderOpen size={16} />} onClick={() => setShowImport(true)} />
+                <TopbarActionButton label="Search" icon={<Search size={16} />} onClick={openSearch} />
+                <NotificationBell />
+                <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
+                <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
               </div>
             </div>
 

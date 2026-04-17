@@ -3,8 +3,7 @@ import { db } from '../db'
 import { getStorageStatus, uploadToR2 } from '../lib/r2Storage'
 import { addTidalFavoriteTrack, getTidalFavoriteTracks, removeTidalFavoriteTrack } from '../lib/tidal'
 import { parseFile, parseFileBlob } from '../lib/metadata'
-import type { Playlist, PlaylistFolder, Track } from '../types'
-import { useNotificationStore } from './notificationStore'
+import type { Playlist, Track } from '../types'
 import { useTidalStore } from './tidalStore'
 
 interface ImportProgress {
@@ -23,7 +22,7 @@ interface LibraryState {
   loadTracks: () => Promise<void>
   importFiles: () => Promise<Track[]>
   importFilesViaInput: (files: FileList) => Promise<Track[]>
-  importFolder: (handle: FileSystemDirectoryHandle, basePath?: string) => Promise<{ tracks: Track[]; playlists: Playlist[]; folders: PlaylistFolder[] }>
+  importFolder: (handle: FileSystemDirectoryHandle, basePath?: string) => Promise<{ tracks: Track[]; playlists: Playlist[] }>
   addTrack: (track: Track) => Promise<void>
   cacheTidalTracks: (tracks: Track[]) => Promise<void>
   syncTidalFavorites: () => Promise<void>
@@ -187,220 +186,144 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   importFolder: async (handle, basePath = '') => {
     const audioExtensions = ['.mp3', '.flac', '.wav', '.aac', '.ogg', '.m4a']
 
-    type ScannedNode = {
-      name: string
-      path: string
-      handle: FileSystemDirectoryHandle
-      audioFiles: { file: File; name: string }[]
-      children: ScannedNode[]
-    }
-
-    async function scanDirectory(
-      dirHandle: FileSystemDirectoryHandle,
-      name: string,
-      path: string
-    ): Promise<ScannedNode | null> {
-      const audioFiles: { file: File; name: string }[] = []
-      const children: ScannedNode[] = []
-
+    async function hasAudioFiles(dirHandle: FileSystemDirectoryHandle): Promise<boolean> {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const entries = (dirHandle as any).entries()
       for await (const entry of entries) {
-        const entryName = entry[0] as string
-        const item = entry[1]
-
-        if (item.kind === 'directory') {
+        if (entry[1].kind === 'directory') {
           try {
-            const subDir = await dirHandle.getDirectoryHandle(entryName)
-            const child = await scanDirectory(subDir, entryName, `${path}/${entryName}`)
-            if (child) children.push(child)
+            const subDir = await dirHandle.getDirectoryHandle(entry[0])
+            if (await hasAudioFiles(subDir)) return true
           } catch {
-            // Skip unreadable subdirectories
+            // Skip
           }
-        } else if (item.kind === 'file') {
-          const ext = entryName.toLowerCase().slice(entryName.lastIndexOf('.'))
-          if (audioExtensions.includes(ext)) {
+        } else if (entry[1].kind === 'file') {
+          const name = entry[0] as string
+          const ext = name.toLowerCase().slice(name.lastIndexOf('.'))
+          if (audioExtensions.includes(ext)) return true
+        }
+      }
+      return false
+    }
+
+    async function collectTracksAndPlaylists(
+      dirHandle: FileSystemDirectoryHandle
+    ): Promise<{ tracks: Track[]; folderPlaylistMap: Map<string, Playlist> }> {
+      const tracks: Track[] = []
+      const folderPlaylistMap = new Map<string, Playlist>()
+
+      async function processFolder(
+        folderHandle: FileSystemDirectoryHandle,
+        currentPath: string
+      ): Promise<void> {
+        const audioFiles: { file: File; name: string }[] = []
+        const subfolders: { handle: FileSystemDirectoryHandle; name: string }[] = []
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const entries = (folderHandle as any).entries()
+        for await (const entry of entries) {
+          const name = entry[0] as string
+          const item = entry[1]
+
+          if (item.kind === 'directory') {
             try {
-              const file = await item.getFile()
-              audioFiles.push({ file, name: entryName })
+              const subDir = await folderHandle.getDirectoryHandle(name)
+              if (await hasAudioFiles(subDir)) {
+                subfolders.push({ handle: subDir, name })
+              }
             } catch {
-              // Skip unreadable files
+              // Skip
+            }
+          } else if (item.kind === 'file') {
+            const ext = name.toLowerCase().slice(name.lastIndexOf('.'))
+            if (audioExtensions.includes(ext)) {
+              try {
+                const file = await item.getFile()
+                audioFiles.push({ file, name })
+              } catch {
+                // Skip
+              }
+            }
+          }
+        }
+
+        for (const { handle: subDir, name: subName } of subfolders) {
+          await processFolder(subDir, `${currentPath}/${subName}`)
+        }
+
+        if (audioFiles.length > 0) {
+          const now = Date.now()
+          const folderName = currentPath.split('/').pop() || 'Unknown'
+          const playlist: Playlist = {
+            id: `folder-${now}-${Math.random().toString(36).slice(2, 8)}`,
+            name: folderName,
+            description: `Folder: ${currentPath}`,
+            items: [],
+            createdAt: now,
+            updatedAt: now,
+            kind: 'app',
+            writable: true,
+            trackCount: 0,
+          }
+          folderPlaylistMap.set(currentPath, playlist)
+
+          for (const { file } of audioFiles) {
+            try {
+              const track = await parseFileBlob(file)
+              track.folderPath = currentPath
+              const r2Updates = await uploadTrackToR2(track)
+              const importedTrack: Track = {
+                ...track,
+                ...(r2Updates || {}),
+                addedAt: now,
+              }
+              tracks.push(importedTrack)
+              playlist.items.push({ source: 'local', trackId: importedTrack.id })
+              playlist.trackCount = playlist.items.length
+            } catch (err) {
+              console.error(`Failed to import ${file.name}:`, err)
             }
           }
         }
       }
 
-      if (audioFiles.length === 0 && children.length === 0) return null
-      return { name, path, handle: dirHandle, audioFiles, children }
-    }
-
-    type PlannedPlaylist = {
-      playlist: Playlist
-      files: { file: File; name: string }[]
-      sourcePath: string
-    }
-
-    const folders: PlaylistFolder[] = []
-    const plannedPlaylists: PlannedPlaylist[] = []
-    const looseTracksFolderNames: string[] = []
-
-    function makeId(prefix: string) {
-      return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    }
-
-    function planNode(node: ScannedNode, parentFolderId: string | undefined, now: number) {
-      const hasAudio = node.audioFiles.length > 0
-      const hasChildren = node.children.length > 0
-
-      if (hasAudio && !hasChildren) {
-        // Leaf with audio → single playlist (no folder needed unless we have a parent)
-        plannedPlaylists.push({
-          playlist: {
-            id: makeId('pl'),
-            name: node.name,
-            description: `Folder: ${node.path}`,
-            items: [],
-            createdAt: now,
-            updatedAt: now,
-            kind: 'app',
-            writable: true,
-            trackCount: 0,
-            folderId: parentFolderId,
-          },
-          files: node.audioFiles,
-          sourcePath: node.path,
-        })
-        return
-      }
-
-      if (!hasAudio && hasChildren) {
-        // Branch → folder, recurse
-        const folder: PlaylistFolder = {
-          id: makeId('plfld'),
-          name: node.name,
-          parentId: parentFolderId,
-          createdAt: now,
-          updatedAt: now,
-        }
-        folders.push(folder)
-        for (const child of node.children) planNode(child, folder.id, now)
-        return
-      }
-
-      if (hasAudio && hasChildren) {
-        // Mixed → folder + sibling "(loose tracks)" playlist for the direct audio files
-        const folder: PlaylistFolder = {
-          id: makeId('plfld'),
-          name: node.name,
-          parentId: parentFolderId,
-          createdAt: now,
-          updatedAt: now,
-        }
-        folders.push(folder)
-        const loosePlaylistName = `${node.name} (loose tracks)`
-        plannedPlaylists.push({
-          playlist: {
-            id: makeId('pl'),
-            name: loosePlaylistName,
-            description: `Loose tracks from folder: ${node.path}`,
-            items: [],
-            createdAt: now,
-            updatedAt: now,
-            kind: 'app',
-            writable: true,
-            trackCount: 0,
-            folderId: folder.id,
-          },
-          files: node.audioFiles,
-          sourcePath: node.path,
-        })
-        looseTracksFolderNames.push(node.path)
-        for (const child of node.children) planNode(child, folder.id, now)
-      }
+      await processFolder(dirHandle, basePath || handle.name)
+      return { tracks, folderPlaylistMap }
     }
 
     try {
-      const rootName = basePath || handle.name
-      const root = await scanDirectory(handle, rootName, rootName)
-      if (!root) {
-        return { tracks: [], playlists: [], folders: [] }
+      if (!(await hasAudioFiles(handle))) {
+        return { tracks: [], playlists: [] }
       }
 
-      const now = Date.now()
-      planNode(root, undefined, now)
+      const { tracks, folderPlaylistMap } = await collectTracksAndPlaylists(handle)
+      const totalFiles = tracks.length
 
-      const totalFiles = plannedPlaylists.reduce((sum, p) => sum + p.files.length, 0)
       if (totalFiles === 0) {
-        return { tracks: [], playlists: [], folders: [] }
+        return { tracks: [], playlists: [] }
       }
 
       set({ importing: true, importProgress: { current: 0, total: totalFiles, currentFile: '' } })
 
-      const importedTracks: Track[] = []
-      let processed = 0
-
-      for (const planned of plannedPlaylists) {
-        for (const { file } of planned.files) {
-          processed += 1
-          set({
-            importProgress: {
-              current: processed,
-              total: totalFiles,
-              currentFile: file.name,
-            },
-          })
-          try {
-            const parsed = await parseFileBlob(file)
-            parsed.folderPath = planned.sourcePath
-            const r2Updates = await uploadTrackToR2(parsed)
-            const importedTrack: Track = {
-              ...parsed,
-              ...(r2Updates || {}),
-              addedAt: now,
-            }
-            await db.tracks.put(importedTrack)
-            importedTracks.push(importedTrack)
-            planned.playlist.items.push({ source: 'local', trackId: importedTrack.id })
-            planned.playlist.trackCount = planned.playlist.items.length
-          } catch (err) {
-            console.error(`Failed to import ${file.name}:`, err)
+      for (let i = 0; i < tracks.length; i++) {
+        set({
+          importProgress: {
+            current: i + 1,
+            total: totalFiles,
+            currentFile: tracks[i].title || 'Unknown',
           }
-        }
+        })
+
+        await db.tracks.put(tracks[i])
       }
 
-      const playlists = plannedPlaylists
-        .map(p => p.playlist)
-        .filter(p => p.items.length > 0)
-
-      if (folders.length > 0) {
-        await db.playlistFolders.bulkPut(folders)
-      }
+      const playlists = Array.from(folderPlaylistMap.values())
       if (playlists.length > 0) {
         await db.playlists.bulkPut(playlists)
       }
 
       await get().loadTracks()
-
-      if (importedTracks.length > 0) {
-        const looseCount = looseTracksFolderNames.length
-        const folderCount = folders.length
-        const parts: string[] = [
-          `${importedTracks.length} track${importedTracks.length === 1 ? '' : 's'} imported`,
-          `${playlists.length} playlist${playlists.length === 1 ? '' : 's'}`,
-        ]
-        if (folderCount > 0) parts.push(`${folderCount} folder${folderCount === 1 ? '' : 's'}`)
-        const title = `Imported "${rootName}"`
-        const body = looseCount > 0
-          ? `${parts.join(', ')}. Loose tracks in ${looseCount} folder${looseCount === 1 ? '' : 's'} were placed in sibling "(loose tracks)" playlists: ${looseTracksFolderNames.join(', ')}.`
-          : parts.join(', ') + '.'
-        void useNotificationStore.getState().push({
-          kind: looseCount > 0 ? 'warning' : 'success',
-          title,
-          body,
-        })
-      }
-
-      return { tracks: importedTracks, playlists, folders }
+      return { tracks, playlists }
     } finally {
       set({ importing: false, importProgress: null })
     }

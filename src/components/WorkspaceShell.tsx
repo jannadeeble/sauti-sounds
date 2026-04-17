@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Bell,
   Bot,
   ChevronRight,
   Disc3,
@@ -16,12 +17,16 @@ import {
 } from 'lucide-react'
 import AIChatPanel from './AIChatPanel'
 import BottomSheet from './BottomSheet'
+import HomeFeed from './HomeFeed'
 import ImportPanel, { type ImportDoneResult } from './ImportPanel'
+import NotificationCenter from './NotificationCenter'
+import PlaylistFooterSuggestions from './PlaylistFooterSuggestions'
 import SettingsPanel from './SettingsPanel'
 import TrackRow, { type TrackAction } from './TrackRow'
 import WorkspacePlayer from './WorkspacePlayer'
 import { useTrackArtworkUrl } from '../lib/artwork'
 import { useLibraryStore } from '../stores/libraryStore'
+import { useNotificationStore } from '../stores/notificationStore'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
 import { usePlaylistStore } from '../stores/playlistStore'
 import { searchTidal } from '../lib/tidal'
@@ -53,6 +58,10 @@ export default function WorkspaceShell() {
   const [showImport, setShowImport] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showAI, setShowAI] = useState(false)
+  const [showNotifications, setShowNotifications] = useState(false)
+  const unreadNotifications = useNotificationStore((state) =>
+    state.notifications.filter((n) => !n.read).length,
+  )
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('all')
   const [librarySort, setLibrarySort] = useState<LibrarySort>('recent')
   const [query, setQuery] = useState('')
@@ -511,6 +520,12 @@ export default function WorkspaceShell() {
 
                 <div className="flex items-center gap-2">
                   <TopbarActionButton label="Import" icon={<FolderOpen size={16} />} onClick={() => setShowImport(true)} />
+                  <TopbarActionButton
+                    label={unreadNotifications > 0 ? `Notifications (${unreadNotifications})` : 'Notifications'}
+                    icon={<Bell size={16} />}
+                    onClick={() => setShowNotifications(true)}
+                    badge={unreadNotifications > 0}
+                  />
                   <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
                   <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
                 </div>
@@ -553,6 +568,12 @@ export default function WorkspaceShell() {
 
                 <div className="flex items-center gap-2">
                   <TopbarActionButton label="Import" icon={<FolderOpen size={16} />} onClick={() => setShowImport(true)} />
+                  <TopbarActionButton
+                    label={unreadNotifications > 0 ? `Notifications (${unreadNotifications})` : 'Notifications'}
+                    icon={<Bell size={16} />}
+                    onClick={() => setShowNotifications(true)}
+                    badge={unreadNotifications > 0}
+                  />
                   <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
                   <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
                 </div>
@@ -616,6 +637,8 @@ export default function WorkspaceShell() {
 
               {activeTab === 'library' ? (
                 <section className="space-y-5">
+                  <HomeFeed />
+
                   <div className={`${panelClass} px-5 py-4`}>
                     <div className="flex flex-wrap items-center gap-6">
                       <div className="flex gap-6">
@@ -826,6 +849,8 @@ export default function WorkspaceShell() {
       >
         <AIChatPanel />
       </BottomSheet>
+
+      <NotificationCenter open={showNotifications} onClose={() => setShowNotifications(false)} />
     </div>
   )
 }
@@ -909,11 +934,13 @@ function TopbarActionButton({
   icon,
   onClick,
   accent = false,
+  badge = false,
 }: {
   label: string
   icon: ReactNode
   onClick: () => void
   accent?: boolean
+  badge?: boolean
 }) {
   return (
     <button
@@ -921,13 +948,16 @@ function TopbarActionButton({
       aria-label={label}
       title={label}
       onClick={onClick}
-      className={`inline-flex h-10 w-10 items-center justify-center rounded-full border transition-colors sm:h-11 sm:w-11 ${
+      className={`relative inline-flex h-10 w-10 items-center justify-center rounded-full border transition-colors sm:h-11 sm:w-11 ${
         accent
           ? 'border-transparent bg-[#ef5466] text-white hover:bg-[#e0364a]'
           : 'border-black/8 bg-white text-[#111116] hover:border-black/12 hover:bg-[#f8f8f9]'
       }`}
     >
       {icon}
+      {badge ? (
+        <span className="absolute -right-0.5 -top-0.5 inline-block h-2.5 w-2.5 rounded-full bg-[#ef5466] ring-2 ring-white" />
+      ) : null}
     </button>
   )
 }
@@ -1315,6 +1345,15 @@ function PlaylistDetailView({
           description="Waiting for the synced playlist details to arrive from the backend."
         />
       )}
+
+      {tracks.length > 0 ? (
+        <PlaylistFooterSuggestions
+          playlistId={playlist.id}
+          playlistName={playlist.name}
+          playlistTracks={tracks}
+          appendable={selectedPlaylist.kind === 'app'}
+        />
+      ) : null}
     </div>
   )
 }

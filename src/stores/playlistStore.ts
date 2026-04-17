@@ -27,6 +27,7 @@ interface PlaylistState {
   renameAppPlaylist: (id: string, name: string, description?: string) => Promise<void>
   deleteAppPlaylist: (id: string) => Promise<void>
   addTrackToPlaylist: (playlist: Playlist, track: Track) => Promise<void>
+  appendItemsToPlaylist: (playlistId: string, tracks: Track[]) => Promise<void>
   removeTrackFromPlaylist: (playlist: Playlist, item: PlaylistItem, index?: number) => Promise<void>
   moveAppPlaylistItem: (playlistId: string, fromIndex: number, toIndex: number) => Promise<void>
   createProviderPlaylist: (name: string, description?: string) => Promise<Playlist>
@@ -143,6 +144,43 @@ export const usePlaylistStore = create<PlaylistState>((set, get) => ({
       trackCount: nextItems.length,
     })
     await useLibraryStore.getState().addTrack(track)
+    await get().loadPlaylists()
+  },
+
+  appendItemsToPlaylist: async (playlistId, tracks) => {
+    if (tracks.length === 0) return
+    const playlist = await db.playlists.get(playlistId)
+    if (!playlist) return
+
+    if (playlist.kind === 'tidal' && playlist.providerPlaylistId) {
+      const tidalTrackIds = tracks
+        .filter((track) => track.source === 'tidal' && track.providerTrackId)
+        .map((track) => track.providerTrackId as string)
+      if (tidalTrackIds.length === 0) return
+      const detail = await addTracksToTidalPlaylist(playlist.providerPlaylistId, tidalTrackIds)
+      await useLibraryStore.getState().cacheTidalTracks(detail.tracks)
+      set(state => ({
+        tidalPlaylistDetails: {
+          ...state.tidalPlaylistDetails,
+          [playlist.providerPlaylistId!]: { playlist: detail, tracks: detail.tracks },
+        },
+      }))
+      await get().loadPlaylists()
+      return
+    }
+
+    const tidalTracks = tracks.filter((t) => t.source === 'tidal')
+    if (tidalTracks.length > 0) {
+      await useLibraryStore.getState().cacheTidalTracks(tidalTracks)
+    }
+
+    const items = [...playlist.items, ...tracks.map(trackToPlaylistItem)]
+    await db.playlists.put({
+      ...playlist,
+      items,
+      updatedAt: Date.now(),
+      trackCount: items.length,
+    })
     await get().loadPlaylists()
   },
 

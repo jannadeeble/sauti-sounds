@@ -10,6 +10,10 @@ interface LLMConfig {
 
 let config: LLMConfig | null = null
 
+export const DEEP_THINKING_MODEL = 'claude-sonnet-4-5'
+export const FAST_MODEL = 'claude-haiku-4-5-20251001'
+const DEFAULT_THINKING_BUDGET = 6000
+
 export function configureLLM(provider: LLMProvider, apiKey: string, model?: string) {
   config = { provider, apiKey, model }
 }
@@ -27,27 +31,50 @@ interface ChatMessage {
   content: string
 }
 
-async function callLLM(messages: ChatMessage[], maxTokens = 2048): Promise<string> {
+interface CallOptions {
+  maxTokens?: number
+  thinking?: boolean
+  thinkingBudget?: number
+  modelOverride?: string
+}
+
+async function callLLM(messages: ChatMessage[], options: CallOptions = {}): Promise<string> {
   if (!config) throw new Error('LLM not configured')
 
   switch (config.provider) {
     case 'claude':
-      return callClaude(messages, maxTokens)
+      return callClaude(messages, options)
     case 'openai':
-      return callOpenAI(messages, maxTokens)
+      return callOpenAI(messages, options.maxTokens ?? 2048)
     case 'gemini':
-      return callGemini(messages, maxTokens)
+      return callGemini(messages, options.maxTokens ?? 2048)
     default:
       throw new Error(`Unknown provider: ${config.provider}`)
   }
 }
 
-async function callClaude(messages: ChatMessage[], maxTokens: number): Promise<string> {
+async function callClaude(messages: ChatMessage[], options: CallOptions): Promise<string> {
+  const { maxTokens = 2048, thinking = false, thinkingBudget = DEFAULT_THINKING_BUDGET, modelOverride } = options
   const systemMsg = messages.find(m => m.role === 'system')?.content || ''
   const userMessages = messages.filter(m => m.role !== 'system').map(m => ({
     role: m.role,
     content: m.content,
   }))
+
+  const model = modelOverride || config!.model || 'claude-sonnet-4-20250514'
+  const body: Record<string, unknown> = {
+    model,
+    max_tokens: maxTokens,
+    system: systemMsg,
+    messages: userMessages,
+  }
+
+  if (thinking) {
+    body.thinking = { type: 'enabled', budget_tokens: thinkingBudget }
+    if ((body.max_tokens as number) <= thinkingBudget) {
+      body.max_tokens = thinkingBudget + 1024
+    }
+  }
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -57,12 +84,7 @@ async function callClaude(messages: ChatMessage[], maxTokens: number): Promise<s
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true',
     },
-    body: JSON.stringify({
-      model: config!.model || 'claude-sonnet-4-20250514',
-      max_tokens: maxTokens,
-      system: systemMsg,
-      messages: userMessages,
-    }),
+    body: JSON.stringify(body),
   })
 
   if (!res.ok) {
@@ -71,7 +93,9 @@ async function callClaude(messages: ChatMessage[], maxTokens: number): Promise<s
   }
 
   const data = await res.json()
-  return data.content[0].text
+  if (!Array.isArray(data.content)) return ''
+  const textBlock = data.content.find((b: { type: string }) => b.type === 'text')
+  return textBlock?.text ?? ''
 }
 
 async function callOpenAI(messages: ChatMessage[], maxTokens: number): Promise<string> {
@@ -368,3 +392,287 @@ When recommending tracks, format them clearly. When asked to create playlists, r
     { role: 'user', content: userMessage },
   ])
 }
+
+// ── Atomized Suggestion Generators ──
+
+function parseJsonArray<T>(raw: string): T[] {
+  const cleaned = raw.replace(/```json?\n?|\n?```/g, '').trim()
+  const firstBracket = cleaned.indexOf('[')
+  const lastBracket = cleaned.lastIndexOf(']')
+  const sliced = firstBracket >= 0 && lastBracket > firstBracket
+    ? cleaned.slice(firstBracket, lastBracket + 1)
+    : cleaned
+  try {
+    const parsed = JSON.parse(sliced)
+    return Array.isArray(parsed) ? (parsed as T[]) : []
+  } catch {
+    return []
+  }
+}
+
+export interface TrackCandidate {
+  title: string
+  artist: string
+  reason: string
+}
+
+export interface SeedTrackSummary {
+  title: string
+  artist: string
+  genre?: string
+  bpm?: number
+  energy?: number
+  mood?: string
+  tags?: string[]
+}
+
+export interface LibrarySummaryEntry {
+  title: string
+  artist: string
+  source: 'local' | 'tidal'
+  genre?: string
+  playCount?: number
+  lastPlayedAt?: number
+}
+
+function formatSeed(seed: SeedTrackSummary) {
+  const extras: string[] = []
+  if (seed.genre) extras.push(`genre: ${seed.genre}`)
+  if (seed.bpm) extras.push(`~${seed.bpm} BPM`)
+  if (typeof seed.energy === 'number') extras.push(`energy ${seed.energy.toFixed(2)}`)
+  if (seed.mood) extras.push(`mood: ${seed.mood}`)
+  if (seed.tags?.length) extras.push(`tags: ${seed.tags.join(', ')}`)
+  return `"${seed.title}" by ${seed.artist}${extras.length ? ` [${extras.join(' · ')}]` : ''}`
+}
+
+function formatLibrarySample(entries: LibrarySummaryEntry[], limit = 120) {
+  return entries
+    .slice(0, limit)
+    .map((entry) => `"${entry.title}" by ${entry.artist}${entry.genre ? ` [${entry.genre}]` : ''}`)
+    .join('\n')
+}
+
+export interface SetlistSeedsInput {
+  seed: SeedTrackSummary
+  librarySample: LibrarySummaryEntry[]
+  tasteProfile?: TasteProfile
+  recentPlays?: LibrarySummaryEntry[]
+  count?: number
+}
+
+export async function generateSetlistSeeds(input: SetlistSeedsInput): Promise<TrackCandidate[]> {
+  const count = input.count ?? 15
+
+  const system = `You are a DJ-grade music curator helping a DJ build a 15-track setlist from a single seed track.
+
+Your only job is to output ${count} tracks that flow naturally from the seed, as a JSON array.
+Do NOT order by energy — the app will re-order using BPM/energy metadata.
+Do NOT restate the seed track. Do NOT include tracks the user already owns (list is provided).
+Each track must be a real, published recording that would exist on Tidal.
+
+Output strictly a JSON array of objects: [{"title": "...", "artist": "...", "reason": "..."}]
+"reason" must be one short sentence explaining the musical connection.
+No markdown. No commentary outside the JSON.`
+
+  const tasteBlock = input.tasteProfile
+    ? `\n\nUser taste profile:\n- Identity: ${input.tasteProfile.coreIdentity}\n- Primary genres: ${input.tasteProfile.primaryGenres.join(', ')}\n- Cultural influences: ${input.tasteProfile.culturalMarkers.join(', ')}\n- Avoids: ${input.tasteProfile.antiPreferences.join(', ')}`
+    : ''
+
+  const recentBlock = input.recentPlays?.length
+    ? `\n\nRecently played (signal, not to repeat):\n${formatLibrarySample(input.recentPlays, 15)}`
+    : ''
+
+  const user = `Seed track: ${formatSeed(input.seed)}${tasteBlock}${recentBlock}
+
+User library (exclude these from your picks):
+${formatLibrarySample(input.librarySample, 150)}
+
+Return exactly ${count} track picks.`
+
+  const response = await callLLM(
+    [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+    { thinking: true, thinkingBudget: DEFAULT_THINKING_BUDGET, maxTokens: 4096, modelOverride: DEEP_THINKING_MODEL },
+  )
+
+  return parseJsonArray<TrackCandidate>(response).slice(0, count)
+}
+
+export interface PlaylistFooterInput {
+  playlistName: string
+  tracks: SeedTrackSummary[]
+  librarySample: LibrarySummaryEntry[]
+  tasteProfile?: TasteProfile
+  count?: number
+}
+
+export async function generatePlaylistFooterSuggestions(input: PlaylistFooterInput): Promise<TrackCandidate[]> {
+  const count = input.count ?? 8
+
+  const avgBpm = average(input.tracks.map((t) => t.bpm).filter((v): v is number => typeof v === 'number'))
+  const avgEnergy = average(input.tracks.map((t) => t.energy).filter((v): v is number => typeof v === 'number'))
+  const moodSet = new Set(input.tracks.map((t) => t.mood).filter(Boolean) as string[])
+  const genreSet = new Set(input.tracks.map((t) => t.genre).filter(Boolean) as string[])
+
+  const system = `You are a music curator extending a specific playlist.
+
+Output exactly ${count} new tracks that match the playlist's character but are not already in the user's library.
+Prioritize the playlist's dominant genre, mood, and energy band.
+Output strictly a JSON array: [{"title": "...", "artist": "...", "reason": "..."}]
+"reason" must be one short sentence anchored to the playlist's vibe. No markdown, no prose outside the JSON.`
+
+  const summary = [
+    avgBpm ? `average BPM ~${Math.round(avgBpm)}` : null,
+    avgEnergy ? `average energy ${avgEnergy.toFixed(2)}` : null,
+    moodSet.size ? `moods: ${[...moodSet].join(', ')}` : null,
+    genreSet.size ? `genres: ${[...genreSet].join(', ')}` : null,
+  ].filter(Boolean).join(' · ')
+
+  const tasteBlock = input.tasteProfile
+    ? `\n\nUser taste:\n- Identity: ${input.tasteProfile.coreIdentity}\n- Cultural influences: ${input.tasteProfile.culturalMarkers.join(', ')}`
+    : ''
+
+  const user = `Playlist: "${input.playlistName}"
+Summary: ${summary || '(sparse metadata — infer from titles)'}
+
+Tracks in the playlist:
+${input.tracks.slice(0, 40).map((t) => `- ${formatSeed(t)}`).join('\n')}
+${tasteBlock}
+
+User library (exclude):
+${formatLibrarySample(input.librarySample, 120)}
+
+Return exactly ${count} picks.`
+
+  const response = await callLLM(
+    [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+    { thinking: true, thinkingBudget: DEFAULT_THINKING_BUDGET, maxTokens: 3072, modelOverride: DEEP_THINKING_MODEL },
+  )
+
+  return parseJsonArray<TrackCandidate>(response).slice(0, count)
+}
+
+export interface SimilarArtistInput {
+  seedArtist: string
+  librarySample: LibrarySummaryEntry[]
+  tasteProfile?: TasteProfile
+  count?: number
+}
+
+export interface SimilarArtistResult {
+  artist: string
+  characterization: string
+  picks: TrackCandidate[]
+}
+
+export async function generateSimilarArtist(input: SimilarArtistInput): Promise<SimilarArtistResult | null> {
+  const count = input.count ?? 5
+  const system = `You recommend one artist similar to a given artist, with a characterization and ${count} signature picks.
+
+Output strictly a JSON object:
+{"artist": "...", "characterization": "one sentence on what links them and what's distinctive", "picks": [{"title": "...", "artist": "...", "reason": "..."}, ...]}
+No markdown, no prose outside the JSON.`
+
+  const tasteBlock = input.tasteProfile
+    ? `\n\nUser cultural influences: ${input.tasteProfile.culturalMarkers.join(', ')}`
+    : ''
+
+  const user = `Seed artist: ${input.seedArtist}${tasteBlock}
+
+Artists already in user's library (avoid suggesting these):
+${[...new Set(input.librarySample.map((e) => e.artist))].slice(0, 60).join(', ')}
+
+Suggest one similar artist with ${count} picks.`
+
+  const response = await callLLM(
+    [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+    { thinking: true, thinkingBudget: 3500, maxTokens: 2048, modelOverride: DEEP_THINKING_MODEL },
+  )
+
+  try {
+    const cleaned = response.replace(/```json?\n?|\n?```/g, '').trim()
+    const first = cleaned.indexOf('{')
+    const last = cleaned.lastIndexOf('}')
+    const sliced = first >= 0 && last > first ? cleaned.slice(first, last + 1) : cleaned
+    const parsed = JSON.parse(sliced)
+    if (parsed && typeof parsed.artist === 'string') {
+      return {
+        artist: parsed.artist,
+        characterization: parsed.characterization ?? '',
+        picks: Array.isArray(parsed.picks) ? parsed.picks.slice(0, count) : [],
+      }
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+export interface AdjudicatorInput {
+  target: { title: string; artist: string }
+  candidates: Array<{ title: string; artist: string; album?: string }>
+}
+
+export async function pickBestTidalMatch(input: AdjudicatorInput): Promise<{ index: number; reason: string } | null> {
+  if (input.candidates.length === 0) return null
+  if (input.candidates.length === 1) return { index: 0, reason: 'single candidate' }
+
+  const system = `You pick which Tidal search result matches a target track. Respond with ONLY JSON: {"index": N, "reason": "..."} or {"index": -1, "reason": "..."} if none match.
+
+Prefer original studio versions over live/karaoke/instrumental/cover unless the target explicitly asks for one. Index is zero-based.`
+
+  const user = `Target: "${input.target.title}" by ${input.target.artist}
+
+Candidates:
+${input.candidates.map((c, i) => `${i}. "${c.title}" by ${c.artist}${c.album ? ` (album: ${c.album})` : ''}`).join('\n')}`
+
+  const response = await callLLM(
+    [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+    { maxTokens: 256, modelOverride: FAST_MODEL },
+  )
+
+  try {
+    const cleaned = response.replace(/```json?\n?|\n?```/g, '').trim()
+    const first = cleaned.indexOf('{')
+    const last = cleaned.lastIndexOf('}')
+    const sliced = first >= 0 && last > first ? cleaned.slice(first, last + 1) : cleaned
+    const parsed = JSON.parse(sliced)
+    if (typeof parsed.index === 'number') {
+      if (parsed.index < 0 || parsed.index >= input.candidates.length) return null
+      return { index: parsed.index, reason: String(parsed.reason ?? '') }
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+function average(values: number[]): number | null {
+  if (!values.length) return null
+  return values.reduce((sum, v) => sum + v, 0) / values.length
+}
+
+// ── Library Summary Helper ──
+
+export function toLibrarySummary(track: Track, playCount?: number, lastPlayedAt?: number): LibrarySummaryEntry {
+  return {
+    title: track.title,
+    artist: track.artist,
+    source: track.source,
+    genre: track.genre,
+    playCount,
+    lastPlayedAt,
+  }
+}
+

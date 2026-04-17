@@ -25,6 +25,7 @@ import SettingsPanel from './SettingsPanel'
 import TrackRow, { type TrackAction } from './TrackRow'
 import WorkspacePlayer from './WorkspacePlayer'
 import { useTrackArtworkUrl } from '../lib/artwork'
+import { useHistoryStore } from '../stores/historyStore'
 import { useLibraryStore } from '../stores/libraryStore'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
 import { usePlaylistStore } from '../stores/playlistStore'
@@ -111,10 +112,14 @@ export default function WorkspaceShell() {
   const currentTrack = usePlaybackSessionStore((state) => state.currentTrack)
   const isPlaying = usePlaybackSessionStore((state) => state.isPlaying)
 
+  const loadHistory = useHistoryStore((state) => state.loadHistory)
+  const historyEntries = useHistoryStore((state) => state.entries)
+
   useEffect(() => {
     void loadTracks()
     void loadPlaylists()
-  }, [loadPlaylists, loadTracks])
+    void loadHistory()
+  }, [loadPlaylists, loadTracks, loadHistory])
 
   useEffect(() => {
     if (selectedPlaylist?.kind === 'tidal' && !tidalPlaylistDetails[selectedPlaylist.id]) {
@@ -213,10 +218,36 @@ export default function WorkspaceShell() {
   }, [tracks, selectedArtist])
 
   const recentTracks = useMemo(() => {
+    if (historyEntries.length > 0) {
+      const seen = new Set<string>()
+      const result: Track[] = []
+      for (const entry of historyEntries) {
+        if (seen.has(entry.trackId)) continue
+        seen.add(entry.trackId)
+        const libraryMatch = tracks.find((track) => track.id === entry.trackId)
+        if (libraryMatch) {
+          result.push(libraryMatch)
+        } else {
+          result.push({
+            id: entry.trackId,
+            title: entry.title,
+            artist: entry.artist,
+            album: entry.album ?? '',
+            duration: entry.duration,
+            source: entry.source,
+            providerTrackId: entry.providerTrackId,
+            artworkUrl: entry.artworkUrl,
+          })
+        }
+        if (result.length >= 8) break
+      }
+      return result
+    }
+
     return [...tracks]
       .sort((left, right) => (right.addedAt || 0) - (left.addedAt || 0))
       .slice(0, 8)
-  }, [tracks])
+  }, [historyEntries, tracks])
 
   const localTrackCount = tracks.filter((track) => track.source === 'local').length
   const tidalTrackCount = tracks.length - localTrackCount

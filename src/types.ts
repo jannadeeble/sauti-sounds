@@ -78,3 +78,16 @@ export interface AppNotification {
 
 export type RepeatMode = 'off' | 'all' | 'one'
 export type ViewMode = 'list' | 'grid'
+
+export interface HistoryEntry {
+  id: string
+  trackId: string
+  playedAt: number
+  source: TrackSource
+  title: string
+  artist: string
+  album?: string
+  duration: number
+  providerTrackId?: string
+  artworkUrl?: string
+}

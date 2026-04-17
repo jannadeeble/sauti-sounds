@@ -1,8 +1,9 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import AudioPlayer, { type InterfacePlacement, useAudioPlayer } from 'react-modern-audio-player'
 import { ChevronDown, ChevronUp, ListMusic, Radio } from 'lucide-react'
 import { useTrackArtworkUrl } from '../lib/artwork'
 import { useResolvedPlayerTracks } from '../lib/playerTracks'
+import { useHistoryStore } from '../stores/historyStore'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
 import type { Track } from '../types'
 
@@ -20,6 +21,8 @@ function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
   const playerOpen = usePlaybackSessionStore((state) => state.playerOpen)
   const setPlayerOpen = usePlaybackSessionStore((state) => state.setPlayerOpen)
   const syncPlayerState = usePlaybackSessionStore((state) => state.syncPlayerState)
+  const recordPlay = useHistoryStore((state) => state.recordPlay)
+  const lastRecordedTrackId = useRef<string | null>(null)
 
   const currentTrack = tracks[currentIndex] ?? null
   const artworkUrl = useTrackArtworkUrl(currentTrack ?? {})
@@ -33,6 +36,13 @@ function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
       duration,
     })
   }, [currentIndex, currentTime, currentTrack, duration, isPlaying, syncPlayerState])
+
+  useEffect(() => {
+    if (!currentTrack || !isPlaying) return
+    if (lastRecordedTrackId.current === currentTrack.id) return
+    lastRecordedTrackId.current = currentTrack.id
+    void recordPlay(currentTrack)
+  }, [currentTrack, isPlaying, recordPlay])
 
   useEffect(() => {
     if (!('mediaSession' in navigator)) return

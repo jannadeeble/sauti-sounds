@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Heart, ListPlus, MoreVertical, Play, Radio } from 'lucide-react'
+import { HardDrive, Heart, ListPlus, MoreVertical, Radio } from 'lucide-react'
 import AddToPlaylistDialog from './AddToPlaylistDialog'
 import { useTrackArtworkUrl } from '../lib/artwork'
 import { formatTime } from '../lib/metadata'
@@ -20,7 +20,6 @@ interface TrackRowProps {
   tracks?: Track[]
   playContext: PlaybackContext
   index?: number
-  showIndex?: boolean
   highlighted?: boolean
   extraActions?: TrackAction[]
 }
@@ -30,7 +29,6 @@ export default function TrackRow({
   tracks,
   playContext,
   index = 0,
-  showIndex = false,
   highlighted = false,
   extraActions = [],
 }: TrackRowProps) {
@@ -86,14 +84,6 @@ export default function TrackRow({
           onClick={handlePlay}
           className="flex min-w-0 flex-1 items-center gap-3 text-left"
         >
-          <div className="flex h-8 w-8 items-center justify-center text-sm text-[#a1a2ac]">
-            {showIndex && !isActive ? (
-              <span>{index + 1}</span>
-            ) : (
-              <Play size={15} className={isActive ? 'text-accent' : 'text-[#7a7b86]'} fill="currentColor" />
-            )}
-          </div>
-
           <div className="h-10 w-10 overflow-hidden rounded-xl bg-[#f1f1f4]">
             {artworkUrl ? (
               <img src={artworkUrl} alt="" className="h-full w-full object-cover" />
@@ -112,7 +102,12 @@ export default function TrackRow({
                   <Radio size={10} />
                   TIDAL
                 </span>
-              ) : null}
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full bg-[#f3f3f6] px-2 py-0.5 text-[10px] uppercase tracking-wide text-[#686973]">
+                  <HardDrive size={10} />
+                  Local
+                </span>
+              )}
               {track.isFavorite ? <Heart size={12} className="fill-red-400 text-red-400" /> : null}
             </div>
             <p className="truncate text-xs text-[#7a7b86]">

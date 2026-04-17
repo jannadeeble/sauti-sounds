@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { HardDrive, Heart, ListPlus, MoreVertical, Radio } from 'lucide-react'
+import { HardDrive, Heart, ListPlus, MoreVertical, Plus, Radio } from 'lucide-react'
 import AddToPlaylistDialog from './AddToPlaylistDialog'
 import { useTrackArtworkUrl } from '../lib/artwork'
 import { formatTime } from '../lib/metadata'
@@ -22,6 +22,7 @@ interface TrackRowProps {
   index?: number
   highlighted?: boolean
   extraActions?: TrackAction[]
+  onAddToLibrary?: (track: Track) => void
 }
 
 export default function TrackRow({
@@ -31,6 +32,7 @@ export default function TrackRow({
   index = 0,
   highlighted = false,
   extraActions = [],
+  onAddToLibrary,
 }: TrackRowProps) {
   const playTracks = usePlaybackSessionStore((state) => state.playTracks)
   const appendTrack = usePlaybackSessionStore((state) => state.appendTrack)
@@ -119,6 +121,16 @@ export default function TrackRow({
 
         <div className="flex items-center gap-2">
           <span className="text-xs text-[#8c8d96]">{formatTime(track.duration)}</span>
+          {onAddToLibrary ? (
+            <button
+              type="button"
+              onClick={() => onAddToLibrary(track)}
+              className="rounded-full border border-black/8 bg-white p-2 text-[#555661] transition-colors hover:border-black/16 hover:text-[#111116]"
+              aria-label={`Add ${track.title} to library`}
+            >
+              <Plus size={16} />
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => setShowActions(true)}

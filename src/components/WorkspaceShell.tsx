@@ -14,6 +14,7 @@ import {
   Settings,
   SlidersHorizontal,
   Sparkles,
+  Upload,
 } from 'lucide-react'
 import AIChatPanel from './AIChatPanel'
 import BottomSheet from './BottomSheet'
@@ -139,6 +140,8 @@ export default function WorkspaceShell() {
     return true
   }
 
+  const libraryTrackIds = useMemo(() => new Set(tracks.map((track) => track.id)), [tracks])
+
   const sortedTracks = useMemo(() => {
     const filtered = tracks.filter(trackFilter)
     const next = [...filtered]
@@ -228,7 +231,6 @@ export default function WorkspaceShell() {
     try {
       const results = await searchTidal(query)
       setTidalResults(results.tracks)
-      await cacheTidalTracks(results.tracks)
     } catch (error) {
       console.error('TIDAL search failed:', error)
       setTidalResults([])
@@ -591,20 +593,20 @@ export default function WorkspaceShell() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <TopbarActionButton label="Import" icon={<FolderOpen size={16} />} onClick={() => setShowImport(true)} />
+                  <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
+                  <TopbarActionButton label="Upload" icon={<Upload size={16} />} onClick={() => setShowImport(true)} />
                   <TopbarActionButton label="Search" icon={<Search size={16} />} onClick={openSearch} />
                   <NotificationBell />
                   <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
-                  <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
                 </div>
               </div>
 
               <div className="hidden items-center justify-end gap-2 lg:flex">
-                <TopbarActionButton label="Import" icon={<FolderOpen size={16} />} onClick={() => setShowImport(true)} />
+                <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
+                <TopbarActionButton label="Upload" icon={<Upload size={16} />} onClick={() => setShowImport(true)} />
                 <TopbarActionButton label="Search" icon={<Search size={16} />} onClick={openSearch} />
                 <NotificationBell />
                 <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
-                <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
               </div>
             </div>
 
@@ -837,6 +839,8 @@ export default function WorkspaceShell() {
           tidalLoading={tidalLoading}
           tidalSearched={tidalSearched}
           onTidalSearch={() => void handleTidalSearch()}
+          libraryTrackIds={libraryTrackIds}
+          onAddTidalTrack={(track) => void cacheTidalTracks([track])}
         />
       </BottomSheet>
 
@@ -1228,6 +1232,8 @@ function SearchPanel({
   tidalLoading,
   tidalSearched,
   onTidalSearch,
+  libraryTrackIds,
+  onAddTidalTrack,
 }: {
   query: string
   setQuery: (value: string) => void
@@ -1237,6 +1243,8 @@ function SearchPanel({
   tidalLoading: boolean
   tidalSearched: boolean
   onTidalSearch: () => void
+  libraryTrackIds: Set<string>
+  onAddTidalTrack: (track: Track) => void
 }) {
   return (
     <div className="space-y-5 pb-2">
@@ -1296,15 +1304,19 @@ function SearchPanel({
           {tidalSearched && tidalResults.length > 0 ? (
             <SurfacePanel title="TIDAL results" meta={`${tidalResults.length} matches`}>
               <div className="divide-y divide-black/6">
-                {tidalResults.map((track, index) => (
-                  <TrackRow
-                    key={`${track.id}-${index}`}
-                    track={track}
-                    tracks={tidalResults}
-                    playContext="search-tidal"
-                    index={index}
-                  />
-                ))}
+                {tidalResults.map((track, index) => {
+                  const inLibrary = libraryTrackIds.has(track.id)
+                  return (
+                    <TrackRow
+                      key={`${track.id}-${index}`}
+                      track={track}
+                      tracks={tidalResults}
+                      playContext="search-tidal"
+                      index={index}
+                      onAddToLibrary={inLibrary ? undefined : onAddTidalTrack}
+                    />
+                  )
+                })}
               </div>
             </SurfacePanel>
           ) : null}

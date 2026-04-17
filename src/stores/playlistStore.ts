@@ -7,7 +7,7 @@ import {
   getTidalPlaylists,
   removeTrackFromTidalPlaylist,
 } from '../lib/tidal'
-import type { Playlist, PlaylistItem, Track } from '../types'
+import type { Playlist, PlaylistFolder, PlaylistItem, Track } from '../types'
 import { useLibraryStore } from './libraryStore'
 import { useTidalStore } from './tidalStore'
 
@@ -18,6 +18,7 @@ interface PlaylistDetail {
 
 interface PlaylistState {
   appPlaylists: Playlist[]
+  appPlaylistFolders: PlaylistFolder[]
   tidalPlaylists: Playlist[]
   tidalPlaylistDetails: Record<string, PlaylistDetail>
   loading: boolean
@@ -44,6 +45,7 @@ async function readAppPlaylists(): Promise<Playlist[]> {
 
 export const usePlaylistStore = create<PlaylistState>((set, get) => ({
   appPlaylists: [],
+  appPlaylistFolders: [],
   tidalPlaylists: [],
   tidalPlaylistDetails: {},
   loading: false,
@@ -51,11 +53,15 @@ export const usePlaylistStore = create<PlaylistState>((set, get) => ({
   loadPlaylists: async () => {
     set({ loading: true })
     try {
-      const appPlaylists = (await readAppPlaylists()).reverse()
+      const [appPlaylistsRaw, appPlaylistFolders] = await Promise.all([
+        readAppPlaylists(),
+        db.playlistFolders.orderBy('name').toArray(),
+      ])
+      const appPlaylists = appPlaylistsRaw.reverse()
       const tidalPlaylists = useTidalStore.getState().tidalConnected
         ? await getTidalPlaylists()
         : []
-      set({ appPlaylists, tidalPlaylists, loading: false })
+      set({ appPlaylists, appPlaylistFolders, tidalPlaylists, loading: false })
     } catch (err) {
       console.error('Failed to load playlists:', err)
       set({ loading: false })

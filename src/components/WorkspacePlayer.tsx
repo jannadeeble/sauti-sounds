@@ -2,11 +2,9 @@ import { useEffect, useMemo } from 'react'
 import AudioPlayer, { type InterfacePlacement, useAudioPlayer } from 'react-modern-audio-player'
 import { ChevronDown, ChevronUp, HardDrive, ListMusic, Radio } from 'lucide-react'
 import { useTrackArtworkUrl } from '../lib/artwork'
-import { flushListenSession, handleListenTick } from '../lib/listenTracking'
 import { useResolvedPlayerTracks } from '../lib/playerTracks'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
 import type { Track } from '../types'
-import type { ListenContext } from '../db'
 
 function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
   const {
@@ -26,8 +24,6 @@ function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
 
   const currentTrack = tracks[currentIndex] ?? null
   const artworkUrl = useTrackArtworkUrl(currentTrack ?? {})
-  const playbackContext = usePlaybackSessionStore((state) => state.context)
-  const suggestionId = usePlaybackSessionStore((state) => state.suggestionId)
 
   useEffect(() => {
     syncPlayerState({
@@ -37,19 +33,7 @@ function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
       currentTime,
       duration,
     })
-    handleListenTick({
-      track: currentTrack,
-      isPlaying,
-      currentTime,
-      duration,
-      context: playbackContext as ListenContext,
-      suggestionId,
-    })
-  }, [currentIndex, currentTime, currentTrack, duration, isPlaying, playbackContext, suggestionId, syncPlayerState])
-
-  useEffect(() => {
-    return () => flushListenSession('unmount')
-  }, [])
+  }, [currentIndex, currentTime, currentTrack, duration, isPlaying, syncPlayerState])
 
   useEffect(() => {
     if (!('mediaSession' in navigator)) return

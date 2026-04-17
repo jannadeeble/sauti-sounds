@@ -7,9 +7,6 @@ export type PlaybackContext =
   | 'search-tidal'
   | 'app-playlist'
   | 'tidal-playlist'
-  | 'suggestion-setlist'
-  | 'suggestion-playlist-footer'
-  | 'suggestion-home'
 
 export interface SelectedPlaylist {
   kind: 'app' | 'tidal'
@@ -31,9 +28,8 @@ interface PlaybackSessionState extends SyncedPlayerState {
   sessionId: number
   playerOpen: boolean
   selectedPlaylist?: SelectedPlaylist
-  suggestionId?: string
   errorMessage: string | null
-  playTracks: (tracks: Track[], context: PlaybackContext, startIndex?: number, suggestionId?: string) => void
+  playTracks: (tracks: Track[], context: PlaybackContext, startIndex?: number) => void
   playPlaylist: (kind: 'app' | 'tidal', id: string, tracks: Track[], startIndex?: number) => void
   appendTrack: (track: Track) => void
   selectPlaylist: (playlist?: SelectedPlaylist) => void
@@ -61,12 +57,11 @@ export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
   selectedPlaylist: undefined,
   errorMessage: null,
 
-  playTracks: (tracks, context, startIndex = 0, suggestionId) => {
+  playTracks: (tracks, context, startIndex = 0) => {
     set((state) => ({
       context,
       tracks,
       startIndex,
-      suggestionId,
       sessionId: state.sessionId + 1,
       playerOpen: true,
       errorMessage: null,
@@ -80,7 +75,6 @@ export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
       context: kind === 'app' ? 'app-playlist' : 'tidal-playlist',
       tracks,
       startIndex,
-      suggestionId: undefined,
       sessionId: state.sessionId + 1,
       playerOpen: true,
       errorMessage: null,

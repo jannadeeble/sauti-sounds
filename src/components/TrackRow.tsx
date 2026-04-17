@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { HardDrive, Heart, ListPlus, MoreVertical, Play, Radio, Sparkles } from 'lucide-react'
+import { HardDrive, Heart, ListPlus, MoreVertical, Play, Radio } from 'lucide-react'
 import AddToPlaylistDialog from './AddToPlaylistDialog'
-import SetlistDialog from './SetlistDialog'
 import { useTrackArtworkUrl } from '../lib/artwork'
 import { formatTime } from '../lib/metadata'
 import { useLibraryStore } from '../stores/libraryStore'
@@ -44,7 +43,6 @@ export default function TrackRow({
 
   const [showActions, setShowActions] = useState(false)
   const [showPlaylistDialog, setShowPlaylistDialog] = useState(false)
-  const [setlistSeed, setSetlistSeed] = useState<Track | null>(null)
 
   const isActive = currentTrack?.id === track.id
   const artworkUrl = useTrackArtworkUrl(track)
@@ -54,10 +52,6 @@ export default function TrackRow({
       label: 'Add to current queue',
       onClick: () => appendTrack(track),
       disabled: queuedTracks.length === 0,
-    },
-    {
-      label: 'Build 15-track setlist (AI)',
-      onClick: () => setSetlistSeed(track),
     },
     {
       label: 'Add to playlist',
@@ -186,7 +180,6 @@ export default function TrackRow({
                   }`}
                 >
                   {action.label === 'Add to current queue' ? <ListPlus size={15} className="text-accent" /> : null}
-                  {action.label.includes('setlist') ? <Sparkles size={15} className="text-[#b03a4d]" /> : null}
                   <span>{action.label}</span>
                 </button>
               ))}
@@ -200,8 +193,6 @@ export default function TrackRow({
         track={track}
         onClose={() => setShowPlaylistDialog(false)}
       />
-
-      <SetlistDialog seed={setlistSeed} onClose={() => setSetlistSeed(null)} />
     </>
   )
 }

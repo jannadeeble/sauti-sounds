@@ -1,16 +1,17 @@
 import { useEffect } from 'react'
 import { Plus, Radio, Shapes } from 'lucide-react'
-import type { Track } from '../types'
+import type { Playlist, Track } from '../types'
 import { usePlaylistStore } from '../stores/playlistStore'
 import { useTidalStore } from '../stores/tidalStore'
 
 interface Props {
   open: boolean
-  track: Track
+  track?: Track
+  tracks?: Track[]
   onClose: () => void
 }
 
-export default function AddToPlaylistDialog({ open, track, onClose }: Props) {
+export default function AddToPlaylistDialog({ open, track, tracks, onClose }: Props) {
   const {
     appPlaylists,
     tidalPlaylists,
@@ -29,11 +30,22 @@ export default function AddToPlaylistDialog({ open, track, onClose }: Props) {
 
   if (!open) return null
 
+  const batch = tracks && tracks.length > 0 ? tracks : (track ? [track] : [])
+  if (batch.length === 0) return null
+  const isBatch = batch.length > 1
+  const hasTidalTrack = batch.some((item) => item.source === 'tidal')
+
+  async function addAll(playlist: Playlist) {
+    for (const item of batch) {
+      await addTrackToPlaylist(playlist, item)
+    }
+  }
+
   async function handleAdd(playlistId: string, kind: 'app' | 'tidal') {
     const playlist = [...appPlaylists, ...tidalPlaylists].find(p => p.id === playlistId && p.kind === kind)
     if (!playlist) return
     try {
-      await addTrackToPlaylist(playlist, track)
+      await addAll(playlist)
       onClose()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to add track to playlist'
@@ -45,7 +57,7 @@ export default function AddToPlaylistDialog({ open, track, onClose }: Props) {
     const name = window.prompt('Name your new playlist')
     if (!name?.trim()) return
     const playlist = await createAppPlaylist(name.trim())
-    await addTrackToPlaylist(playlist, track)
+    await addAll(playlist)
     onClose()
   }
 
@@ -53,7 +65,7 @@ export default function AddToPlaylistDialog({ open, track, onClose }: Props) {
     const name = window.prompt('Name your new TIDAL playlist')
     if (!name?.trim()) return
     const playlist = await createProviderPlaylist(name.trim())
-    await addTrackToPlaylist(playlist, track)
+    await addAll(playlist)
     onClose()
   }
 
@@ -68,7 +80,9 @@ export default function AddToPlaylistDialog({ open, track, onClose }: Props) {
         <div className="mb-4 flex items-center justify-between">
           <div>
             <p className="deezer-display text-[1.5rem] leading-none text-[#111116]">Add to playlist</p>
-            <p className="mt-1 truncate text-xs text-[#7a7b86]">{track.title} · {track.artist}</p>
+            <p className="mt-1 truncate text-xs text-[#7a7b86]">
+              {isBatch ? `${batch.length} tracks selected` : `${batch[0].title} · ${batch[0].artist}`}
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -119,7 +133,7 @@ export default function AddToPlaylistDialog({ open, track, onClose }: Props) {
             <section>
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-xs uppercase tracking-[0.24em] text-[#8b8c95]">TIDAL playlists</p>
-                {track.source === 'tidal' && (
+                {!isBatch && hasTidalTrack && (
                   <button
                     onClick={() => void handleCreateTidalPlaylist()}
                     className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent-dark"
@@ -132,13 +146,14 @@ export default function AddToPlaylistDialog({ open, track, onClose }: Props) {
               <div className="space-y-2">
                 {tidalPlaylists.length === 0 ? (
                   <div className="rounded-2xl border border-black/8 bg-[#f8f8f9] px-3 py-3 text-sm text-[#686973]">
-                    {track.source === 'tidal'
+                    {hasTidalTrack && !isBatch
                       ? 'Create a TIDAL playlist to save this track.'
                       : 'No TIDAL playlists yet.'}
                   </div>
                 ) : (
                   tidalPlaylists.map(playlist => {
-                    const disabled = track.source !== 'tidal' || !playlist.writable
+                    const allTidal = batch.every((item) => item.source === 'tidal')
+                    const disabled = !allTidal || !playlist.writable
                     return (
                       <button
                         key={playlist.id}

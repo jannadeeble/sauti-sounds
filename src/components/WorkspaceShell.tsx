@@ -17,6 +17,7 @@ import {
   Upload,
 } from 'lucide-react'
 import AIChatPanel from './AIChatPanel'
+import BatchActionsBar from './BatchActionsBar'
 import BottomSheet from './BottomSheet'
 import ImportPanel, { type ImportDoneResult } from './ImportPanel'
 import NotificationBell from './NotificationBell'
@@ -30,6 +31,7 @@ import { useHistoryStore } from '../stores/historyStore'
 import { useLibraryStore } from '../stores/libraryStore'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
 import { usePlaylistStore } from '../stores/playlistStore'
+import { useSelectionStore } from '../stores/selectionStore'
 import { searchTidal } from '../lib/tidal'
 import { useTidalStore } from '../stores/tidalStore'
 import type { Playlist, PlaylistFolder, Track } from '../types'
@@ -118,6 +120,10 @@ export default function WorkspaceShell() {
   const loadHistory = useHistoryStore((state) => state.loadHistory)
   const historyEntries = useHistoryStore((state) => state.entries)
 
+  const selecting = useSelectionStore((state) => state.selecting)
+  const enterSelection = useSelectionStore((state) => state.enter)
+  const exitSelection = useSelectionStore((state) => state.exit)
+
   useEffect(() => {
     void loadTracks()
     void loadPlaylists()
@@ -129,6 +135,12 @@ export default function WorkspaceShell() {
       void loadTidalPlaylistDetail(selectedPlaylist.id)
     }
   }, [loadTidalPlaylistDetail, selectedPlaylist, tidalPlaylistDetails])
+
+  useEffect(() => {
+    if (activeTab !== 'library' && selecting) {
+      exitSelection()
+    }
+  }, [activeTab, selecting, exitSelection])
 
   useEffect(() => {
     if (!importNotice && highlightedImportIds.length === 0) return
@@ -717,18 +729,31 @@ export default function WorkspaceShell() {
                     </div>
 
                     {libraryFilter === 'all' || libraryFilter === 'tidal' || libraryFilter === 'local' ? (
-                      <label className="ml-auto inline-flex items-center gap-2 rounded-full border border-black/8 bg-[#f8f8f9] px-3 py-2 text-sm text-[#686973]">
-                        <SlidersHorizontal size={14} />
-                        <select
-                          value={librarySort}
-                          onChange={(event) => setLibrarySort(event.target.value as LibrarySort)}
-                          className="bg-transparent outline-none"
+                      <div className="ml-auto flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => (selecting ? exitSelection() : enterSelection())}
+                          className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+                            selecting
+                              ? 'border-transparent bg-[#ef5466] text-white hover:bg-[#e0364a]'
+                              : 'border-black/8 bg-white text-[#555661] hover:border-black/16 hover:text-[#111116]'
+                          }`}
                         >
-                          <option value="recent">Recent</option>
-                          <option value="title">Title</option>
-                          <option value="artist">Artist</option>
-                        </select>
-                      </label>
+                          {selecting ? 'Done' : 'Select'}
+                        </button>
+                        <label className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-[#f8f8f9] px-3 py-2 text-sm text-[#686973]">
+                          <SlidersHorizontal size={14} />
+                          <select
+                            value={librarySort}
+                            onChange={(event) => setLibrarySort(event.target.value as LibrarySort)}
+                            className="bg-transparent outline-none"
+                          >
+                            <option value="recent">Recent</option>
+                            <option value="title">Title</option>
+                            <option value="artist">Artist</option>
+                          </select>
+                        </label>
+                      </div>
                     ) : null}
                   </div>
 
@@ -908,6 +933,8 @@ export default function WorkspaceShell() {
       </BottomSheet>
 
       <QueueSheet open={playerOpen} onClose={() => setPlayerOpen(false)} />
+
+      <BatchActionsBar />
     </div>
   )
 }

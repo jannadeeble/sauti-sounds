@@ -1,10 +1,11 @@
-import { useState } from 'react'
-import { HardDrive, Heart, ListPlus, MoreVertical, Plus, Radio } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { Check, HardDrive, Heart, ListPlus, MoreVertical, Plus, Radio } from 'lucide-react'
 import AddToPlaylistDialog from './AddToPlaylistDialog'
 import { useTrackArtworkUrl } from '../lib/artwork'
 import { formatTime } from '../lib/metadata'
 import { useLibraryStore } from '../stores/libraryStore'
 import { type PlaybackContext, usePlaybackSessionStore } from '../stores/playbackSessionStore'
+import { useSelectionStore } from '../stores/selectionStore'
 import { useTidalStore } from '../stores/tidalStore'
 import type { Track } from '../types'
 
@@ -79,8 +80,34 @@ export default function TrackRow({
     ...extraActions,
   ]
 
+  const selecting = useSelectionStore((state) => state.selecting)
+  const selectedIds = useSelectionStore((state) => state.selectedIds)
+  const enterSelection = useSelectionStore((state) => state.enter)
+  const toggleSelection = useSelectionStore((state) => state.toggle)
+  const isSelected = selectedIds.has(track.id)
+  const longPressTimer = useRef<number | null>(null)
+
   function handlePlay() {
+    if (selecting) {
+      toggleSelection(track.id)
+      return
+    }
     playTracks(tracks || [track], playContext, index)
+  }
+
+  function handlePointerDown() {
+    if (selecting) return
+    longPressTimer.current = window.setTimeout(() => {
+      enterSelection(track.id)
+      longPressTimer.current = null
+    }, 450)
+  }
+
+  function cancelLongPress() {
+    if (longPressTimer.current != null) {
+      window.clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
   }
 
   return (
@@ -89,14 +116,34 @@ export default function TrackRow({
         className={`group flex items-center gap-3 px-5 py-3 transition-colors ${
           highlighted
             ? 'bg-[#fff0f3] ring-1 ring-inset ring-[#f7c6cd]'
-            : isActive
-              ? 'bg-[#fff4f6]'
-              : 'bg-transparent hover:bg-[#fafafb]'
+            : isSelected
+              ? 'bg-[#fff0f3]'
+              : isActive
+                ? 'bg-[#fff4f6]'
+                : 'bg-transparent hover:bg-[#fafafb]'
         }`}
       >
+        {selecting ? (
+          <button
+            type="button"
+            onClick={() => toggleSelection(track.id)}
+            aria-label={isSelected ? `Deselect ${track.title}` : `Select ${track.title}`}
+            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+              isSelected
+                ? 'border-[#ef5466] bg-[#ef5466] text-white'
+                : 'border-[#c9cad2] bg-white text-transparent'
+            }`}
+          >
+            <Check size={14} strokeWidth={3} />
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={handlePlay}
+          onPointerDown={handlePointerDown}
+          onPointerUp={cancelLongPress}
+          onPointerLeave={cancelLongPress}
+          onPointerCancel={cancelLongPress}
           className="flex min-w-0 flex-1 items-center gap-3 text-left"
         >
           <div className="h-10 w-10 overflow-hidden rounded-xl bg-[#f1f1f4]">
@@ -134,7 +181,7 @@ export default function TrackRow({
 
         <div className="flex items-center gap-2">
           <span className="text-xs text-[#8c8d96]">{formatTime(track.duration)}</span>
-          {onAddToLibrary ? (
+          {!selecting && onAddToLibrary ? (
             <button
               type="button"
               onClick={() => onAddToLibrary(track)}
@@ -144,14 +191,16 @@ export default function TrackRow({
               <Plus size={16} />
             </button>
           ) : null}
-          <button
-            type="button"
-            onClick={() => setShowActions(true)}
-            className="rounded-full p-2 text-[#8c8d96] transition-colors hover:bg-black/4 hover:text-[#111116]"
-            aria-label={`More actions for ${track.title}`}
-          >
-            <MoreVertical size={16} />
-          </button>
+          {!selecting ? (
+            <button
+              type="button"
+              onClick={() => setShowActions(true)}
+              className="rounded-full p-2 text-[#8c8d96] transition-colors hover:bg-black/4 hover:text-[#111116]"
+              aria-label={`More actions for ${track.title}`}
+            >
+              <MoreVertical size={16} />
+            </button>
+          ) : null}
         </div>
       </article>
 

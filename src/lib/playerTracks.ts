@@ -118,7 +118,7 @@ export function useResolvedPlayerTracks(
             writer: track.artist,
             img: artworkSrc,
             description: track.album,
-            customTrackInfo: track.source === 'tidal' ? 'TIDAL' : 'Local file',
+            customTrackInfo: track.source === 'tidal' ? 'TIDAL' : undefined,
           })
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Unknown error'

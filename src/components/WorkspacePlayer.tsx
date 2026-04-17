@@ -143,7 +143,7 @@ export default function WorkspacePlayer() {
       trackTime: true,
       trackInfo: true,
       progress: 'bar' as const,
-      playList: playerOpen ? ('unSortable' as const) : (false as const),
+      playList: playerOpen ? ('sortable' as const) : (false as const),
     }),
     [playerOpen],
   )
@@ -175,7 +175,7 @@ export default function WorkspacePlayer() {
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 px-4">
-      <div className="pointer-events-auto mx-auto max-w-[980px] overflow-hidden rounded-2xl border border-black/8 bg-[#121216] shadow-[0_12px_40px_rgba(17,17,22,0.22)]">
+      <div className="pointer-events-auto mx-auto max-w-[980px] rounded-2xl border border-black/8 bg-[#121216] shadow-[0_12px_40px_rgba(17,17,22,0.22)]">
         <AudioPlayer<11>
           key={sessionId}
           playList={playlist}

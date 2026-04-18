@@ -38,6 +38,7 @@ export default function SettingsPanel() {
   const [llmProvider, setLlmProvider] = useState<LLMProvider>(settings.llmProvider)
   const [llmKey, setLlmKey] = useState(settings.llmApiKey)
   const [llmModel, setLlmModel] = useState(settings.llmModel)
+  const [savedFlash, setSavedFlash] = useState(false)
 
   const [openRouterModels, setOpenRouterModels] = useState<OpenRouterModel[]>([])
   const [openRouterLoading, setOpenRouterLoading] = useState(false)
@@ -90,8 +91,17 @@ export default function SettingsPanel() {
     }
   }
 
-  function saveLLMConfig() {
-    settings.setLLMConfig(llmProvider, llmKey, llmModel || undefined)
+  function saveLLMConfig(
+    providerOverride?: LLMProvider,
+    keyOverride?: string,
+    modelOverride?: string,
+  ) {
+    const p = providerOverride ?? llmProvider
+    const k = keyOverride ?? llmKey
+    const m = modelOverride ?? llmModel
+    settings.setLLMConfig(p, k, m || undefined)
+    setSavedFlash(true)
+    window.setTimeout(() => setSavedFlash(false), 1800)
   }
 
   async function handleLogout() {
@@ -240,7 +250,11 @@ export default function SettingsPanel() {
         <div className="space-y-3">
           <select
             value={llmProvider}
-            onChange={(event) => setLlmProvider(event.target.value as LLMProvider)}
+            onChange={(event) => {
+              const next = event.target.value as LLMProvider
+              setLlmProvider(next)
+              saveLLMConfig(next, undefined, undefined)
+            }}
             className={inputClass}
           >
             <option value="claude">Claude (Anthropic)</option>
@@ -254,6 +268,11 @@ export default function SettingsPanel() {
               type={showApiKey ? 'text' : 'password'}
               value={llmKey}
               onChange={(event) => setLlmKey(event.target.value)}
+              onBlur={(event) => {
+                if (event.target.value !== settings.llmApiKey) {
+                  saveLLMConfig(undefined, event.target.value, undefined)
+                }
+              }}
               placeholder="API key"
               className={`${inputClass} pr-11`}
             />
@@ -270,7 +289,11 @@ export default function SettingsPanel() {
             <div className="space-y-2">
               <select
                 value={llmModel}
-                onChange={(event) => setLlmModel(event.target.value)}
+                onChange={(event) => {
+                  const next = event.target.value
+                  setLlmModel(next)
+                  if (next) saveLLMConfig(undefined, undefined, next)
+                }}
                 disabled={openRouterLoading || openRouterModels.length === 0}
                 className={inputClass}
               >
@@ -296,6 +319,11 @@ export default function SettingsPanel() {
                   type="text"
                   value={llmModel}
                   onChange={(event) => setLlmModel(event.target.value)}
+                  onBlur={(event) => {
+                    if (event.target.value !== settings.llmModel) {
+                      saveLLMConfig(undefined, undefined, event.target.value)
+                    }
+                  }}
                   placeholder="anthropic/claude-3.5-sonnet"
                   className={inputClass}
                 />
@@ -306,6 +334,11 @@ export default function SettingsPanel() {
               type="text"
               value={llmModel}
               onChange={(event) => setLlmModel(event.target.value)}
+              onBlur={(event) => {
+                if (event.target.value !== settings.llmModel) {
+                  saveLLMConfig(undefined, undefined, event.target.value)
+                }
+              }}
               placeholder={
                 llmProvider === 'claude'
                   ? 'claude-sonnet-4-6 (default)'
@@ -319,10 +352,14 @@ export default function SettingsPanel() {
 
           <button
             type="button"
-            onClick={saveLLMConfig}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm font-medium text-accent transition-colors hover:bg-accent/15"
+            onClick={() => saveLLMConfig()}
+            className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-medium transition-colors ${
+              savedFlash
+                ? 'border-green-500/20 bg-green-500/10 text-green-700'
+                : 'border-accent/20 bg-accent/10 text-accent hover:bg-accent/15'
+            }`}
           >
-            {settings.llmApiKey ? 'Update AI config' : 'Enable AI'}
+            {savedFlash ? 'Saved ✓' : settings.llmApiKey ? 'Update AI config' : 'Save AI config'}
           </button>
 
           <label className="flex items-start justify-between gap-3 rounded-2xl bg-[#f8f8f9] px-4 py-3">

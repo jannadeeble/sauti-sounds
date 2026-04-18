@@ -30,7 +30,9 @@ interface TrackRowProps {
 
 export default function TrackRow({
   track,
+  tracks,
   playContext,
+  index = 0,
   highlighted = false,
   extraActions = [],
   onAddToLibrary,
@@ -110,6 +112,10 @@ export default function TrackRow({
   }
 
   function handlePlay() {
+    if (tracks?.length) {
+      playTracks(tracks, playContext, index)
+      return
+    }
     playTracks([track], playContext, 0)
   }
 

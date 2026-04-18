@@ -105,7 +105,7 @@ export function useResolvedPlayerTracks(
         return
       }
 
-      setState((current) => ({ ...current, loading: true }))
+      setState({ playableTracks: [], playlist: [], currentPlayId: 1, errors: [], loading: true })
 
       const safeStart = Math.max(0, Math.min(startIndex, tracks.length - 1))
 

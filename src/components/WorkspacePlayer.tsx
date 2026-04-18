@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import AudioPlayer, { type InterfacePlacement, useAudioPlayer } from 'react-modern-audio-player'
-import { ChevronUp, ListMusic } from 'lucide-react'
+import { ListMusic } from 'lucide-react'
 import { useTrackArtworkUrl } from '../lib/artwork'
 import { maybeFillAutoRadio } from '../lib/autoRadio'
 import { resolveTrackContext } from '../lib/listenContextRegistry'
@@ -124,11 +124,10 @@ function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
         type="button"
         className="workspace-player-chip__toggle"
         onClick={() => setPlayerOpen(true)}
-        aria-label="Open queue"
+        aria-label={`Open queue (${playList.length} tracks)`}
+        title="Open queue"
       >
-        <ListMusic size={14} />
-        <span>{playList.length}</span>
-        <ChevronUp size={14} />
+        <ListMusic size={18} />
       </button>
     </div>
   )
@@ -185,7 +184,7 @@ export default function WorkspacePlayer() {
       isPlaying: true,
       volume: 1,
     }),
-    [currentPlayId, sessionId],
+    [currentPlayId],
   )
 
   if (tracks.length === 0) return null

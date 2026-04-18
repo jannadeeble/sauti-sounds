@@ -1,16 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
-import { Music, Send, Sparkles, User } from 'lucide-react'
+import { ExternalLink, Music, Send, Sparkles, User } from 'lucide-react'
 import { chat, isLLMConfigured } from '../lib/llm'
-import { generateSetlistSeed } from '../lib/mixGenerator'
+import { generateMoodPlaylist, generateSetlistSeed } from '../lib/mixGenerator'
+import { getTidalTrack } from '../lib/tidal'
 import { useLibraryStore } from '../stores/libraryStore'
 import { useMixStore } from '../stores/mixStore'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
+import { usePlaylistStore } from '../stores/playlistStore'
 import { useTasteStore } from '../stores/tasteStore'
+import type { Track } from '../types'
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: number
+  playlist?: {
+    id: string
+    name: string
+    trackCount: number
+  }
 }
 
 interface ChatSuggestion {
@@ -26,7 +34,58 @@ const SUGGESTIONS: ChatSuggestion[] = [
   { label: 'Recommend based on my taste', kind: 'taste-on' },
 ]
 
-export default function AIChatPanel() {
+const PLAYLIST_INTENT_RE = /\b(playlist|set(?:list)?|mix|soundtrack)\b/i
+const CURATION_INTENT_RE = /^(play|build|make|create|give|recommend)\b/i
+const DURATION_RE = /(\d+)\s*[- ]?(?:min|mins|minute|minutes)\b/i
+const TRACK_COUNT_RE = /(\d+)\s*[- ]?track\b/i
+
+function looksLikePlaylistRequest(message: string): boolean {
+  const trimmed = message.trim()
+  if (!trimmed) return false
+  if (PLAYLIST_INTENT_RE.test(trimmed)) return true
+  if (!CURATION_INTENT_RE.test(trimmed)) return false
+  return /\b(something|music|songs|warm|rhythmic|chill|sunset|workout|focus|dance|vibe|vibes)\b/i.test(trimmed)
+}
+
+function inferTrackCount(message: string): number {
+  const explicit = message.match(TRACK_COUNT_RE)
+  if (explicit) {
+    return Math.min(30, Math.max(8, Number(explicit[1]) || 15))
+  }
+
+  const duration = message.match(DURATION_RE)
+  if (duration) {
+    const minutes = Number(duration[1])
+    if (Number.isFinite(minutes) && minutes > 0) {
+      return Math.min(30, Math.max(8, Math.round(minutes / 3.5)))
+    }
+  }
+
+  return 15
+}
+
+async function materializeMixTracks(
+  mixTrackIds: string[],
+  libraryTracks: Track[],
+  cacheTidalTracks: (tracks: Track[]) => Promise<void>,
+): Promise<Track[]> {
+  const byId = new Map(libraryTracks.map((track) => [track.id, track]))
+  const missingIds = mixTrackIds.filter((id) => !byId.has(id))
+
+  if (missingIds.length > 0) {
+    const fetched = await Promise.all(
+      missingIds.map((id) => getTidalTrack(id.replace(/^tidal-/, ''))),
+    )
+    await cacheTidalTracks(fetched)
+    for (const track of fetched) {
+      byId.set(track.id, track)
+    }
+  }
+
+  return mixTrackIds.map((id) => byId.get(id)).filter((track): track is Track => !!track)
+}
+
+export default function AIChatPanel({ onOpenPlaylist }: { onOpenPlaylist?: (playlistId: string) => void }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -34,8 +93,12 @@ export default function AIChatPanel() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const currentTrack = usePlaybackSessionStore((state) => state.currentTrack)
   const libraryTracks = useLibraryStore((state) => state.tracks)
+  const cacheTidalTracks = useLibraryStore((state) => state.cacheTidalTracks)
   const tasteProfile = useTasteStore((state) => state.profile)
   const upsertMix = useMixStore((state) => state.upsert)
+  const markSaved = useMixStore((state) => state.markSaved)
+  const createAppPlaylist = usePlaylistStore((state) => state.createAppPlaylist)
+  const addTrackToPlaylist = usePlaylistStore((state) => state.addTrackToPlaylist)
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -64,6 +127,46 @@ export default function AIChatPanel() {
     setLoading(true)
 
     try {
+      if (looksLikePlaylistRequest(message)) {
+        const mix = await generateMoodPlaylist(
+          {
+            library: libraryTracks,
+            tasteProfile: useTaste ? tasteProfile ?? null : null,
+          },
+          message,
+          { count: inferTrackCount(message) },
+        )
+
+        if (mix) {
+          await upsertMix(mix)
+          const resolvedTracks = await materializeMixTracks(mix.trackIds, libraryTracks, cacheTidalTracks)
+          if (!resolvedTracks.length) {
+            throw new Error('The playlist generated, but no tracks could be loaded.')
+          }
+
+          const playlist = await createAppPlaylist(mix.title, mix.blurb)
+          for (const track of resolvedTracks) {
+            await addTrackToPlaylist(playlist, track)
+          }
+          await markSaved(mix.id)
+
+          setMessages((current) => [
+            ...current,
+            {
+              role: 'assistant',
+              content: `Built "${playlist.name}" as a ${resolvedTracks.length}-track playlist.${mix.blurb ? `\n\n${mix.blurb}` : ''}`,
+              timestamp: Date.now(),
+              playlist: {
+                id: playlist.id,
+                name: playlist.name,
+                trackCount: resolvedTracks.length,
+              },
+            },
+          ])
+          return
+        }
+      }
+
       const response = await chat(message, {
         currentTrack: currentTrack || undefined,
         tasteProfile: useTaste ? tasteProfile ?? undefined : undefined,
@@ -195,22 +298,37 @@ export default function AIChatPanel() {
           </div>
         ) : null}
 
-        {messages.map((message) => (
-          <div
-            key={`${message.role}-${message.timestamp}`}
-            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
+        {messages.map((message) => {
+          const playlist = message.playlist
+          return (
             <div
-              className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm ${
-                message.role === 'user'
-                  ? 'rounded-br-md bg-accent text-white'
-                  : 'rounded-bl-md border border-black/8 bg-[#f8f8f9] text-[#111116]'
-              }`}
+              key={`${message.role}-${message.timestamp}`}
+              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <div className="whitespace-pre-wrap">{message.content}</div>
+              <div
+                className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm ${
+                  message.role === 'user'
+                    ? 'rounded-br-md bg-accent text-white'
+                    : 'rounded-bl-md border border-black/8 bg-[#f8f8f9] text-[#111116]'
+                }`}
+              >
+                <div className="whitespace-pre-wrap">{message.content}</div>
+                {playlist ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpenPlaylist?.(playlist.id)}
+                    className="mt-3 inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-3 py-2 text-xs font-medium text-[#111116] hover:bg-[#f3f3f5]"
+                  >
+                    <Music size={13} />
+                    {playlist.name}
+                    <span className="text-[#7a7b86]">{playlist.trackCount} tracks</span>
+                    <ExternalLink size={12} className="text-[#7a7b86]" />
+                  </button>
+                ) : null}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
 
         {loading ? (
           <div className="flex justify-start">

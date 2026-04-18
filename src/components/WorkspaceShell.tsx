@@ -535,7 +535,12 @@ export default function WorkspaceShell() {
             </div>
           </header>
 
-          <main ref={mainContentRef} className="absolute inset-0 overflow-y-auto px-4 pb-[12rem] pt-[80px] lg:px-8 lg:pt-[92px]">
+          <main
+            ref={mainContentRef}
+            className={`absolute inset-0 overflow-y-auto px-4 pb-[12rem] lg:px-8 ${
+              activeTab === 'library' ? 'pt-[94px] lg:pt-[108px]' : 'pt-[80px] lg:pt-[92px]'
+            }`}
+          >
             <div className="space-y-8">
               {errorMessage ? (
                 <div className="rounded-[22px] border border-[#f4c6cc] bg-[#fff4f6] px-5 py-4 text-sm text-[#8d3140]">
@@ -582,7 +587,7 @@ export default function WorkspaceShell() {
               ) : null}
 
               {activeTab === 'library' ? (
-                <section className="space-y-5">
+                <section className="space-y-5 px-1 pt-3 sm:px-2">
                   <div className="flex flex-wrap items-center gap-3">
                     <div className="flex flex-wrap gap-2">
                       {LIBRARY_FILTERS.map((filter) => (
@@ -768,7 +773,14 @@ export default function WorkspaceShell() {
         onClose={() => setShowAI(false)}
         maxHeightClassName="max-h-[88vh]"
       >
-        <AIChatPanel />
+        <AIChatPanel
+          onOpenPlaylist={(playlistId) => {
+            setActiveTab('library')
+            setLibraryFilter('playlists')
+            selectPlaylist({ kind: 'app', id: playlistId })
+            setShowAI(false)
+          }}
+        />
       </BottomSheet>
 
       <QueueSheet open={playerOpen} onClose={() => setPlayerOpen(false)} />
@@ -1287,7 +1299,7 @@ function PlaylistDetailView({
     : tidalDetail?.tracks || []
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 px-1 pt-1 sm:px-2">
       <section className={`${panelClass} px-5 py-5 sm:px-6`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <button

@@ -198,7 +198,7 @@ img {
   flex-direction: row !important;
   flex-wrap: nowrap !important;
   align-items: center !important;
-  gap: 12px !important;
+  gap: 10px !important;
   grid-template-columns: none !important;
   grid-template-areas: none !important;
   padding: 10px 16px !important;
@@ -228,9 +228,9 @@ img {
 
 /* Controls centred in the bar — auto margins push surrounding flex items away */
 .workspace-player--floating .rmap-interface-grid > *:has(.rmap-ctrl-btn-wrapper) {
-  order: 3;
+  order: 6;
   flex: 0 0 auto;
-  margin: 0 auto;
+  margin-left: auto;
 }
 
 .workspace-player--floating .rmap-interface-grid > *:has(.rmap-track-time-current) {
@@ -246,23 +246,29 @@ img {
 }
 
 .workspace-player--floating .rmap-interface-grid > *:has(.rmap-track-time-duration) {
-  order: 6;
+  order: 5;
   flex: 0 0 auto;
 }
 
-.workspace-player--floating .rmap-interface-grid > *:has(.rmap-volume-container) {
+.workspace-player--floating .rmap-interface-grid > *:has(.rmap-repeat-btn) {
   order: 7;
   flex: 0 0 auto;
 }
 
-.workspace-player--floating .rmap-interface-grid > *:has(.workspace-player-chip) {
+.workspace-player--floating .rmap-interface-grid > *:has(.rmap-volume-container) {
   order: 8;
   flex: 0 0 auto;
 }
 
-/* Spread prev / play / next apart */
+.workspace-player--floating .rmap-interface-grid > *:has(.workspace-player-chip) {
+  order: 9;
+  flex: 0 0 auto;
+}
+
+/* Keep the transport cluster tight so it reads as one control group. */
 .workspace-player--floating .rmap-ctrl-btn-wrapper {
-  gap: 28px;
+  gap: 10px;
+  justify-content: flex-end;
 }
 
 .workspace-player--floating .rmap-artwork-container {
@@ -323,17 +329,40 @@ img {
   color: rgba(17, 17, 22, 0.6);
 }
 
-.workspace-player--glass .styled-btn {
-  color: rgba(17, 17, 22, 0.78);
+.workspace-player--glass .styled-btn,
+.workspace-player--glass .workspace-player-chip__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(17, 17, 22, 0.08);
+  background: #ffffff;
+  color: #111116;
+  box-shadow: 0 1px 0 rgba(17, 17, 22, 0.03);
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
-.workspace-player--glass .styled-btn:hover {
+.workspace-player--glass .styled-btn:hover,
+.workspace-player--glass .workspace-player-chip__toggle:hover {
+  background: #f8f8f9;
+  border-color: rgba(17, 17, 22, 0.12);
   color: #111116;
 }
 
 .workspace-player--glass .styled-btn.rmap-play-btn {
-  background: var(--color-accent);
-  color: #fff;
+  background: #ffffff;
+  color: #111116;
+}
+
+.workspace-player--glass .styled-btn svg,
+.workspace-player--glass .workspace-player-chip__toggle svg {
+  width: 18px;
+  height: 18px;
 }
 
 .workspace-player--glass .rmap-track-time-current,
@@ -492,23 +521,9 @@ img {
 .workspace-player-chip {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  justify-content: flex-end;
   min-width: 0;
   overflow: visible;
-  padding-bottom: 0.35rem;
-  color: rgba(17, 17, 22, 0.72);
-}
-
-.workspace-player--glass .workspace-player-chip__context,
-.workspace-player--glass .workspace-player-chip__toggle {
-  color: #111116;
-  border-color: rgba(17, 17, 22, 0.12);
-  background: rgba(17, 17, 22, 0.04);
-}
-
-.workspace-player--glass .workspace-player-chip__toggle:hover {
-  background: rgba(17, 17, 22, 0.08);
 }
 
 .workspace-player--glass .workspace-player-chip button {
@@ -565,46 +580,13 @@ img {
   color: rgba(255, 255, 255, 0.8);
 }
 
-.workspace-player-chip__meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-  flex-wrap: wrap;
-}
-
-.workspace-player-chip__context,
-.workspace-player-chip__queue,
 .workspace-player-chip__toggle {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  justify-content: center;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
-  padding: 0.35rem 0.75rem;
-}
-
-.workspace-player-chip__context {
-  color: rgba(255, 255, 255, 0.95);
-}
-
-.workspace-player-chip__queue {
-  color: rgba(255, 255, 255, 0.68);
-}
-
-.workspace-player-chip__toggle {
   flex-shrink: 0;
-  border: 0;
-  color: #fff;
   cursor: pointer;
-  white-space: nowrap;
-  padding: 0.4rem 0.85rem;
-  transition: background-color 0.2s ease;
-}
-
-.workspace-player-chip__toggle:hover {
-  background: rgba(255, 255, 255, 0.08);
 }
 
 .workspace-player-chip__toggle:focus-visible {
@@ -626,13 +608,8 @@ img {
   }
 
   .workspace-player-chip {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .workspace-player-chip__toggle {
-    align-self: stretch;
-    justify-content: center;
+    align-items: center;
+    flex-direction: row;
   }
 }
 

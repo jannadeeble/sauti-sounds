@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import AudioPlayer, { type InterfacePlacement, useAudioPlayer } from 'react-modern-audio-player'
-import { ChevronUp, ListMusic, Radio } from 'lucide-react'
+import { ChevronUp, ListMusic } from 'lucide-react'
 import { useTrackArtworkUrl } from '../lib/artwork'
 import { maybeFillAutoRadio } from '../lib/autoRadio'
 import { resolveTrackContext } from '../lib/listenContextRegistry'
@@ -120,14 +120,6 @@ function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
 
   return (
     <div className="workspace-player-chip">
-      <div className="workspace-player-chip__meta">
-        {currentTrack?.source === 'tidal' ? (
-          <span className="workspace-player-chip__context">
-            <Radio size={11} className="text-cyan-300" />
-            TIDAL
-          </span>
-        ) : null}
-      </div>
       <button
         type="button"
         className="workspace-player-chip__toggle"

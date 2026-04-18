@@ -6,7 +6,11 @@ interface SettingsState {
   llmProvider: LLMProvider
   llmApiKey: string
   llmModel: string
+  extendedThinking: boolean
+  autoRadio: boolean
   setLLMConfig: (provider: LLMProvider, apiKey: string, model?: string) => void
+  setExtendedThinking: (on: boolean) => void
+  setAutoRadio: (on: boolean) => void
   initializeServices: () => void
 }
 
@@ -16,6 +20,8 @@ export const useSettingsStore = create<SettingsState>()(
       llmProvider: 'claude',
       llmApiKey: '',
       llmModel: '',
+      extendedThinking: true,
+      autoRadio: true,
 
       setLLMConfig: (provider, apiKey, model) => {
         set({ llmProvider: provider, llmApiKey: apiKey, llmModel: model || '' })
@@ -23,6 +29,9 @@ export const useSettingsStore = create<SettingsState>()(
           configureLLM(provider, apiKey, model)
         }
       },
+
+      setExtendedThinking: (on) => set({ extendedThinking: on }),
+      setAutoRadio: (on) => set({ autoRadio: on }),
 
       initializeServices: () => {
         const state = get()

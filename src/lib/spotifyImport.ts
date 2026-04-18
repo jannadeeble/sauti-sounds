@@ -1,3 +1,4 @@
+import { normalize } from './search'
 import { searchTidalForMatch } from './tidal'
 import type { Track, Playlist } from '../types'
 
@@ -59,10 +60,6 @@ export function cleanArtistName(raw: string): string {
   return raw
     .split(/\s*(?:,|&| and | x | X |feat\.?|ft\.?|featuring|with)\s+/i)[0]
     .trim()
-}
-
-function normalize(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
 async function retry<T>(fn: () => Promise<T>, attempts = 3, baseDelayMs = 400): Promise<T> {

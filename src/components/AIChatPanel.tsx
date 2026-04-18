@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Music, Send, Sparkles } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Music, Send, Sparkles, User } from 'lucide-react'
 import { chat, isLLMConfigured } from '../lib/llm'
+import { generateSetlistSeed } from '../lib/mixGenerator'
 import { useLibraryStore } from '../stores/libraryStore'
+import { useMixStore } from '../stores/mixStore'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
+import { useTasteStore } from '../stores/tasteStore'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -10,25 +13,29 @@ interface Message {
   timestamp: number
 }
 
-const SUGGESTIONS = [
-  'Play something warm and rhythmic',
-  'Build me a 45-minute sunset set',
-  'Recommend tracks that fit what is playing now',
-  'What genres show up most in my library?',
-  'Give me a chill work soundtrack',
-] as const
+interface ChatSuggestion {
+  label: string
+  kind: 'chat' | 'song-radio' | 'taste-on'
+}
+
+const SUGGESTIONS: ChatSuggestion[] = [
+  { label: 'Play something warm and rhythmic', kind: 'chat' },
+  { label: 'Build me a 45-minute sunset set', kind: 'chat' },
+  { label: 'Give me a chill work soundtrack', kind: 'chat' },
+  { label: 'Recommend tracks that fit what is playing now', kind: 'song-radio' },
+  { label: 'Recommend based on my taste', kind: 'taste-on' },
+]
 
 export default function AIChatPanel() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [useTaste, setUseTaste] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const currentTrack = usePlaybackSessionStore((state) => state.currentTrack)
   const libraryTracks = useLibraryStore((state) => state.tracks)
-  const tracks = useMemo(
-    () => libraryTracks.filter((track) => track.source === 'local'),
-    [libraryTracks],
-  )
+  const tasteProfile = useTasteStore((state) => state.profile)
+  const upsertMix = useMixStore((state) => state.upsert)
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -59,7 +66,7 @@ export default function AIChatPanel() {
     try {
       const response = await chat(message, {
         currentTrack: currentTrack || undefined,
-        recentTracks: tracks.slice(0, 10),
+        tasteProfile: useTaste ? tasteProfile ?? undefined : undefined,
       })
 
       setMessages((current) => [
@@ -85,8 +92,74 @@ export default function AIChatPanel() {
     }
   }
 
+  async function handleSuggestion(suggestion: ChatSuggestion) {
+    if (suggestion.kind === 'taste-on') {
+      setUseTaste(true)
+      void handleSend('Recommend new music based on my taste profile.')
+      return
+    }
+    if (suggestion.kind === 'song-radio') {
+      if (!currentTrack) return
+      setMessages((current) => [
+        ...current,
+        { role: 'user', content: suggestion.label, timestamp: Date.now() },
+      ])
+      setLoading(true)
+      try {
+        const mix = await generateSetlistSeed(
+          { library: libraryTracks, tasteProfile },
+          currentTrack,
+          { count: 12, useProfile: useTaste },
+        )
+        if (mix) {
+          await upsertMix(mix)
+          setMessages((current) => [
+            ...current,
+            {
+              role: 'assistant',
+              content: `Built a ${mix.trackIds.length}-track radio mix from "${currentTrack.title}". Open the home tab to preview or save it.`,
+              timestamp: Date.now(),
+            },
+          ])
+        } else {
+          setMessages((current) => [
+            ...current,
+            {
+              role: 'assistant',
+              content: "Couldn't build a radio mix right now — try again.",
+              timestamp: Date.now(),
+            },
+          ])
+        }
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
+    void handleSend(suggestion.label)
+  }
+
   return (
     <div className="flex h-full min-h-[60vh] flex-col">
+      <div className="mb-3 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setUseTaste((on) => !on)}
+          className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+            useTaste
+              ? 'bg-[#ef5466] text-white'
+              : 'border border-black/8 bg-white text-[#555661] hover:border-black/16'
+          }`}
+          title={tasteProfile ? 'Toggle taste profile context' : 'No taste profile yet — re-analyze in Settings'}
+          disabled={!tasteProfile}
+        >
+          <User size={12} />
+          {useTaste ? 'Using my taste' : 'Use my taste'}
+        </button>
+        {!tasteProfile ? (
+          <span className="text-xs text-[#9a9ba3]">Analyze your library in Settings to enable.</span>
+        ) : null}
+      </div>
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto pb-4">
         {messages.length === 0 ? (
           <div className="space-y-4 py-6">
@@ -108,13 +181,14 @@ export default function AIChatPanel() {
             <div className="space-y-2">
               {SUGGESTIONS.map((suggestion) => (
                 <button
-                  key={suggestion}
+                  key={suggestion.label}
                   type="button"
-                  onClick={() => void handleSend(suggestion)}
-                  className="block w-full rounded-2xl border border-black/8 bg-[#f8f8f9] px-4 py-3 text-left text-sm text-[#111116] transition-colors hover:bg-[#f1f1f4]"
+                  onClick={() => void handleSuggestion(suggestion)}
+                  disabled={suggestion.kind === 'song-radio' && !currentTrack}
+                  className="block w-full rounded-2xl border border-black/8 bg-[#f8f8f9] px-4 py-3 text-left text-sm text-[#111116] transition-colors hover:bg-[#f1f1f4] disabled:opacity-40"
                 >
                   <Music size={14} className="mr-2 inline text-accent" />
-                  {suggestion}
+                  {suggestion.label}
                 </button>
               ))}
             </div>

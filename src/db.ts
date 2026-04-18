@@ -1,5 +1,14 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { AppNotification, HistoryEntry, Playlist, PlaylistFolder, Track } from './types'
+import type {
+  AppNotification,
+  HistoryEntry,
+  ListenEvent,
+  Mix,
+  Playlist,
+  PlaylistFolder,
+  TasteProfileRecord,
+  Track,
+} from './types'
 
 const db = new Dexie('SautiSoundsDB') as Dexie & {
   tracks: EntityTable<Track, 'id'>
@@ -7,6 +16,9 @@ const db = new Dexie('SautiSoundsDB') as Dexie & {
   playlistFolders: EntityTable<PlaylistFolder, 'id'>
   notifications: EntityTable<AppNotification, 'id'>
   history: EntityTable<HistoryEntry, 'id'>
+  listenEvents: EntityTable<ListenEvent, 'id'>
+  mixes: EntityTable<Mix, 'id'>
+  tasteProfile: EntityTable<TasteProfileRecord, 'id'>
 }
 
 db.version(1).stores({
@@ -63,6 +75,25 @@ db.version(5).stores({
   playlistFolders: 'id, name, parentId, createdAt, updatedAt',
   notifications: 'id, createdAt, readAt, kind',
   history: 'id, trackId, playedAt, source',
+})
+
+db.version(6).stores({
+  tracks: 'id, title, artist, album, source, genre, bpm, energy, providerTrackId, isFavorite, addedAt, r2Key, artworkR2Key',
+  playlists: 'id, name, kind, createdAt, updatedAt, providerPlaylistId, folderId',
+  playlistFolders: 'id, name, parentId, createdAt, updatedAt',
+  notifications: 'id, createdAt, readAt, kind',
+  history: 'id, trackId, playedAt, source',
+  listenEvents: 'id, trackId, startedAt, context',
+  mixes: 'id, kind, status, generatedAt, expiresAt',
+  tasteProfile: 'id',
+}).upgrade(async tx => {
+  // v5 stored Track.tags as string[]. The new shape is TrackTags. Drop the
+  // legacy value so the tagger can repopulate without reading garbage.
+  await tx.table('tracks').toCollection().modify((track: Record<string, unknown>) => {
+    if (Array.isArray(track.tags)) {
+      delete track.tags
+    }
+  })
 })
 
 export { db }

@@ -33,9 +33,19 @@ export interface Track {
   key?: string
   energy?: number
   mood?: string
-  tags?: string[]
+  tags?: TrackTags
   isFavorite?: boolean
   addedAt?: number
+}
+
+export interface TrackTags {
+  energy: number
+  mood: string
+  genres: string[]
+  bpmEstimate?: number
+  vibeDescriptors: string[]
+  culturalContext?: string
+  taggedAt: number
 }
 
 export type PlaylistItem =
@@ -90,4 +100,71 @@ export interface HistoryEntry {
   duration: number
   providerTrackId?: string
   artworkUrl?: string
+}
+
+export type ListenContext =
+  | 'manual'
+  | `playlist:${string}`
+  | `suggestion:${string}`
+  | 'auto-radio'
+  | 'search'
+
+export interface ListenEvent {
+  id: string
+  trackId: string
+  startedAt: number
+  msListened: number
+  completed: boolean
+  skipped: boolean
+  context: ListenContext
+}
+
+export interface TasteProfile {
+  coreIdentity: string
+  primaryGenres: string[]
+  energyPreference: { min: number; max: number; sweet_spot: number }
+  culturalMarkers: string[]
+  antiPreferences: string[]
+  favoriteArtists: string[]
+  moodPreferences: string[]
+}
+
+export interface TasteProfileRecord {
+  id: 'current'
+  profile: TasteProfile
+  builtAt: number
+  builtFromTrackCount: number
+}
+
+export type MixKind =
+  | 'playlist-echo'
+  | 'track-echo'
+  | 'similar-artist'
+  | 'rediscovery'
+  | 'cultural-bridge'
+  | 'setlist-seed'
+  | 'playlist-footer'
+  | 'auto-radio-buffer'
+
+export type MixSeedRef =
+  | { type: 'playlist'; id: string }
+  | { type: 'track'; id: string }
+  | { type: 'artist'; name: string }
+  | { type: 'mood'; prompt: string }
+  | null
+
+export type MixStatus = 'fresh' | 'stale' | 'dismissed' | 'saved'
+
+export interface Mix {
+  id: string
+  kind: MixKind
+  seedRef: MixSeedRef
+  title: string
+  blurb: string
+  trackIds: string[]
+  unresolvedCount: number
+  focusPrompt?: string
+  generatedAt: number
+  expiresAt: number
+  status: MixStatus
 }

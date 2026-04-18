@@ -2,7 +2,9 @@ import { useRef, useState } from 'react'
 import { Check, Heart, ListPlus, MoreVertical, Play, Plus, Radio } from 'lucide-react'
 import AddToPlaylistDialog from './AddToPlaylistDialog'
 import { useTrackArtworkUrl } from '../lib/artwork'
+import { isLLMConfigured } from '../lib/llm'
 import { formatTime } from '../lib/metadata'
+import { useAIModalStore } from '../stores/aiModalStore'
 import { useLibraryStore } from '../stores/libraryStore'
 import { type PlaybackContext, usePlaybackSessionStore } from '../stores/playbackSessionStore'
 import { useSelectionStore } from '../stores/selectionStore'
@@ -41,7 +43,9 @@ export default function TrackRow({
   const toggleTidalFavorite = useLibraryStore((state) => state.toggleTidalFavorite)
   const removeTrack = useLibraryStore((state) => state.removeTrack)
   const tidalConnected = useTidalStore((state) => state.tidalConnected)
+  const openAIModal = useAIModalStore((state) => state.open)
   const isInLibrary = libraryTracks.some((candidate) => candidate.id === track.id)
+  const aiAvailable = isLLMConfigured()
 
   const [showActions, setShowActions] = useState(false)
   const [showPlaylistDialog, setShowPlaylistDialog] = useState(false)
@@ -59,6 +63,18 @@ export default function TrackRow({
       label: 'Add to playlist',
       onClick: () => setShowPlaylistDialog(true),
     },
+    ...(aiAvailable
+      ? [
+          {
+            label: 'Make a setlist from this',
+            onClick: () => openAIModal('setlist-seed', track),
+          } satisfies TrackAction,
+          {
+            label: 'AI playlist from this track',
+            onClick: () => openAIModal('playlist-from-track', track),
+          } satisfies TrackAction,
+        ]
+      : []),
     ...(track.source === 'tidal' && tidalConnected
       ? [{
           label: track.isFavorite ? 'Remove from TIDAL favorites' : 'Add to TIDAL favorites',

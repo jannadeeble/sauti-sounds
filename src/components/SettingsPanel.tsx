@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Brain, Eye, EyeOff, HardDrive, Info, KeyRound, LogOut, Radio, Server, Trash2 } from 'lucide-react'
+import { Brain, Eye, EyeOff, HardDrive, Info, KeyRound, LogOut, Radio, RefreshCw, Server, Trash2 } from 'lucide-react'
+import AIStatsPanel from './AIStatsPanel'
 import { db } from '../db'
 import { listOpenRouterModels, type LLMProvider, type OpenRouterModel } from '../lib/llm'
+import { runTagJob } from '../lib/tagJob'
 import { useAuthStore } from '../stores/authStore'
 import { useLibraryStore } from '../stores/libraryStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useTasteStore } from '../stores/tasteStore'
 import { useTidalStore } from '../stores/tidalStore'
 
 export default function SettingsPanel() {
@@ -23,7 +26,14 @@ export default function SettingsPanel() {
     disconnectTidal,
   } = useTidalStore()
 
+  const tasteProfile = useTasteStore((s) => s.profile)
+  const tasteBuiltAt = useTasteStore((s) => s.builtAt)
+  const tasteBuiltFromCount = useTasteStore((s) => s.builtFromTrackCount)
+  const tasteRebuilding = useTasteStore((s) => s.rebuilding)
+  const rebuildTaste = useTasteStore((s) => s.rebuild)
+
   const [clearing, setClearing] = useState(false)
+  const [reanalyzing, setReanalyzing] = useState(false)
   const [showApiKey, setShowApiKey] = useState(false)
   const [llmProvider, setLlmProvider] = useState<LLMProvider>(settings.llmProvider)
   const [llmKey, setLlmKey] = useState(settings.llmApiKey)
@@ -91,6 +101,20 @@ export default function SettingsPanel() {
       alert(error instanceof Error ? error.message : 'Failed to sign out')
     }
   }
+
+  async function handleReanalyze() {
+    if (reanalyzing || tasteRebuilding) return
+    setReanalyzing(true)
+    try {
+      await runTagJob()
+      const fresh = useLibraryStore.getState().tracks
+      await rebuildTaste(fresh)
+    } finally {
+      setReanalyzing(false)
+    }
+  }
+
+  const taggedCount = useMemo(() => tracks.filter((t) => !!t.tags).length, [tracks])
 
   return (
     <div className="space-y-4 pb-6">
@@ -284,7 +308,7 @@ export default function SettingsPanel() {
               onChange={(event) => setLlmModel(event.target.value)}
               placeholder={
                 llmProvider === 'claude'
-                  ? 'claude-sonnet-4-20250514'
+                  ? 'claude-sonnet-4-6 (default)'
                   : llmProvider === 'openai'
                     ? 'gpt-4o'
                     : 'gemini-2.0-flash'
@@ -300,8 +324,55 @@ export default function SettingsPanel() {
           >
             {settings.llmApiKey ? 'Update AI config' : 'Enable AI'}
           </button>
+
+          <label className="flex items-start justify-between gap-3 rounded-2xl bg-[#f8f8f9] px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-[#111116]">Extended thinking</p>
+              <p className="mt-0.5 text-xs text-[#7a7b86]">Let Sauti reason longer on suggestions. Costs more tokens; better picks.</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={settings.extendedThinking}
+              onChange={(e) => settings.setExtendedThinking(e.target.checked)}
+              className="mt-1 h-4 w-4 accent-[#ef5466]"
+            />
+          </label>
+
+          <label className="flex items-start justify-between gap-3 rounded-2xl bg-[#f8f8f9] px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-[#111116]">Auto-radio</p>
+              <p className="mt-0.5 text-xs text-[#7a7b86]">When the queue runs dry, Sauti keeps playing with tracks that fit.</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={settings.autoRadio}
+              onChange={(e) => settings.setAutoRadio(e.target.checked)}
+              className="mt-1 h-4 w-4 accent-[#ef5466]"
+            />
+          </label>
+
+          <div className="rounded-2xl bg-[#f8f8f9] px-4 py-3">
+            <p className="text-sm font-medium text-[#111116]">Library analysis</p>
+            <p className="mt-0.5 text-xs text-[#7a7b86]">
+              {taggedCount} of {tracks.length} tracks analyzed
+              {tasteProfile && tasteBuiltAt
+                ? ` · taste profile built from ${tasteBuiltFromCount ?? 0} tracks`
+                : ' · no taste profile yet'}
+            </p>
+            <button
+              type="button"
+              onClick={() => void handleReanalyze()}
+              disabled={reanalyzing || tasteRebuilding || !settings.llmApiKey}
+              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-black/8 bg-white px-4 py-3 text-sm font-medium text-[#111116] transition-colors hover:bg-[#f1f1f4] disabled:opacity-50"
+            >
+              <RefreshCw size={14} className={reanalyzing || tasteRebuilding ? 'animate-spin' : ''} />
+              {reanalyzing || tasteRebuilding ? 'Analyzing…' : 'Re-analyze library'}
+            </button>
+          </div>
         </div>
       </section>
+
+      {import.meta.env.DEV ? <AIStatsPanel /> : null}
 
       <section className="rounded-[24px] border border-black/8 bg-white p-4">
         <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-[#686973]">

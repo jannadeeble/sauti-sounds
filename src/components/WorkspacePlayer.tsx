@@ -206,7 +206,7 @@ export default function WorkspacePlayer() {
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-2 z-30 px-4">
-      <div className="pointer-events-auto mx-auto max-w-[980px] overflow-hidden rounded-2xl border border-black/[0.07] bg-white/70 shadow-[0_2px_24px_rgba(17,17,22,0.07)] backdrop-blur-xl backdrop-saturate-150">
+      <div className="pointer-events-auto mx-auto max-w-[980px] overflow-hidden rounded-[28px] border border-black/10 bg-white/80 shadow-[0_4px_32px_rgba(17,17,22,0.12)] backdrop-blur-xl backdrop-saturate-150">
         <AudioPlayer<11>
           key={sessionId}
           playList={playlist}

@@ -26,6 +26,8 @@ export const useSelectionStore = create<SelectionState>((set) => ({
       const next = new Set(state.selectedIds)
       if (next.has(id)) next.delete(id)
       else next.add(id)
+      // auto-exit selection mode when the last item is deselected
+      if (next.size === 0) return { selectedIds: next, selecting: false }
       return { selectedIds: next }
     })
   },

@@ -86,44 +86,6 @@ img {
     var(--deezer-bg);
 }
 
-.deezer-brand-bars {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 2px;
-  width: 24px;
-  height: 18px;
-}
-
-.deezer-brand-bars span {
-  border-radius: 999px;
-  align-self: end;
-}
-
-.deezer-brand-bars span:nth-child(1) {
-  height: 35%;
-  background: #ff9b2f;
-}
-
-.deezer-brand-bars span:nth-child(2) {
-  height: 55%;
-  background: #ff7d48;
-}
-
-.deezer-brand-bars span:nth-child(3) {
-  height: 80%;
-  background: #ef5466;
-}
-
-.deezer-brand-bars span:nth-child(4) {
-  height: 68%;
-  background: #9558d6;
-}
-
-.deezer-brand-bars span:nth-child(5) {
-  height: 48%;
-  background: #5686ef;
-}
-
 .deezer-search-shell {
   display: flex;
   align-items: center;

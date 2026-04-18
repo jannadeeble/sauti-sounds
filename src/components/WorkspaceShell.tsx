@@ -977,13 +977,12 @@ export default function WorkspaceShell() {
 function BrandMark({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`flex items-center gap-3 ${compact ? 'min-w-0' : ''}`}>
-      <div className="deezer-brand-bars" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-        <span />
-        <span />
-      </div>
+      <img
+        src="/brand/sauti-wave.png"
+        alt=""
+        aria-hidden="true"
+        className={`shrink-0 object-contain ${compact ? 'h-7 w-12' : 'h-10 w-16'}`}
+      />
       <div className={`deezer-display ${compact ? 'text-[1.35rem] sm:text-[1.6rem]' : 'text-[2.15rem]'} leading-none text-[#111116]`}>
         sauti
       </div>

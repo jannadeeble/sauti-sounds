@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, CheckCircle, FileJson, Music, Upload, XCircle } from 'lucide-react'
 import {
   buildPlaylistsFromMatches,
@@ -10,13 +10,13 @@ import {
   type SpotifyPlaylist,
   type SpotifyTrackEntry,
 } from '../lib/spotifyImport'
-import { db } from '../db'
 import { useLibraryStore } from '../stores/libraryStore'
 import { usePlaylistStore } from '../stores/playlistStore'
 import { useTidalStore } from '../stores/tidalStore'
 import type { Track } from '../types'
 
 type Step = 'upload' | 'parsing' | 'matching' | 'review' | 'done'
+type ConflictMode = 'skip' | 'merge' | 'replace'
 
 export interface ImportDoneResult {
   importedTracks?: Track[]
@@ -31,6 +31,10 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
   const importFolder = useLibraryStore((state) => state.importFolder)
   const importing = useLibraryStore((state) => state.importing)
   const importProgress = useLibraryStore((state) => state.importProgress)
+  const cacheTidalTracks = useLibraryStore((state) => state.cacheTidalTracks)
+  const appPlaylists = usePlaylistStore((state) => state.appPlaylists)
+  const loadPlaylists = usePlaylistStore((state) => state.loadPlaylists)
+  const bulkImportAppPlaylists = usePlaylistStore((state) => state.bulkImportAppPlaylists)
   const tidalConnected = useTidalStore((state) => state.tidalConnected)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -43,6 +47,38 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
   const [progress, setProgress] = useState<ImportProgress | null>(null)
   const [reviewTab, setReviewTab] = useState<'matched' | 'uncertain' | 'missing'>('matched')
   const [acceptedUncertain, setAcceptedUncertain] = useState<Set<number>>(new Set())
+  const [rejectedMatched, setRejectedMatched] = useState<Set<number>>(new Set())
+  const [conflictMode, setConflictMode] = useState<ConflictMode>('skip')
+  const [finishing, setFinishing] = useState(false)
+  const [finishError, setFinishError] = useState<string | null>(null)
+  const [finishSummary, setFinishSummary] = useState<{
+    tracks: number
+    created: number
+    merged: number
+    replaced: number
+    skipped: number
+  } | null>(null)
+
+  // Keep loaded app playlists in sync so conflict detection reflects reality.
+  useEffect(() => {
+    if (step === 'upload') {
+      void loadPlaylists()
+    }
+  }, [step, loadPlaylists])
+
+  const existingPlaylistNames = useMemo(() => {
+    const set = new Set<string>()
+    for (const p of appPlaylists) set.add(p.name.toLowerCase())
+    return set
+  }, [appPlaylists])
+
+  const conflictCount = useMemo(
+    () => spotifyPlaylists.filter((p) => existingPlaylistNames.has(p.name.toLowerCase())).length,
+    [spotifyPlaylists, existingPlaylistNames],
+  )
+
+  const selectedTrackCount =
+    matched.length - rejectedMatched.size + acceptedUncertain.size
 
   const handleLocalImport = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget
@@ -62,11 +98,11 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
 
       const handle = await pickerWindow.showDirectoryPicker()
       const result = await importFolder(handle)
-      
+
       if (result.playlists.length > 0) {
         await usePlaylistStore.getState().loadPlaylists()
       }
-      
+
       onDone({ importedTracks: result.tracks })
     } catch (error) {
       if (!(error instanceof DOMException) || error.name !== 'AbortError') {
@@ -88,6 +124,9 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
       })
 
       setStep('parsing')
+      setFinishError(null)
+      setRejectedMatched(new Set())
+      setAcceptedUncertain(new Set())
 
       const allTracks: SpotifyTrackEntry[] = []
       const allPlaylists: SpotifyPlaylist[] = []
@@ -141,45 +180,77 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
   }, [tidalConnected])
 
   async function finishImport() {
-    const tracksToSave = [
-      ...matched.filter((result) => result.tidalMatch).map((result) => result.tidalMatch!),
-      ...uncertain
-        .filter((_, index) => acceptedUncertain.has(index))
-        .map((result) => result.tidalMatch!)
-        .filter(Boolean),
-    ]
+    setFinishing(true)
+    setFinishError(null)
+    try {
+      // Explicit add: exactly the tracks the user opted to keep.
+      const acceptedMatched = matched
+        .map((result, index) => ({ result, index }))
+        .filter(({ index }) => !rejectedMatched.has(index))
+        .map(({ result }) => result)
 
-    for (const track of tracksToSave) {
-      await db.tracks.put({
-        ...track,
-        addedAt: track.addedAt || Date.now(),
-      })
-    }
+      const acceptedUncertainResults = uncertain
+        .map((result, index) => ({ result, index }))
+        .filter(({ index }) => acceptedUncertain.has(index))
+        .map(({ result }) => result)
 
-    const matchMap = new Map<string, typeof tracksToSave[number]>()
+      const tracksToSave = [
+        ...acceptedMatched.map((r) => r.tidalMatch!).filter(Boolean),
+        ...acceptedUncertainResults.map((r) => r.tidalMatch!).filter(Boolean),
+      ]
 
-    for (const result of matched) {
-      if (result.tidalMatch) {
-        matchMap.set(`${result.spotify.artistName}|||${result.spotify.trackName}`.toLowerCase(), result.tidalMatch)
+      // Route through the canonical library helper so the store refreshes
+      // and any future write-path changes (analytics, R2, etc.) apply here too.
+      if (tracksToSave.length > 0) {
+        await cacheTidalTracks(tracksToSave)
       }
-    }
 
-    uncertain.forEach((result, index) => {
-      if (acceptedUncertain.has(index) && result.tidalMatch) {
-        matchMap.set(`${result.spotify.artistName}|||${result.spotify.trackName}`.toLowerCase(), result.tidalMatch)
+      // Build match map keyed on raw artist|||title so playlist rebuilding
+      // (which references the raw Spotify entries) resolves correctly.
+      const matchMap = new Map<string, Track>()
+      for (const result of acceptedMatched) {
+        if (result.tidalMatch) {
+          matchMap.set(
+            `${result.spotify.artistName}|||${result.spotify.trackName}`.toLowerCase(),
+            result.tidalMatch,
+          )
+        }
       }
-    })
+      for (const result of acceptedUncertainResults) {
+        if (result.tidalMatch) {
+          matchMap.set(
+            `${result.spotify.artistName}|||${result.spotify.trackName}`.toLowerCase(),
+            result.tidalMatch,
+          )
+        }
+      }
 
-    const playlistsToSave = buildPlaylistsFromMatches(spotifyPlaylists, matchMap)
-    if (playlistsToSave.length > 0) {
-      await db.playlists.bulkPut(playlistsToSave)
+      const playlistsToSave = buildPlaylistsFromMatches(spotifyPlaylists, matchMap)
+      const summary = playlistsToSave.length > 0
+        ? await bulkImportAppPlaylists(playlistsToSave, conflictMode)
+        : { created: 0, merged: 0, replaced: 0, skipped: 0 }
+
+      setFinishSummary({ tracks: tracksToSave.length, ...summary })
+      setStep('done')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Import failed.'
+      setFinishError(message)
+    } finally {
+      setFinishing(false)
     }
-
-    setStep('done')
   }
 
   function toggleUncertain(index: number) {
     setAcceptedUncertain((current) => {
+      const next = new Set(current)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }
+
+  function toggleMatched(index: number) {
+    setRejectedMatched((current) => {
       const next = new Set(current)
       if (next.has(index)) next.delete(index)
       else next.add(index)
@@ -334,6 +405,36 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
             {spotifyPlaylists.length} playlists found with {spotifyTracks.length} unique tracks
           </p>
 
+          {conflictCount > 0 ? (
+            <div className="mb-4 rounded-2xl border border-[#f4c6cc] bg-[#fff4f6] p-4">
+              <p className="text-sm font-semibold text-[#8d3140]">
+                {conflictCount} playlist{conflictCount === 1 ? '' : 's'} already exist in your library
+              </p>
+              <p className="mt-1 text-xs text-[#b25563]">
+                Choose how to handle name conflicts. Non-conflicting playlists will always be created.
+              </p>
+              <div className="mt-3 flex gap-1 rounded-full bg-white/80 p-1">
+                {(['skip', 'merge', 'replace'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setConflictMode(mode)}
+                    className={`flex-1 rounded-full px-3 py-2 text-xs font-medium capitalize transition-colors ${
+                      conflictMode === mode ? 'bg-[#ef5466] text-white' : 'text-[#8d3140] hover:bg-white'
+                    }`}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] text-[#b25563]">
+                {conflictMode === 'skip' && 'Leave existing playlists untouched.'}
+                {conflictMode === 'merge' && 'Append new tracks, dedupe against existing items.'}
+                {conflictMode === 'replace' && 'Delete existing playlists and create fresh ones.'}
+              </p>
+            </div>
+          ) : null}
+
           <div className="mb-4 flex gap-1 rounded-full border border-black/8 bg-[#f8f8f9] p-1">
             {(['matched', 'uncertain', 'missing'] as const).map((tab) => (
               <button
@@ -351,19 +452,32 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
 
           <div className="max-h-[42vh] space-y-2 overflow-y-auto">
             {reviewTab === 'matched'
-              ? matched.map((result, index) => (
-                  <div key={`${result.spotify.trackName}-${index}`} className="flex items-center gap-3 rounded-2xl border border-black/6 bg-white px-4 py-3">
-                    <CheckCircle size={16} className="text-green-400" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm text-[#111116]">{result.spotify.trackName}</p>
-                      <p className="truncate text-xs text-[#7a7b86]">{result.spotify.artistName}</p>
-                    </div>
-                    <div className="min-w-0 flex-1 text-right">
-                      <p className="truncate text-sm text-green-700">{result.tidalMatch?.title}</p>
-                      <p className="truncate text-xs text-[#7a7b86]">{result.tidalMatch?.artist}</p>
-                    </div>
-                  </div>
-                ))
+              ? matched.map((result, index) => {
+                  const rejected = rejectedMatched.has(index)
+                  return (
+                    <button
+                      key={`${result.spotify.trackName}-${index}`}
+                      type="button"
+                      onClick={() => toggleMatched(index)}
+                      className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-colors ${
+                        rejected ? 'border border-black/6 bg-[#f8f8f9] opacity-60' : 'border border-black/6 bg-white hover:bg-[#fafafb]'
+                      }`}
+                    >
+                      <CheckCircle size={16} className={rejected ? 'text-[#b4b6c0]' : 'text-green-400'} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm text-[#111116]">{result.spotify.trackName}</p>
+                        <p className="truncate text-xs text-[#7a7b86]">{result.spotify.artistName}</p>
+                      </div>
+                      <div className="min-w-0 flex-1 text-right">
+                        <p className={`truncate text-sm ${rejected ? 'text-[#7a7b86]' : 'text-green-700'}`}>
+                          {result.tidalMatch?.title}
+                        </p>
+                        <p className="truncate text-xs text-[#7a7b86]">{result.tidalMatch?.artist}</p>
+                      </div>
+                      <div className={`h-5 w-5 rounded-full border ${rejected ? 'border-[#b4b6c0]' : 'border-accent bg-accent'}`} />
+                    </button>
+                  )
+                })
               : null}
 
             {reviewTab === 'uncertain'
@@ -407,22 +521,37 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
               : null}
           </div>
 
+          {finishError ? (
+            <div className="mt-4 rounded-2xl border border-[#f4c6cc] bg-[#fff4f6] p-4 text-sm text-[#8d3140]">
+              {finishError}
+            </div>
+          ) : null}
+
           <button
             type="button"
             onClick={() => void finishImport()}
-            className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-accent px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-accent-dark"
+            disabled={finishing || selectedTrackCount === 0}
+            className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-accent px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-accent-dark disabled:opacity-50"
           >
-            Import {matched.length + acceptedUncertain.size} matched tracks
+            {finishing
+              ? 'Adding to library…'
+              : `Add ${selectedTrackCount} track${selectedTrackCount === 1 ? '' : 's'} to library`}
           </button>
         </div>
       ) : null}
 
-      {step === 'done' ? (
+      {step === 'done' && finishSummary ? (
         <div className="py-12 text-center">
           <CheckCircle size={48} className="mx-auto mb-4 text-green-400" />
           <h3 className="text-lg font-semibold">Import complete</h3>
           <p className="mx-auto mt-2 max-w-sm text-sm text-[#7a7b86]">
-            {matched.length + acceptedUncertain.size} tracks were added and {spotifyPlaylists.length} playlists were rebuilt.
+            Added {finishSummary.tracks} track{finishSummary.tracks === 1 ? '' : 's'} to your library.
+          </p>
+          <p className="mx-auto mt-1 max-w-sm text-xs text-[#8c8d96]">
+            Playlists — {finishSummary.created} created
+            {finishSummary.merged > 0 ? `, ${finishSummary.merged} merged` : ''}
+            {finishSummary.replaced > 0 ? `, ${finishSummary.replaced} replaced` : ''}
+            {finishSummary.skipped > 0 ? `, ${finishSummary.skipped} skipped` : ''}.
           </p>
           <button
             type="button"

@@ -31,6 +31,10 @@ interface PlaylistState {
   removeTrackFromPlaylist: (playlist: Playlist, item: PlaylistItem, index?: number) => Promise<void>
   moveAppPlaylistItem: (playlistId: string, fromIndex: number, toIndex: number) => Promise<void>
   createProviderPlaylist: (name: string, description?: string) => Promise<Playlist>
+  bulkImportAppPlaylists: (
+    playlists: Playlist[],
+    mode: 'skip' | 'merge' | 'replace',
+  ) => Promise<{ created: number; merged: number; replaced: number; skipped: number }>
 }
 
 function trackToPlaylistItem(track: Track): PlaylistItem {
@@ -200,5 +204,76 @@ export const usePlaylistStore = create<PlaylistState>((set, get) => ({
     const playlist = await createTidalPlaylist(name, description)
     await get().loadPlaylists()
     return playlist
+  },
+
+  bulkImportAppPlaylists: async (playlists, mode) => {
+    const existingApp = await readAppPlaylists()
+    const byName = new Map<string, Playlist>()
+    for (const existing of existingApp) {
+      byName.set(existing.name.toLowerCase(), existing)
+    }
+
+    const toPut: Playlist[] = []
+    const toDelete: string[] = []
+    let created = 0
+    let merged = 0
+    let replaced = 0
+    let skipped = 0
+
+    for (const incoming of playlists) {
+      const existing = byName.get(incoming.name.toLowerCase())
+      if (!existing) {
+        toPut.push(incoming)
+        created += 1
+        continue
+      }
+
+      if (mode === 'skip') {
+        skipped += 1
+        continue
+      }
+
+      if (mode === 'replace') {
+        toDelete.push(existing.id)
+        toPut.push(incoming)
+        replaced += 1
+        continue
+      }
+
+      // merge: keep existing playlist id, append new items, dedupe
+      const existingKeys = new Set(
+        existing.items.map((item) =>
+          item.source === 'tidal' ? `tidal:${item.providerTrackId}` : `local:${item.trackId}`,
+        ),
+      )
+      const additions = incoming.items.filter((item) => {
+        const key = item.source === 'tidal' ? `tidal:${item.providerTrackId}` : `local:${item.trackId}`
+        if (existingKeys.has(key)) return false
+        existingKeys.add(key)
+        return true
+      })
+      if (additions.length === 0) {
+        skipped += 1
+        continue
+      }
+      const nextItems = [...existing.items, ...additions]
+      toPut.push({
+        ...existing,
+        description: existing.description || incoming.description,
+        items: nextItems,
+        updatedAt: Date.now(),
+        trackCount: nextItems.length,
+      })
+      merged += 1
+    }
+
+    if (toDelete.length > 0) {
+      await db.playlists.bulkDelete(toDelete)
+    }
+    if (toPut.length > 0) {
+      await db.playlists.bulkPut(toPut)
+    }
+    await get().loadPlaylists()
+    return { created, merged, replaced, skipped }
   },
 }))

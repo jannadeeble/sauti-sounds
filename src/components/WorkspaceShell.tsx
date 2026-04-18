@@ -505,31 +505,29 @@ export default function WorkspaceShell() {
         <div className="min-h-0 flex flex-col">
           <header className="border-b border-black/8 bg-[#fbfbfc]/95 backdrop-blur-md">
             <div className="flex items-center justify-between gap-3 px-4 py-3 lg:px-8">
-              <div className="flex items-center gap-3">
-                <div className="flex rounded-xl bg-black/8 p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTab('home'); selectPlaylist(undefined) }}
-                    className={`rounded-[10px] px-4 py-1.5 text-sm font-medium transition-all ${
-                      activeTab === 'home'
-                        ? 'bg-[#ef5466] text-white shadow-sm'
-                        : 'text-[#686973] hover:text-[#111116]'
-                    }`}
-                  >
-                    Home
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTab('library'); selectPlaylist(undefined) }}
-                    className={`rounded-[10px] px-4 py-1.5 text-sm font-medium transition-all ${
-                      activeTab === 'library'
-                        ? 'bg-[#ef5466] text-white shadow-sm'
-                        : 'text-[#686973] hover:text-[#111116]'
-                    }`}
-                  >
-                    Library
-                  </button>
-                </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setActiveTab('home'); selectPlaylist(undefined) }}
+                  className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+                    activeTab === 'home'
+                      ? 'border-transparent bg-[#ef5466] text-white hover:bg-[#e0364a]'
+                      : 'border-black/8 bg-white text-[#555661] hover:border-black/16 hover:text-[#111116]'
+                  }`}
+                >
+                  Home
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setActiveTab('library'); selectPlaylist(undefined) }}
+                  className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+                    activeTab === 'library'
+                      ? 'border-transparent bg-[#ef5466] text-white hover:bg-[#e0364a]'
+                      : 'border-black/8 bg-white text-[#555661] hover:border-black/16 hover:text-[#111116]'
+                  }`}
+                >
+                  Library
+                </button>
               </div>
               <div className="flex items-center gap-2">
                 <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />

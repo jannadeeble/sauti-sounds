@@ -422,9 +422,15 @@ export default function WorkspaceShell() {
       return
     }
 
-    const importedTracks = await importFiles()
-    if (importedTracks.length > 0) {
-      finalizeImport({ importedTracks })
+    const result = await importFiles()
+    if (result.dedupeUncertain.length > 0) {
+      // The ImportPanel picks up pendingLocalSwaps from the store on mount
+      // and routes straight into the dedupe-review step.
+      setShowImport(true)
+      return
+    }
+    if (result.tracks.length > 0) {
+      finalizeImport({ importedTracks: result.tracks })
     }
   }
 

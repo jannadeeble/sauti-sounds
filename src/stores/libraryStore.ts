@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { db } from '../db'
 import { getStorageStatus, uploadToR2 } from '../lib/r2Storage'
 import { addTidalFavoriteTrack, getTidalFavoriteTracks, removeTidalFavoriteTrack } from '../lib/tidal'
+import { findTidalDuplicates, type LocalDedupMatch } from '../lib/localDedup'
 import { parseFile, parseFileBlob } from '../lib/metadata'
 import type { Playlist, PlaylistFolder, Track } from '../types'
 import { useNotificationStore } from './notificationStore'
@@ -13,6 +14,17 @@ interface ImportProgress {
   currentFile: string
 }
 
+export interface ImportResult {
+  tracks: Track[]
+  dedupeApplied: number
+  dedupeUncertain: LocalDedupMatch[]
+}
+
+export interface FolderImportResult extends ImportResult {
+  playlists: Playlist[]
+  folders: PlaylistFolder[]
+}
+
 interface LibraryState {
   tracks: Track[]
   loading: boolean
@@ -20,10 +32,13 @@ interface LibraryState {
   syncingFavorites: boolean
   importProgress: ImportProgress | null
   r2Available: boolean
+  pendingLocalSwaps: LocalDedupMatch[]
   loadTracks: () => Promise<void>
-  importFiles: () => Promise<Track[]>
-  importFilesViaInput: (files: FileList) => Promise<Track[]>
-  importFolder: (handle: FileSystemDirectoryHandle, basePath?: string) => Promise<{ tracks: Track[]; playlists: Playlist[]; folders: PlaylistFolder[] }>
+  importFiles: () => Promise<ImportResult>
+  importFilesViaInput: (files: FileList) => Promise<ImportResult>
+  importFolder: (handle: FileSystemDirectoryHandle, basePath?: string) => Promise<FolderImportResult>
+  applyLocalSwaps: (matches: LocalDedupMatch[]) => Promise<number>
+  clearPendingLocalSwaps: () => void
   addTrack: (track: Track) => Promise<void>
   cacheTidalTracks: (tracks: Track[]) => Promise<void>
   syncTidalFavorites: () => Promise<void>
@@ -69,6 +84,79 @@ async function upsertTracks(tracks: Track[]) {
   })))
 }
 
+/**
+ * Rewrite every playlist that references the given Tidal tracks so the items
+ * point at their local replacements instead. Then delete the Tidal rows and
+ * carry any `isFavorite` flag onto the local track so the user doesn't lose
+ * the heart state.
+ */
+async function applySwaps(matches: LocalDedupMatch[]): Promise<number> {
+  if (matches.length === 0) return 0
+
+  const byProviderTrackId = new Map<string, LocalDedupMatch>()
+  for (const m of matches) {
+    if (m.tidal.providerTrackId) byProviderTrackId.set(m.tidal.providerTrackId, m)
+  }
+  if (byProviderTrackId.size === 0) return 0
+
+  // 1. Rewrite playlist items pointing at the Tidal versions.
+  const playlists = await db.playlists.toArray()
+  const now = Date.now()
+  const updates: Playlist[] = []
+  for (const playlist of playlists) {
+    let changed = false
+    const nextItems = playlist.items.map(item => {
+      if (item.source !== 'tidal') return item
+      const match = byProviderTrackId.get(item.providerTrackId)
+      if (!match) return item
+      changed = true
+      return { source: 'local' as const, trackId: match.local.id }
+    })
+    if (changed) {
+      updates.push({
+        ...playlist,
+        items: nextItems,
+        trackCount: nextItems.length,
+        updatedAt: now,
+      })
+    }
+  }
+  if (updates.length > 0) {
+    await db.playlists.bulkPut(updates)
+  }
+
+  // 2. Carry isFavorite onto the local row; drop the Tidal row.
+  const tidalIdsToDelete: string[] = []
+  for (const match of matches) {
+    const tidal = await db.tracks.get(match.tidal.id)
+    if (!tidal) continue
+    if (tidal.isFavorite) {
+      const local = await db.tracks.get(match.local.id)
+      if (local) {
+        await db.tracks.put({ ...local, isFavorite: true })
+      }
+    }
+    tidalIdsToDelete.push(match.tidal.id)
+  }
+  if (tidalIdsToDelete.length > 0) {
+    await db.tracks.bulkDelete(tidalIdsToDelete)
+  }
+
+  return matches.length
+}
+
+async function runAutoDedupe(importedTracks: Track[]): Promise<{
+  applied: number
+  uncertain: LocalDedupMatch[]
+}> {
+  if (importedTracks.length === 0) return { applied: 0, uncertain: [] }
+  const tidalPool = await db.tracks.where('source').equals('tidal').toArray()
+  if (tidalPool.length === 0) return { applied: 0, uncertain: [] }
+  const { confident, uncertain } = findTidalDuplicates(importedTracks, tidalPool)
+  const applied = await applySwaps(confident)
+  return { applied, uncertain }
+}
+
 export const useLibraryStore = create<LibraryState>((set, get) => ({
   tracks: [],
   loading: false,
@@ -76,6 +164,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   syncingFavorites: false,
   importProgress: null,
   r2Available: false,
+  pendingLocalSwaps: [],
 
   checkR2Status: async () => {
     try {
@@ -101,7 +190,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   importFiles: async () => {
     if (!('showOpenFilePicker' in window)) {
       alert('Your browser does not support the File System Access API. Please use Chrome on Android or desktop.')
-      return []
+      return { tracks: [], dedupeApplied: 0, dedupeUncertain: [] }
     }
 
     try {
@@ -140,13 +229,17 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         }
       }
 
+      const { applied, uncertain } = await runAutoDedupe(importedTracks)
+      if (uncertain.length > 0) {
+        set(state => ({ pendingLocalSwaps: [...state.pendingLocalSwaps, ...uncertain] }))
+      }
       await get().loadTracks()
-      return importedTracks
+      return { tracks: importedTracks, dedupeApplied: applied, dedupeUncertain: uncertain }
     } catch (err: unknown) {
       if (!(err instanceof DOMException) || err.name !== 'AbortError') {
         console.error('Import failed:', err)
       }
-      return []
+      return { tracks: [], dedupeApplied: 0, dedupeUncertain: [] }
     } finally {
       set({ importing: false, importProgress: null })
     }
@@ -177,11 +270,31 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         }
       }
 
+      const { applied, uncertain } = await runAutoDedupe(importedTracks)
+      if (uncertain.length > 0) {
+        set(state => ({ pendingLocalSwaps: [...state.pendingLocalSwaps, ...uncertain] }))
+      }
       await get().loadTracks()
-      return importedTracks
+      return { tracks: importedTracks, dedupeApplied: applied, dedupeUncertain: uncertain }
     } finally {
       set({ importing: false, importProgress: null })
     }
+  },
+
+  applyLocalSwaps: async (matches) => {
+    const count = await applySwaps(matches)
+    const consumedIds = new Set(matches.map(m => m.local.id + '|' + m.tidal.id))
+    set(state => ({
+      pendingLocalSwaps: state.pendingLocalSwaps.filter(
+        m => !consumedIds.has(m.local.id + '|' + m.tidal.id),
+      ),
+    }))
+    await get().loadTracks()
+    return count
+  },
+
+  clearPendingLocalSwaps: () => {
+    set({ pendingLocalSwaps: [] })
   },
 
   importFolder: async (handle, basePath = '') => {
@@ -323,7 +436,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       const rootName = basePath || handle.name
       const root = await scanDirectory(handle, rootName, rootName)
       if (!root) {
-        return { tracks: [], playlists: [], folders: [] }
+        return { tracks: [], playlists: [], folders: [], dedupeApplied: 0, dedupeUncertain: [] }
       }
 
       const now = Date.now()
@@ -331,7 +444,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
       const totalFiles = plannedPlaylists.reduce((sum, p) => sum + p.files.length, 0)
       if (totalFiles === 0) {
-        return { tracks: [], playlists: [], folders: [] }
+        return { tracks: [], playlists: [], folders: [], dedupeApplied: 0, dedupeUncertain: [] }
       }
 
       set({ importing: true, importProgress: { current: 0, total: totalFiles, currentFile: '' } })
@@ -379,6 +492,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         await db.playlists.bulkPut(playlists)
       }
 
+      const { applied, uncertain } = await runAutoDedupe(importedTracks)
+      if (uncertain.length > 0) {
+        set(state => ({ pendingLocalSwaps: [...state.pendingLocalSwaps, ...uncertain] }))
+      }
       await get().loadTracks()
 
       if (importedTracks.length > 0) {
@@ -389,6 +506,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           `${playlists.length} playlist${playlists.length === 1 ? '' : 's'}`,
         ]
         if (folderCount > 0) parts.push(`${folderCount} folder${folderCount === 1 ? '' : 's'}`)
+        if (applied > 0) parts.push(`${applied} TIDAL duplicate${applied === 1 ? '' : 's'} replaced`)
         const title = `Imported "${rootName}"`
         const body = looseCount > 0
           ? `${parts.join(', ')}. Loose tracks in ${looseCount} folder${looseCount === 1 ? '' : 's'} were placed in sibling "(loose tracks)" playlists: ${looseTracksFolderNames.join(', ')}.`
@@ -400,7 +518,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         })
       }
 
-      return { tracks: importedTracks, playlists, folders }
+      return { tracks: importedTracks, playlists, folders, dedupeApplied: applied, dedupeUncertain: uncertain }
     } finally {
       set({ importing: false, importProgress: null })
     }

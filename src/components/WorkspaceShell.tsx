@@ -47,17 +47,15 @@ const panelClass = 'rounded-[28px] border border-black/8 bg-white shadow-[0_1px_
 const mutedPanelClass = 'rounded-[22px] border border-black/6 bg-[#f8f8f9]'
 
 const LIBRARY_FILTERS: { value: LibraryFilter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'tidal', label: 'TIDAL' },
-  { value: 'local', label: 'Local' },
   { value: 'playlists', label: 'Playlists' },
   { value: 'artists', label: 'Artists' },
+  { value: 'all', label: 'Tracks' },
 ]
 
 const ACTIVE_TAB_STORAGE_KEY = 'sauti.activeTab'
 const LIBRARY_FILTER_STORAGE_KEY = 'sauti.libraryFilter'
 const WORKSPACE_TAB_VALUES: readonly WorkspaceTab[] = ['home', 'library']
-const LIBRARY_FILTER_VALUES: readonly LibraryFilter[] = ['all', 'tidal', 'local', 'playlists', 'artists']
+const LIBRARY_FILTER_VALUES: readonly LibraryFilter[] = ['all', 'playlists', 'artists']
 
 function readStoredValue<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   if (typeof window === 'undefined') return fallback
@@ -155,7 +153,6 @@ export default function WorkspaceShell() {
   const loadTasteProfile = useTasteStore((state) => state.load)
 
   const selecting = useSelectionStore((state) => state.selecting)
-  const enterSelection = useSelectionStore((state) => state.enter)
   const exitSelection = useSelectionStore((state) => state.exit)
 
   useEffect(() => {
@@ -497,7 +494,6 @@ export default function WorkspaceShell() {
               label="Ask Sauti"
               icon={<Bot size={16} />}
               onClick={() => setShowAI(true)}
-              accent
             />
           </div>
         </aside>
@@ -530,7 +526,7 @@ export default function WorkspaceShell() {
                 </button>
               </div>
               <div className="flex items-center gap-2">
-                <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
+                <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} />
                 <TopbarActionButton label="Upload" icon={<Upload size={16} />} onClick={() => setShowImport(true)} />
                 <TopbarActionButton label="Search" icon={<Search size={16} />} onClick={openSearch} />
                 <NotificationBell />
@@ -604,19 +600,8 @@ export default function WorkspaceShell() {
                       ))}
                     </div>
 
-                    {libraryFilter === 'all' || libraryFilter === 'tidal' || libraryFilter === 'local' ? (
+                    {libraryFilter === 'all' ? (
                       <div className="ml-auto flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => (selecting ? exitSelection() : enterSelection())}
-                          className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
-                            selecting
-                              ? 'border-transparent bg-[#ef5466] text-white hover:bg-[#e0364a]'
-                              : 'border-black/8 bg-white text-[#555661] hover:border-black/16 hover:text-[#111116]'
-                          }`}
-                        >
-                          {selecting ? 'Done' : 'Select'}
-                        </button>
                         <label className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-[#f8f8f9] px-3 py-2 text-sm text-[#686973]">
                           <SlidersHorizontal size={14} />
                           <select
@@ -893,7 +878,7 @@ function FilterPill({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
         active
           ? 'border-transparent bg-[#ef5466] text-white hover:bg-[#e0364a]'
           : 'border-black/8 bg-white text-[#555661] hover:border-black/16 hover:text-[#111116]'

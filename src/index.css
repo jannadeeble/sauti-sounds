@@ -262,7 +262,7 @@ img {
 
 /* Spread prev / play / next apart */
 .workspace-player--floating .rmap-ctrl-btn-wrapper {
-  gap: 24px;
+  gap: 28px;
 }
 
 .workspace-player--floating .rmap-artwork-container {
@@ -343,8 +343,8 @@ img {
 
 @media (max-width: 720px) {
   .workspace-player--floating .rmap-interface-grid {
-    gap: 10px !important;
-    padding: 10px 14px !important;
+    gap: 8px !important;
+    padding: 10px 14px 8px !important;
     flex-wrap: wrap !important;
   }
 
@@ -360,6 +360,30 @@ img {
   .workspace-player--floating .rmap-interface-grid > *:has(.rmap-bar-progress-wrapper) {
     flex: 1 1 100%;
     order: 10;
+    padding: 0 0 4px !important;
+  }
+
+  /* Bigger touch targets on mobile */
+  .workspace-player--floating .rmap-ctrl-btn-wrapper {
+    gap: 32px !important;
+  }
+
+  .workspace-player--floating .styled-btn {
+    min-height: 48px !important;
+    min-width: 36px !important;
+  }
+
+  .workspace-player--floating .styled-btn.rmap-play-btn {
+    width: 52px !important;
+    height: 52px !important;
+    padding: 14px !important;
+  }
+
+  /* Slightly larger artwork on mobile */
+  .workspace-player--floating .rmap-artwork-container img,
+  .workspace-player--floating .rmap-artwork-container .rmap-artwork-fallback {
+    width: 48px !important;
+    height: 48px !important;
   }
 }
 
@@ -392,14 +416,16 @@ img {
 .workspace-player .styled-btn {
   align-items: center;
   justify-content: center;
-  width: 18px;
+  width: 28px;
+  min-height: 44px;
+  display: flex;
   color: rgba(255, 255, 255, 0.88);
 }
 
 .workspace-player .styled-btn.rmap-play-btn {
-  width: 40px;
-  height: 40px;
-  padding: 11px;
+  width: 46px;
+  height: 46px;
+  padding: 12px;
   border-radius: 999px;
   background: var(--color-accent);
   color: #fff;

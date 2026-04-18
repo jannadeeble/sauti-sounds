@@ -989,7 +989,7 @@ function HomeView({
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {recentTracks.map((track) => (
               <SpeedDialTile key={track.id} track={track} onClick={() => onPlayTrack(track, recentTracks)} />
             ))}
@@ -1037,7 +1037,7 @@ function ArtistsGrid({
   onSelect: (artist: string) => void
 }) {
   return (
-    <div className="grid grid-cols-4 gap-2">
+    <div className="grid grid-cols-3 gap-2">
       {groups.map((group) => (
         <ArtistTile key={group.artist} group={group} onClick={() => onSelect(group.artist)} />
       ))}

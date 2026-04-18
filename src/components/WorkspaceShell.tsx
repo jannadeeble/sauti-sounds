@@ -500,7 +500,7 @@ export default function WorkspaceShell() {
 
         <div className="min-h-0 flex flex-col">
           <header className="px-4 pt-3 pb-3 lg:px-8 lg:pt-4 lg:pb-4">
-            <div className="flex items-center justify-between gap-3 rounded-2xl border border-black/[0.07] bg-white/70 px-5 py-3 shadow-[0_2px_24px_rgba(17,17,22,0.07)] backdrop-blur-xl backdrop-saturate-150">
+            <div className="flex items-center justify-between gap-3 rounded-[28px] border border-black/10 bg-white/80 px-5 py-3 shadow-[0_4px_32px_rgba(17,17,22,0.12)] backdrop-blur-xl backdrop-saturate-150">
               <div className="flex items-center gap-2">
                 <button
                   type="button"

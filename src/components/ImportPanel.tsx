@@ -12,12 +12,13 @@ import {
   type SpotifyPlaylist,
   type SpotifyTrackEntry,
 } from '../lib/spotifyImport'
+import type { LocalDedupMatch } from '../lib/localDedup'
 import { useLibraryStore } from '../stores/libraryStore'
 import { usePlaylistStore } from '../stores/playlistStore'
 import { useTidalStore } from '../stores/tidalStore'
 import type { Track } from '../types'
 
-type Step = 'upload' | 'parsing' | 'matching' | 'review' | 'done'
+type Step = 'upload' | 'parsing' | 'matching' | 'review' | 'dedupe-review' | 'done'
 type ConflictMode = 'skip' | 'merge' | 'replace'
 type SpotifyMode = 'tracks' | 'playlists'
 
@@ -36,6 +37,9 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
   const importProgress = useLibraryStore((state) => state.importProgress)
   const cacheTidalTracks = useLibraryStore((state) => state.cacheTidalTracks)
   const libraryTracks = useLibraryStore((state) => state.tracks)
+  const pendingLocalSwaps = useLibraryStore((state) => state.pendingLocalSwaps)
+  const applyLocalSwaps = useLibraryStore((state) => state.applyLocalSwaps)
+  const clearPendingLocalSwaps = useLibraryStore((state) => state.clearPendingLocalSwaps)
   const appPlaylists = usePlaylistStore((state) => state.appPlaylists)
   const loadPlaylists = usePlaylistStore((state) => state.loadPlaylists)
   const bulkImportAppPlaylists = usePlaylistStore((state) => state.bulkImportAppPlaylists)
@@ -64,6 +68,10 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
     skipped: number
     unresolvedPlaylistTracks?: number
   } | null>(null)
+  const [dedupeMatches, setDedupeMatches] = useState<LocalDedupMatch[]>([])
+  const [acceptedDedupe, setAcceptedDedupe] = useState<Set<number>>(new Set())
+  const [applyingDedupe, setApplyingDedupe] = useState(false)
+  const [dedupeAutoApplied, setDedupeAutoApplied] = useState(0)
   // In playlists-only mode the library lookup happens at parse time; keep the
   // resolved map around so finishImport() doesn't re-do the work.
   const [libraryMatchMap, setLibraryMatchMap] = useState<Map<string, Track>>(new Map())
@@ -74,6 +82,17 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
       void loadPlaylists()
     }
   }, [step, loadPlaylists])
+
+  // If the user arrives at the panel with pending dedupe matches queued from
+  // a quick-import elsewhere, surface the review immediately.
+  useEffect(() => {
+    if (step === 'upload' && pendingLocalSwaps.length > 0 && dedupeMatches.length === 0) {
+      setDedupeMatches(pendingLocalSwaps)
+      setAcceptedDedupe(new Set(pendingLocalSwaps.map((_, i) => i)))
+      setDedupeAutoApplied(0)
+      setStep('dedupe-review')
+    }
+  }, [step, pendingLocalSwaps, dedupeMatches.length])
 
   const existingPlaylistNames = useMemo(() => {
     const set = new Set<string>()
@@ -94,9 +113,16 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
     const files = input.files
     if (!files || files.length === 0) return
 
-    const importedTracks = await importFilesViaInput(files)
+    const result = await importFilesViaInput(files)
     input.value = ''
-    onDone({ importedTracks })
+    if (result.dedupeUncertain.length > 0) {
+      setDedupeMatches(result.dedupeUncertain)
+      setAcceptedDedupe(new Set(result.dedupeUncertain.map((_, i) => i)))
+      setDedupeAutoApplied(result.dedupeApplied)
+      setStep('dedupe-review')
+      return
+    }
+    onDone({ importedTracks: result.tracks })
   }, [importFilesViaInput, onDone])
 
   const handleFolderImport = useCallback(async () => {
@@ -110,6 +136,14 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
 
       if (result.playlists.length > 0) {
         await usePlaylistStore.getState().loadPlaylists()
+      }
+
+      if (result.dedupeUncertain.length > 0) {
+        setDedupeMatches(result.dedupeUncertain)
+        setAcceptedDedupe(new Set(result.dedupeUncertain.map((_, i) => i)))
+        setDedupeAutoApplied(result.dedupeApplied)
+        setStep('dedupe-review')
+        return
       }
 
       onDone({ importedTracks: result.tracks })
@@ -353,6 +387,42 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
     })
   }
 
+  function toggleDedupe(index: number) {
+    setAcceptedDedupe((current) => {
+      const next = new Set(current)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }
+
+  async function finishDedupeReview() {
+    setApplyingDedupe(true)
+    try {
+      const accepted = dedupeMatches.filter((_, i) => acceptedDedupe.has(i))
+      if (accepted.length > 0) {
+        await applyLocalSwaps(accepted)
+      }
+      clearPendingLocalSwaps()
+      setDedupeMatches([])
+      setAcceptedDedupe(new Set())
+      setDedupeAutoApplied(0)
+      setStep('upload')
+      onDone()
+    } finally {
+      setApplyingDedupe(false)
+    }
+  }
+
+  function skipDedupeReview() {
+    clearPendingLocalSwaps()
+    setDedupeMatches([])
+    setAcceptedDedupe(new Set())
+    setDedupeAutoApplied(0)
+    setStep('upload')
+    onDone()
+  }
+
   function toggleMatched(index: number) {
     setRejectedMatched((current) => {
       const next = new Set(current)
@@ -504,6 +574,79 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
 
       {step === 'parsing' ? (
         <div className="py-16 text-center text-[#7a7b86]">Parsing Spotify export...</div>
+      ) : null}
+
+      {step === 'dedupe-review' ? (
+        <div>
+          <div className="mb-4">
+            <h3 className="text-base font-semibold text-[#111116]">Replace TIDAL duplicates?</h3>
+            <p className="mt-1 text-sm text-[#7a7b86]">
+              {dedupeAutoApplied > 0
+                ? `Auto-replaced ${dedupeAutoApplied} obvious duplicate${dedupeAutoApplied === 1 ? '' : 's'}. `
+                : ''}
+              These {dedupeMatches.length} look{dedupeMatches.length === 1 ? 's' : ''} close but we're not sure.
+              Accepted swaps drop the TIDAL track from your library and rewire every playlist to the local file.
+            </p>
+          </div>
+
+          <div className="max-h-[52vh] space-y-2 overflow-y-auto">
+            {dedupeMatches.map((match, index) => {
+              const accepted = acceptedDedupe.has(index)
+              const scorePct = Math.round(match.score * 100)
+              return (
+                <button
+                  key={`${match.local.id}-${match.tidal.id}`}
+                  type="button"
+                  onClick={() => toggleDedupe(index)}
+                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-colors ${
+                    accepted
+                      ? 'border border-accent/30 bg-accent/5'
+                      : 'border border-black/6 bg-white hover:bg-[#fafafb]'
+                  }`}
+                >
+                  <AlertCircle size={16} className="shrink-0 text-yellow-400" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs uppercase tracking-wide text-[#8c8d96]">Local</p>
+                    <p className="truncate text-sm text-[#111116]">{match.local.title}</p>
+                    <p className="truncate text-xs text-[#7a7b86]">{match.local.artist}</p>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs uppercase tracking-wide text-[#8c8d96]">TIDAL (will be replaced)</p>
+                    <p className="truncate text-sm text-[#111116]">{match.tidal.title}</p>
+                    <p className="truncate text-xs text-[#7a7b86]">{match.tidal.artist}</p>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <span className="rounded-full bg-[#f3f3f6] px-2 py-0.5 text-[11px] font-medium text-[#686973]">
+                      {scorePct}%
+                    </span>
+                    <div className={`h-5 w-5 rounded-full border ${accepted ? 'border-accent bg-accent' : 'border-[#b4b6c0]'}`} />
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="mt-6 grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => void finishDedupeReview()}
+              disabled={applyingDedupe}
+              className={primaryBtnClass}
+            >
+              {applyingDedupe
+                ? 'Applying…'
+                : `Replace ${acceptedDedupe.size} TIDAL track${acceptedDedupe.size === 1 ? '' : 's'}`}
+            </button>
+            <button
+              type="button"
+              onClick={skipDedupeReview}
+              disabled={applyingDedupe}
+              className={secondaryBtnClass}
+            >
+              Skip — keep everything
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {step === 'matching' && progress ? (

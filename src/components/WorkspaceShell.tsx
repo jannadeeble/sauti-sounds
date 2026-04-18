@@ -3,16 +3,12 @@ import {
   Bot,
   ChevronRight,
   Disc3,
-  Home,
-  Library,
-  ListMusic,
   Play,
   Plus,
   Radio,
   Search,
   Settings,
   SlidersHorizontal,
-  Sparkles,
   Upload,
 } from 'lucide-react'
 import AIChatPanel from './AIChatPanel'
@@ -149,8 +145,6 @@ export default function WorkspaceShell() {
   const playPlaylist = usePlaybackSessionStore((state) => state.playPlaylist)
   const playTracks = usePlaybackSessionStore((state) => state.playTracks)
   const errorMessage = usePlaybackSessionStore((state) => state.errorMessage)
-  const currentTrack = usePlaybackSessionStore((state) => state.currentTrack)
-  const isPlaying = usePlaybackSessionStore((state) => state.isPlaying)
   const playerOpen = usePlaybackSessionStore((state) => state.playerOpen)
   const setPlayerOpen = usePlaybackSessionStore((state) => state.setPlayerOpen)
 
@@ -333,8 +327,6 @@ export default function WorkspaceShell() {
       .slice(0, 8)
   }, [historyEntries, tracks])
 
-  const localTrackCount = tracks.filter((track) => track.source === 'local').length
-  const tidalTrackCount = tracks.length - localTrackCount
   const desktopPlaylistLinks = appPlaylists.slice(0, 6)
 
   async function handleTidalSearch() {
@@ -434,175 +426,6 @@ export default function WorkspaceShell() {
     }
   }
 
-  const hero = useMemo(() => {
-    if (activeTab === 'home') {
-      return {
-        eyebrow: 'Welcome back',
-        title: 'Home',
-        meta: `${tracks.length} tracks in your library`,
-        description: 'Jump straight back into recent plays, or let Sauti suggest something new.',
-        actions: [
-          recentTracks.length > 0
-            ? {
-                label: 'Resume',
-                icon: <Play size={15} />,
-                onClick: () => playTracks(recentTracks, 'library', 0),
-                accent: true,
-              }
-            : {
-                label: 'Upload music',
-                icon: <Upload size={15} />,
-                onClick: () => void handleQuickImport(),
-                accent: true,
-              },
-          {
-            label: 'Ask Sauti',
-            icon: <Sparkles size={15} />,
-            onClick: () => setShowAI(true),
-          },
-        ] satisfies HeroAction[],
-      }
-    }
-
-    if (libraryFilter === 'playlists' && selectedPlaylist) {
-      const playlist = selectedPlaylist.kind === 'app'
-        ? selectedAppPlaylist
-        : selectedTidalDetail?.playlist || tidalPlaylists.find((item) => item.providerPlaylistId === selectedPlaylist.id)
-      const playlistTracks = selectedPlaylist.kind === 'app'
-        ? appPlaylistTracks.map((entry) => entry.track)
-        : selectedTidalDetail?.tracks || []
-
-      return {
-        eyebrow: selectedPlaylist.kind === 'app' ? 'App playlist' : 'TIDAL playlist',
-        title: playlist?.name || 'Playlist',
-        meta: `${playlistTracks.length} tracks${selectedPlaylist.kind === 'tidal' ? ' • synced from TIDAL' : ''}`,
-        description: playlist?.description || 'Open the queue and play the playlist straight through.',
-        actions: [
-          {
-            label: 'Play all',
-            icon: <Play size={15} />,
-            onClick: () => {
-              if (selectedPlaylist.kind === 'app') handlePlaylistPlayback('app', playlist?.id || '', playlistTracks)
-              else handlePlaylistPlayback('tidal', selectedPlaylist.id, playlistTracks)
-            },
-            accent: true,
-            disabled: playlistTracks.length === 0,
-          },
-          {
-            label: 'Back to playlists',
-            icon: <ListMusic size={15} />,
-            onClick: () => selectPlaylist(undefined),
-          },
-        ] satisfies HeroAction[],
-      }
-    }
-
-    if (libraryFilter === 'playlists') {
-      const totalPlaylists = appPlaylists.length + tidalPlaylists.filter((p) => p.providerPlaylistId).length
-      return {
-        eyebrow: 'Collections',
-        title: 'Playlists',
-        meta: `${totalPlaylists} ${totalPlaylists === 1 ? 'playlist' : 'playlists'}`,
-        description: 'All your playlists in one list — editable mixes and TIDAL collections alike.',
-        actions: [
-          {
-            label: 'Add a playlist',
-            icon: <Plus size={15} />,
-            onClick: () => void handleCreatePlaylist('app'),
-            accent: true,
-          },
-        ] satisfies HeroAction[],
-      }
-    }
-
-    if (libraryFilter === 'artists' && selectedArtist) {
-      return {
-        eyebrow: 'Artist',
-        title: selectedArtist,
-        meta: `${selectedArtistTracks.length} tracks`,
-        description: 'Every track from this artist in your library, grouped in one place.',
-        actions: [
-          {
-            label: 'Play all',
-            icon: <Play size={15} />,
-            onClick: () => playTracks(selectedArtistTracks, 'library', 0),
-            accent: true,
-            disabled: selectedArtistTracks.length === 0,
-          },
-          {
-            label: 'Back to artists',
-            icon: <ListMusic size={15} />,
-            onClick: () => setSelectedArtist(null),
-          },
-        ] satisfies HeroAction[],
-      }
-    }
-
-    if (libraryFilter === 'artists') {
-      return {
-        eyebrow: 'Library',
-        title: 'Artists',
-        meta: `${artistGroups.length} artists`,
-        description: 'Browse your library by artist and open any of them to dig in.',
-        actions: [],
-      }
-    }
-
-    return {
-      eyebrow: currentTrack ? 'Now playing' : 'My music',
-      title: currentTrack ? currentTrack.title : 'Library',
-      meta: currentTrack
-        ? `${currentTrack.artist}${currentTrack.album ? ` • ${currentTrack.album}` : ''}`
-        : `${tracks.length} tracks • ${localTrackCount} local • ${tidalTrackCount} TIDAL`,
-      description: currentTrack
-        ? `Pulled from your ${isPlaying ? 'active queue' : 'library'}.`
-        : 'Your full library across local files and cached TIDAL tracks.',
-      actions: [
-        sortedTracks.length > 0
-          ? {
-              label: 'Play library',
-              icon: <Play size={15} />,
-              onClick: () => playTracks(sortedTracks, 'library', 0),
-              accent: true,
-            }
-          : {
-              label: 'Upload music',
-              icon: <Upload size={15} />,
-              onClick: () => void handleQuickImport(),
-              accent: true,
-            },
-        {
-          label: 'Ask Sauti',
-          icon: <Sparkles size={15} />,
-          onClick: () => setShowAI(true),
-        },
-      ] satisfies HeroAction[],
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    activeTab,
-    appPlaylistTracks,
-    appPlaylists.length,
-    artistGroups.length,
-    currentTrack,
-    handleQuickImport,
-    isPlaying,
-    libraryFilter,
-    localTrackCount,
-    playTracks,
-    recentTracks,
-    selectedAppPlaylist,
-    selectedArtist,
-    selectedArtistTracks,
-    selectedPlaylist,
-    selectedTidalDetail,
-    sortedTracks,
-    tidalConnected,
-    tidalPlaylists,
-    tidalTrackCount,
-    tracks.length,
-  ])
-
   return (
     <div className="workspace-shell">
       <div className="mx-auto flex h-full max-w-[1560px] flex-col lg:grid lg:grid-cols-[220px_minmax(0,1fr)]">
@@ -612,24 +435,6 @@ export default function WorkspaceShell() {
           </div>
 
           <nav className="space-y-1 px-4">
-            <SidebarNavButton
-              label="Home"
-              icon={<Home size={18} />}
-              active={activeTab === 'home'}
-              onClick={() => {
-                setActiveTab('home')
-                selectPlaylist(undefined)
-              }}
-            />
-            <SidebarNavButton
-              label="Library"
-              icon={<Library size={18} />}
-              active={activeTab === 'library'}
-              onClick={() => {
-                setActiveTab('library')
-                selectPlaylist(undefined)
-              }}
-            />
             <SidebarNavButton
               label="Search"
               icon={<Search size={18} />}
@@ -703,22 +508,37 @@ export default function WorkspaceShell() {
 
         <div className="min-h-0 flex flex-col">
           <header className="border-b border-black/8 bg-[#fbfbfc]/95 backdrop-blur-md">
-            <div className="px-4 py-4 lg:px-8 lg:py-5">
-              <div className="flex items-center justify-between gap-3 lg:hidden">
-                <div className="min-w-0">
+            <div className="flex items-center justify-between gap-3 px-4 py-3 lg:px-8">
+              <div className="flex items-center gap-3">
+                <div className="lg:hidden">
                   <BrandMark compact />
                 </div>
-
-                <div className="flex items-center gap-2">
-                  <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
-                  <TopbarActionButton label="Upload" icon={<Upload size={16} />} onClick={() => setShowImport(true)} />
-                  <TopbarActionButton label="Search" icon={<Search size={16} />} onClick={openSearch} />
-                  <NotificationBell />
-                  <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
+                <div className="flex rounded-xl bg-black/8 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab('home'); selectPlaylist(undefined) }}
+                    className={`rounded-[10px] px-4 py-1.5 text-sm font-medium transition-all ${
+                      activeTab === 'home'
+                        ? 'bg-[#111116] text-white shadow-sm'
+                        : 'text-[#686973] hover:text-[#111116]'
+                    }`}
+                  >
+                    Home
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab('library'); selectPlaylist(undefined) }}
+                    className={`rounded-[10px] px-4 py-1.5 text-sm font-medium transition-all ${
+                      activeTab === 'library'
+                        ? 'bg-[#111116] text-white shadow-sm'
+                        : 'text-[#686973] hover:text-[#111116]'
+                    }`}
+                  >
+                    Library
+                  </button>
                 </div>
               </div>
-
-              <div className="hidden items-center justify-end gap-2 lg:flex">
+              <div className="flex items-center gap-2">
                 <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
                 <TopbarActionButton label="Upload" icon={<Upload size={16} />} onClick={() => setShowImport(true)} />
                 <TopbarActionButton label="Search" icon={<Search size={16} />} onClick={openSearch} />
@@ -726,17 +546,10 @@ export default function WorkspaceShell() {
                 <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
               </div>
             </div>
-
           </header>
 
           <main ref={mainContentRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-[12rem] pt-6 lg:px-8 lg:pt-8">
             <div className="space-y-8">
-              <header>
-                <h1 className="deezer-display text-[2.25rem] leading-none text-[#111116] sm:text-[2.75rem]">
-                  {hero.title}
-                </h1>
-              </header>
-
               {errorMessage ? (
                 <div className="rounded-[22px] border border-[#f4c6cc] bg-[#fff4f6] px-5 py-4 text-sm text-[#8d3140]">
                   {errorMessage}
@@ -926,28 +739,6 @@ export default function WorkspaceShell() {
         </div>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-black/8 bg-white/95 backdrop-blur-md lg:hidden">
-        <div className="flex items-stretch">
-          <BottomTabButton
-            label="Home"
-            icon={<Home size={20} />}
-            active={activeTab === 'home'}
-            onClick={() => {
-              setActiveTab('home')
-              selectPlaylist(undefined)
-            }}
-          />
-          <BottomTabButton
-            label="Library"
-            icon={<Library size={20} />}
-            active={activeTab === 'library'}
-            onClick={() => {
-              setActiveTab('library')
-              selectPlaylist(undefined)
-            }}
-          />
-        </div>
-      </nav>
 
       <WorkspacePlayer />
 
@@ -1110,31 +901,6 @@ function TopbarActionButton({
       }`}
     >
       {icon}
-    </button>
-  )
-}
-
-function BottomTabButton({
-  label,
-  icon,
-  active,
-  onClick,
-}: {
-  label: string
-  icon: ReactNode
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex flex-1 flex-col items-center justify-center gap-1 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] text-[11px] font-medium transition-colors ${
-        active ? 'text-[#ef5466]' : 'text-[#686973] hover:text-[#111116]'
-      }`}
-    >
-      {icon}
-      <span>{label}</span>
     </button>
   )
 }

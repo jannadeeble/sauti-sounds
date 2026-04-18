@@ -95,6 +95,49 @@ async function callOpenAI(messages: ChatMessage[], maxTokens: number): Promise<s
   return data.choices[0].message.content
 }
 
+export interface OpenRouterModel {
+  id: string
+  name: string
+  contextLength?: number
+  promptPrice?: number
+  completionPrice?: number
+}
+
+let openRouterModelsCache: OpenRouterModel[] | null = null
+let openRouterModelsPromise: Promise<OpenRouterModel[]> | null = null
+
+/**
+ * Fetches the OpenRouter model catalog. The endpoint is public (no auth
+ * required) and returns a few hundred models. Results are cached for the
+ * lifetime of the page so repeat visits to Settings don't re-fetch.
+ */
+export async function listOpenRouterModels(): Promise<OpenRouterModel[]> {
+  if (openRouterModelsCache) return openRouterModelsCache
+  if (openRouterModelsPromise) return openRouterModelsPromise
+
+  openRouterModelsPromise = (async () => {
+    const res = await fetch('https://openrouter.ai/api/v1/models')
+    if (!res.ok) {
+      openRouterModelsPromise = null
+      throw new Error(`OpenRouter models fetch failed: ${res.status}`)
+    }
+    const data = await res.json()
+    const models: OpenRouterModel[] = (data.data ?? []).map((m: any) => ({
+      id: m.id,
+      name: m.name ?? m.id,
+      contextLength: m.context_length,
+      promptPrice: typeof m.pricing?.prompt === 'string' ? parseFloat(m.pricing.prompt) : undefined,
+      completionPrice: typeof m.pricing?.completion === 'string' ? parseFloat(m.pricing.completion) : undefined,
+    }))
+    // Sort by provider prefix then name so grouped dropdowns render predictably.
+    models.sort((a, b) => a.id.localeCompare(b.id))
+    openRouterModelsCache = models
+    return models
+  })()
+
+  return openRouterModelsPromise
+}
+
 async function callOpenRouter(messages: ChatMessage[], maxTokens: number): Promise<string> {
   // OpenRouter is OpenAI-compatible. The HTTP-Referer and X-Title headers are
   // optional attribution metadata shown on OpenRouter's leaderboard.

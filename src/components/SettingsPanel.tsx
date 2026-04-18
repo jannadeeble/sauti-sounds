@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Brain, Eye, EyeOff, HardDrive, Info, KeyRound, LogOut, Radio, Server, Trash2 } from 'lucide-react'
 import { db } from '../db'
-import type { LLMProvider } from '../lib/llm'
+import { listOpenRouterModels, type LLMProvider, type OpenRouterModel } from '../lib/llm'
 import { useAuthStore } from '../stores/authStore'
 import { useLibraryStore } from '../stores/libraryStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -28,6 +28,36 @@ export default function SettingsPanel() {
   const [llmProvider, setLlmProvider] = useState<LLMProvider>(settings.llmProvider)
   const [llmKey, setLlmKey] = useState(settings.llmApiKey)
   const [llmModel, setLlmModel] = useState(settings.llmModel)
+
+  const [openRouterModels, setOpenRouterModels] = useState<OpenRouterModel[]>([])
+  const [openRouterLoading, setOpenRouterLoading] = useState(false)
+  const [openRouterError, setOpenRouterError] = useState<string | null>(null)
+
+  // Lazy-load the OpenRouter catalog the first time the user selects that
+  // provider. The helper caches across mounts so re-opening Settings is free.
+  useEffect(() => {
+    if (llmProvider !== 'openrouter') return
+    if (openRouterModels.length > 0 || openRouterLoading) return
+    setOpenRouterLoading(true)
+    setOpenRouterError(null)
+    listOpenRouterModels()
+      .then((models) => setOpenRouterModels(models))
+      .catch((err) => setOpenRouterError(err instanceof Error ? err.message : 'Failed to load models'))
+      .finally(() => setOpenRouterLoading(false))
+  }, [llmProvider, openRouterModels.length, openRouterLoading])
+
+  // Group models by provider prefix (e.g. "anthropic/claude-…" → "anthropic")
+  // so the dropdown reads like a menu instead of a 300-row flat list.
+  const openRouterModelsByProvider = useMemo(() => {
+    const groups = new Map<string, OpenRouterModel[]>()
+    for (const model of openRouterModels) {
+      const prefix = model.id.split('/')[0] || 'other'
+      const list = groups.get(prefix) ?? []
+      list.push(model)
+      groups.set(prefix, list)
+    }
+    return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b))
+  }, [openRouterModels])
 
   const inputClass =
     'w-full rounded-2xl border border-black/8 bg-[#f8f8f9] px-3 py-3 text-sm text-[#111116] outline-none placeholder:text-[#9ea0aa] focus:ring-2 focus:ring-accent/20'
@@ -212,21 +242,56 @@ export default function SettingsPanel() {
             </button>
           </div>
 
-          <input
-            type="text"
-            value={llmModel}
-            onChange={(event) => setLlmModel(event.target.value)}
-            placeholder={
-              llmProvider === 'claude'
-                ? 'claude-sonnet-4-20250514'
-                : llmProvider === 'openai'
-                  ? 'gpt-4o'
-                  : llmProvider === 'gemini'
-                    ? 'gemini-2.0-flash'
-                    : 'anthropic/claude-3.5-sonnet'
-            }
-            className={inputClass}
-          />
+          {llmProvider === 'openrouter' ? (
+            <div className="space-y-2">
+              <select
+                value={llmModel}
+                onChange={(event) => setLlmModel(event.target.value)}
+                disabled={openRouterLoading || openRouterModels.length === 0}
+                className={inputClass}
+              >
+                <option value="">
+                  {openRouterLoading
+                    ? 'Loading models…'
+                    : openRouterError
+                      ? 'Failed to load — enter a model slug below'
+                      : `Pick a model (${openRouterModels.length} available)`}
+                </option>
+                {openRouterModelsByProvider.map(([provider, models]) => (
+                  <optgroup key={provider} label={provider}>
+                    {models.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              {openRouterError ? (
+                <input
+                  type="text"
+                  value={llmModel}
+                  onChange={(event) => setLlmModel(event.target.value)}
+                  placeholder="anthropic/claude-3.5-sonnet"
+                  className={inputClass}
+                />
+              ) : null}
+            </div>
+          ) : (
+            <input
+              type="text"
+              value={llmModel}
+              onChange={(event) => setLlmModel(event.target.value)}
+              placeholder={
+                llmProvider === 'claude'
+                  ? 'claude-sonnet-4-20250514'
+                  : llmProvider === 'openai'
+                    ? 'gpt-4o'
+                    : 'gemini-2.0-flash'
+              }
+              className={inputClass}
+            />
+          )}
 
           <button
             type="button"

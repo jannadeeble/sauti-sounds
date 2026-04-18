@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Check, Heart, ListPlus, MoreVertical, Plus, Radio } from 'lucide-react'
+import { Check, Heart, ListPlus, MoreVertical, Play, Plus, Radio } from 'lucide-react'
 import AddToPlaylistDialog from './AddToPlaylistDialog'
 import { useTrackArtworkUrl } from '../lib/artwork'
 import { formatTime } from '../lib/metadata'
@@ -28,9 +28,7 @@ interface TrackRowProps {
 
 export default function TrackRow({
   track,
-  tracks,
   playContext,
-  index = 0,
   highlighted = false,
   extraActions = [],
   onAddToLibrary,
@@ -87,12 +85,16 @@ export default function TrackRow({
   const isSelected = selectedIds.has(track.id)
   const longPressTimer = useRef<number | null>(null)
 
-  function handlePlay() {
+  function handleRowClick() {
     if (selecting) {
       toggleSelection(track.id)
       return
     }
-    playTracks(tracks || [track], playContext, index)
+    enterSelection(track.id)
+  }
+
+  function handlePlay() {
+    playTracks([track], playContext, 0)
   }
 
   function handlePointerDown() {
@@ -137,21 +139,45 @@ export default function TrackRow({
             <Check size={14} strokeWidth={3} />
           </button>
         ) : null}
-        <button
-          type="button"
-          onClick={handlePlay}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={handleRowClick}
+          onDoubleClick={handlePlay}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              handlePlay()
+            } else if (event.key === ' ') {
+              event.preventDefault()
+              handleRowClick()
+            }
+          }}
           onPointerDown={handlePointerDown}
           onPointerUp={cancelLongPress}
           onPointerLeave={cancelLongPress}
           onPointerCancel={cancelLongPress}
-          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          className="group/row flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
         >
-          <div className="h-10 w-10 overflow-hidden rounded-xl bg-[#f1f1f4]">
+          <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-[#f1f1f4]">
             {artworkUrl ? (
               <img src={artworkUrl} alt="" className="h-full w-full object-cover" />
             ) : (
               <div className="flex h-full w-full items-center justify-center text-lg text-[#9d9ea8]">♪</div>
             )}
+            {!selecting ? (
+              <button
+                type="button"
+                aria-label={`Play ${track.title}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  handlePlay()
+                }}
+                className="absolute inset-0 flex items-center justify-center bg-black/45 text-white opacity-0 transition-opacity duration-150 group-hover/row:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
+              >
+                <Play size={16} fill="currentColor" />
+              </button>
+            ) : null}
           </div>
 
           <div className="min-w-0 flex-1">
@@ -172,7 +198,7 @@ export default function TrackRow({
               {track.album ? ` · ${track.album}` : ''}
             </p>
           </div>
-        </button>
+        </div>
 
         <div className="flex items-center gap-2">
           <span className="text-xs text-[#8c8d96]">{formatTime(track.duration)}</span>

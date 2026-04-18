@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Check, HardDrive, Heart, ListPlus, MoreVertical, Plus, Radio } from 'lucide-react'
+import { Check, Heart, ListPlus, MoreVertical, Plus, Radio } from 'lucide-react'
 import AddToPlaylistDialog from './AddToPlaylistDialog'
 import { useTrackArtworkUrl } from '../lib/artwork'
 import { formatTime } from '../lib/metadata'

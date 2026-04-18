@@ -3,7 +3,6 @@ import {
   Bot,
   ChevronRight,
   Disc3,
-  FolderOpen,
   Home,
   Library,
   ListMusic,

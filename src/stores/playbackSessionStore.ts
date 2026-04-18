@@ -65,7 +65,6 @@ export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
       tracks,
       startIndex,
       sessionId: state.sessionId + 1,
-      playerOpen: true,
       errorMessage: null,
       ...initialSyncedState,
     }))
@@ -78,7 +77,6 @@ export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
       tracks,
       startIndex,
       sessionId: state.sessionId + 1,
-      playerOpen: true,
       errorMessage: null,
       ...initialSyncedState,
     }))
@@ -92,7 +90,6 @@ export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
 
       return {
         tracks: [...state.tracks, track],
-        playerOpen: true,
       }
     })
   },

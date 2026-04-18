@@ -138,9 +138,46 @@ export async function listOpenRouterModels(): Promise<OpenRouterModel[]> {
   return openRouterModelsPromise
 }
 
+// Models that support OpenRouter's `reasoning` parameter. Everything else in
+// the list (Claude 3.5, Gemini 2.0, etc.) either ignores it or errors — we
+// only opt in for families that we know thinking is live on.
+function supportsReasoning(modelId: string): boolean {
+  const id = modelId.toLowerCase()
+  return (
+    id.includes('claude-sonnet-4') ||
+    id.includes('claude-opus-4') ||
+    id.includes('claude-haiku-4') ||
+    id.startsWith('openai/o1') ||
+    id.startsWith('openai/o3') ||
+    id.startsWith('openai/o4') ||
+    id.includes('deepseek-r1') ||
+    id.includes('gpt-5') ||
+    id.includes('gemini-2.5')
+  )
+}
+
 async function callOpenRouter(messages: ChatMessage[], maxTokens: number): Promise<string> {
   // OpenRouter is OpenAI-compatible. The HTTP-Referer and X-Title headers are
   // optional attribution metadata shown on OpenRouter's leaderboard.
+  const model = config!.model || 'anthropic/claude-sonnet-4.6'
+
+  const body: Record<string, unknown> = {
+    model,
+    max_tokens: maxTokens,
+    messages,
+    // Web search plugin: augments the prompt with fresh results via Exa.
+    // `max_results: 3` keeps the cost at ~$0.012/call while still giving
+    // the model enough context to cite current releases, tour dates, etc.
+    plugins: [{ id: 'web', max_results: 3 }],
+  }
+
+  if (supportsReasoning(model)) {
+    // "high" is the step below the new "max" effort level introduced for
+    // Claude 4.6 — gets heavy thinking on hard tasks without the open-ended
+    // token budget of "max".
+    body.reasoning = { effort: 'high' }
+  }
+
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -149,11 +186,7 @@ async function callOpenRouter(messages: ChatMessage[], maxTokens: number): Promi
       'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'https://sauti.app',
       'X-Title': 'Sauti Sounds',
     },
-    body: JSON.stringify({
-      model: config!.model || 'anthropic/claude-3.5-sonnet',
-      max_tokens: maxTokens,
-      messages,
-    }),
+    body: JSON.stringify(body),
   })
 
   if (!res.ok) {

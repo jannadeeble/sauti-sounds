@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, CheckCircle, FileJson, FolderOpen, Music, Upload, XCircle } from 'lucide-react'
+import { AlertCircle, CheckCircle, FileJson, FolderOpen, ListMusic, Music, Upload, XCircle } from 'lucide-react'
 import {
+  buildLibraryMatchMap,
   buildPlaylistsFromMatches,
+  collectPlaylistTracks,
   matchSpotifyToTidal,
   parseSpotifyLibrary,
   parseSpotifyPlaylists,
@@ -17,6 +19,7 @@ import type { Track } from '../types'
 
 type Step = 'upload' | 'parsing' | 'matching' | 'review' | 'done'
 type ConflictMode = 'skip' | 'merge' | 'replace'
+type SpotifyMode = 'tracks' | 'playlists'
 
 export interface ImportDoneResult {
   importedTracks?: Track[]
@@ -32,6 +35,7 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
   const importing = useLibraryStore((state) => state.importing)
   const importProgress = useLibraryStore((state) => state.importProgress)
   const cacheTidalTracks = useLibraryStore((state) => state.cacheTidalTracks)
+  const libraryTracks = useLibraryStore((state) => state.tracks)
   const appPlaylists = usePlaylistStore((state) => state.appPlaylists)
   const loadPlaylists = usePlaylistStore((state) => state.loadPlaylists)
   const bulkImportAppPlaylists = usePlaylistStore((state) => state.bulkImportAppPlaylists)
@@ -39,6 +43,7 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [step, setStep] = useState<Step>('upload')
+  const [spotifyMode, setSpotifyMode] = useState<SpotifyMode>('tracks')
   const [spotifyTracks, setSpotifyTracks] = useState<SpotifyTrackEntry[]>([])
   const [spotifyPlaylists, setSpotifyPlaylists] = useState<SpotifyPlaylist[]>([])
   const [matched, setMatched] = useState<MatchResult[]>([])
@@ -57,7 +62,11 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
     merged: number
     replaced: number
     skipped: number
+    unresolvedPlaylistTracks?: number
   } | null>(null)
+  // In playlists-only mode the library lookup happens at parse time; keep the
+  // resolved map around so finishImport() doesn't re-do the work.
+  const [libraryMatchMap, setLibraryMatchMap] = useState<Map<string, Track>>(new Map())
 
   // Keep loaded app playlists in sync so conflict detection reflects reality.
   useEffect(() => {
@@ -112,7 +121,7 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
     }
   }, [importFolder, onDone])
 
-  const handleSpotifyUpload = useCallback(async () => {
+  const handleSpotifyUpload = useCallback(async (mode: SpotifyMode) => {
     try {
       const pickerWindow = window as unknown as Window & {
         showOpenFilePicker: (options: object) => Promise<FileSystemFileHandle[]>
@@ -123,12 +132,17 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
         types: [{ description: 'JSON files', accept: { 'application/json': ['.json'] } }],
       })
 
+      setSpotifyMode(mode)
       setStep('parsing')
       setFinishError(null)
       setRejectedMatched(new Set())
       setAcceptedUncertain(new Set())
+      setLibraryMatchMap(new Map())
+      setMatched([])
+      setUncertain([])
+      setMissing([])
 
-      const allTracks: SpotifyTrackEntry[] = []
+      const allLibraryTracks: SpotifyTrackEntry[] = []
       const allPlaylists: SpotifyPlaylist[] = []
 
       for (const handle of handles) {
@@ -136,36 +150,79 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
         const text = await file.text()
         const json = JSON.parse(text)
 
-        allTracks.push(...parseSpotifyLibrary(json))
-
-        const playlists = parseSpotifyPlaylists(json)
-        allPlaylists.push(...playlists)
-        for (const playlist of playlists) {
-          allTracks.push(...playlist.tracks)
-        }
+        allLibraryTracks.push(...parseSpotifyLibrary(json))
+        allPlaylists.push(...parseSpotifyPlaylists(json))
       }
 
-      const seen = new Set<string>()
-      const uniqueTracks = allTracks.filter((track) => {
-        const key = `${track.artistName}|||${track.trackName}`.toLowerCase()
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-      })
+      if (mode === 'tracks') {
+        // Tracks mode: YourLibrary + anything embedded in playlist files, all
+        // flattened into one matchable pool. No playlists get created here —
+        // that's a second pass the user runs after tracks land.
+        const combined: SpotifyTrackEntry[] = [...allLibraryTracks]
+        for (const playlist of allPlaylists) combined.push(...playlist.tracks)
 
-      setSpotifyTracks(uniqueTracks)
+        const seen = new Set<string>()
+        const uniqueTracks = combined.filter((track) => {
+          const key = `${track.artistName}|||${track.trackName}`.toLowerCase()
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
+
+        setSpotifyTracks(uniqueTracks)
+        setSpotifyPlaylists([])
+
+        if (uniqueTracks.length === 0) {
+          alert('No tracks found in the selected files. Pick YourLibrary.json or a Playlist*.json export.')
+          setStep('upload')
+          return
+        }
+
+        if (!tidalConnected) {
+          setMissing(uniqueTracks.map((t) => ({ spotify: t, tidalMatch: null, confidence: 'none' as const })))
+          setStep('review')
+          return
+        }
+
+        setStep('matching')
+        const results = await matchSpotifyToTidal(uniqueTracks, setProgress)
+        setMatched(results.matched)
+        setUncertain(results.uncertain)
+        setMissing(results.missing)
+        setStep('review')
+        return
+      }
+
+      // Playlists mode: use only the Playlist*.json files. Resolve each track
+      // against the library already in IndexedDB; TIDAL is consulted only for
+      // leftovers so we don't force round-trips for tracks we already have.
+      if (allPlaylists.length === 0) {
+        alert('No playlists found in the selected files. Pick Playlist1.json / Playlist2.json etc.')
+        setStep('upload')
+        return
+      }
+
+      const playlistTracks = collectPlaylistTracks(allPlaylists)
+      setSpotifyTracks(playlistTracks)
       setSpotifyPlaylists(allPlaylists)
 
-      if (!tidalConnected) {
-        setMatched([])
-        setUncertain([])
-        setMissing(uniqueTracks.map((track) => ({ spotify: track, tidalMatch: null, confidence: 'none' as const })))
+      const libMatches = buildLibraryMatchMap(playlistTracks, libraryTracks)
+      setLibraryMatchMap(libMatches)
+
+      const unresolved = playlistTracks.filter(
+        (t) => !libMatches.has(`${t.artistName}|||${t.trackName}`.toLowerCase()),
+      )
+
+      if (unresolved.length === 0 || !tidalConnected) {
+        // Everything already in library (or TIDAL disconnected, in which case
+        // we can still build playlists from whatever matched locally).
+        setMissing(unresolved.map((t) => ({ spotify: t, tidalMatch: null, confidence: 'none' as const })))
         setStep('review')
         return
       }
 
       setStep('matching')
-      const results = await matchSpotifyToTidal(uniqueTracks, setProgress)
+      const results = await matchSpotifyToTidal(unresolved, setProgress)
       setMatched(results.matched)
       setUncertain(results.uncertain)
       setMissing(results.missing)
@@ -177,7 +234,7 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
       }
       setStep('upload')
     }
-  }, [tidalConnected])
+  }, [tidalConnected, libraryTracks])
 
   async function finishImport() {
     setFinishing(true)
@@ -205,9 +262,22 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
         await cacheTidalTracks(tracksToSave)
       }
 
-      // Build match map keyed on raw artist|||title so playlist rebuilding
-      // (which references the raw Spotify entries) resolves correctly.
-      const matchMap = new Map<string, Track>()
+      if (spotifyMode === 'tracks') {
+        // Tracks-only: we just cached tracks, nothing else to do.
+        setFinishSummary({
+          tracks: tracksToSave.length,
+          created: 0,
+          merged: 0,
+          replaced: 0,
+          skipped: 0,
+        })
+        setStep('done')
+        return
+      }
+
+      // Playlists mode: combine pre-existing library hits + newly-matched
+      // TIDAL results into one match map, then build playlists from it.
+      const matchMap = new Map<string, Track>(libraryMatchMap)
       for (const result of acceptedMatched) {
         if (result.tidalMatch) {
           matchMap.set(
@@ -230,7 +300,22 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
         ? await bulkImportAppPlaylists(playlistsToSave, conflictMode)
         : { created: 0, merged: 0, replaced: 0, skipped: 0 }
 
-      setFinishSummary({ tracks: tracksToSave.length, ...summary })
+      // Count tracks that still didn't resolve — useful feedback for users
+      // who ran playlists-only before importing their full tracks library.
+      const unresolvedCount = spotifyPlaylists.reduce((sum, pl) => {
+        let missingInPl = 0
+        for (const t of pl.tracks) {
+          const key = `${t.artistName}|||${t.trackName}`.toLowerCase()
+          if (!matchMap.has(key)) missingInPl += 1
+        }
+        return sum + missingInPl
+      }, 0)
+
+      setFinishSummary({
+        tracks: tracksToSave.length,
+        ...summary,
+        unresolvedPlaylistTracks: unresolvedCount,
+      })
       setStep('done')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Import failed.'
@@ -352,25 +437,46 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
               </div>
               <div className="min-w-0">
                 <h3 className="text-base font-semibold text-[#111116]">Spotify export</h3>
-                <p className="text-sm text-[#7a7b86]">Rebuild playlists from your export</p>
+                <p className="text-sm text-[#7a7b86]">Tracks first, then rebuild playlists</p>
               </div>
             </header>
 
             <p className="mb-4 text-sm text-[#7a7b86]">
-              Upload the JSON files from your Spotify data export.
-              {tidalConnected
-                ? ' Sauti will try to match each track on TIDAL.'
-                : ' Connect TIDAL in Settings first to auto-match tracks; otherwise Sauti will only parse the export.'}
+              Run these in order. First load your <span className="font-semibold text-[#111116]">tracks</span> so
+              they sit in your library. Then load your <span className="font-semibold text-[#111116]">playlists</span> —
+              Sauti wires each playlist to the tracks it already has, no re-matching.
+              {!tidalConnected
+                ? ' Connect TIDAL in Settings first to auto-match tracks you don\'t already have locally.'
+                : ''}
             </p>
 
-            <button
-              type="button"
-              onClick={() => void handleSpotifyUpload()}
-              className={primaryBtnClass}
-            >
-              <Upload size={16} />
-              Choose Spotify JSON files
-            </button>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => void handleSpotifyUpload('tracks')}
+                className={primaryBtnClass}
+              >
+                <Music size={16} />
+                1. Upload tracks
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleSpotifyUpload('playlists')}
+                disabled={libraryTracks.length === 0}
+                className={secondaryBtnClass}
+                title={libraryTracks.length === 0 ? 'Upload tracks first so playlists have something to reference' : undefined}
+              >
+                <ListMusic size={16} />
+                2. Upload playlists
+              </button>
+            </div>
+
+            <p className="mt-3 text-xs text-[#8c8d96]">
+              {libraryTracks.length === 0
+                ? 'Library is empty — run step 1 first.'
+                : `Library has ${libraryTracks.length.toLocaleString()} track${libraryTracks.length === 1 ? '' : 's'} ready to reference.`}
+            </p>
           </section>
         </div>
       ) : null}
@@ -412,10 +518,12 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
           </div>
 
           <p className="mb-4 text-xs text-[#8c8d96]">
-            {spotifyPlaylists.length} playlists found with {spotifyTracks.length} unique tracks
+            {spotifyMode === 'tracks'
+              ? `${spotifyTracks.length} unique tracks parsed from your export.`
+              : `${spotifyPlaylists.length} playlist${spotifyPlaylists.length === 1 ? '' : 's'} parsed · ${libraryMatchMap.size} track${libraryMatchMap.size === 1 ? '' : 's'} resolved from your library${matched.length + uncertain.length > 0 ? `, ${matched.length + uncertain.length} fetched from TIDAL` : ''}.`}
           </p>
 
-          {conflictCount > 0 ? (
+          {spotifyMode === 'playlists' && conflictCount > 0 ? (
             <div className="mb-4 rounded-2xl border border-[#f4c6cc] bg-[#fff4f6] p-4">
               <p className="text-sm font-semibold text-[#8d3140]">
                 {conflictCount} playlist{conflictCount === 1 ? '' : 's'} already exist in your library
@@ -540,12 +648,21 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
           <button
             type="button"
             onClick={() => void finishImport()}
-            disabled={finishing || selectedTrackCount === 0}
+            disabled={
+              finishing ||
+              (spotifyMode === 'tracks'
+                ? selectedTrackCount === 0
+                : libraryMatchMap.size === 0 && selectedTrackCount === 0)
+            }
             className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-accent px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-accent-dark disabled:opacity-50"
           >
             {finishing
-              ? 'Adding to library…'
-              : `Add ${selectedTrackCount} track${selectedTrackCount === 1 ? '' : 's'} to library`}
+              ? spotifyMode === 'tracks'
+                ? 'Adding to library…'
+                : 'Creating playlists…'
+              : spotifyMode === 'tracks'
+                ? `Add ${selectedTrackCount} track${selectedTrackCount === 1 ? '' : 's'} to library`
+                : `Create ${spotifyPlaylists.length} playlist${spotifyPlaylists.length === 1 ? '' : 's'}`}
           </button>
         </div>
       ) : null}
@@ -553,16 +670,40 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
       {step === 'done' && finishSummary ? (
         <div className="py-12 text-center">
           <CheckCircle size={48} className="mx-auto mb-4 text-green-400" />
-          <h3 className="text-lg font-semibold">Upload complete</h3>
-          <p className="mx-auto mt-2 max-w-sm text-sm text-[#7a7b86]">
-            Added {finishSummary.tracks} track{finishSummary.tracks === 1 ? '' : 's'} to your library.
-          </p>
-          <p className="mx-auto mt-1 max-w-sm text-xs text-[#8c8d96]">
-            Playlists — {finishSummary.created} created
-            {finishSummary.merged > 0 ? `, ${finishSummary.merged} merged` : ''}
-            {finishSummary.replaced > 0 ? `, ${finishSummary.replaced} replaced` : ''}
-            {finishSummary.skipped > 0 ? `, ${finishSummary.skipped} skipped` : ''}.
-          </p>
+          <h3 className="text-lg font-semibold">
+            {spotifyMode === 'tracks' ? 'Tracks added' : 'Playlists ready'}
+          </h3>
+
+          {spotifyMode === 'tracks' ? (
+            <>
+              <p className="mx-auto mt-2 max-w-sm text-sm text-[#7a7b86]">
+                Added {finishSummary.tracks} track{finishSummary.tracks === 1 ? '' : 's'} to your library.
+              </p>
+              <p className="mx-auto mt-1 max-w-sm text-xs text-[#8c8d96]">
+                Run step 2 next to rebuild your playlists against these tracks.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="mx-auto mt-2 max-w-sm text-sm text-[#7a7b86]">
+                {finishSummary.created} created
+                {finishSummary.merged > 0 ? `, ${finishSummary.merged} merged` : ''}
+                {finishSummary.replaced > 0 ? `, ${finishSummary.replaced} replaced` : ''}
+                {finishSummary.skipped > 0 ? `, ${finishSummary.skipped} skipped` : ''}.
+              </p>
+              {finishSummary.tracks > 0 ? (
+                <p className="mx-auto mt-1 max-w-sm text-xs text-[#8c8d96]">
+                  Pulled {finishSummary.tracks} extra track{finishSummary.tracks === 1 ? '' : 's'} from TIDAL to fill gaps.
+                </p>
+              ) : null}
+              {finishSummary.unresolvedPlaylistTracks && finishSummary.unresolvedPlaylistTracks > 0 ? (
+                <p className="mx-auto mt-1 max-w-sm text-xs text-[#b25563]">
+                  {finishSummary.unresolvedPlaylistTracks} track{finishSummary.unresolvedPlaylistTracks === 1 ? '' : 's'} couldn't be resolved and were dropped from playlists.
+                </p>
+              ) : null}
+            </>
+          )}
+
           <button
             type="button"
             onClick={() => onDone()}

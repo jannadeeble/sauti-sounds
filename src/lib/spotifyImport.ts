@@ -240,6 +240,61 @@ export async function matchSpotifyToTidal(
   return { matched, uncertain, missing }
 }
 
+/**
+ * Build a match map from tracks already in the user's library. Used by the
+ * "playlists only" import flow where tracks were uploaded in a separate pass
+ * and we just want to wire them into playlists by name.
+ *
+ * Key is the same `artist|||title` format that `buildPlaylistsFromMatches`
+ * consumes (lowercased, using the raw Spotify strings so the cleaned vs. raw
+ * mismatch doesn't drop matches).
+ */
+export function buildLibraryMatchMap(
+  spotifyTracks: SpotifyTrackEntry[],
+  libraryTracks: Track[],
+): Map<string, Track> {
+  // Index the library by a normalized artist+title signature so we can survive
+  // things like casing, "feat." suffixes, and punctuation drift.
+  const libraryIndex = new Map<string, Track>()
+  for (const track of libraryTracks) {
+    const artist = normalize(cleanArtistName(track.artist))
+    const title = normalize(cleanTrackTitle(track.title))
+    if (!artist || !title) continue
+    libraryIndex.set(`${artist}:${title}`, track)
+  }
+
+  const matchMap = new Map<string, Track>()
+  for (const entry of spotifyTracks) {
+    const artist = normalize(cleanArtistName(entry.artistName))
+    const title = normalize(cleanTrackTitle(entry.trackName))
+    if (!artist || !title) continue
+    const hit = libraryIndex.get(`${artist}:${title}`)
+    if (hit) {
+      matchMap.set(`${entry.artistName}|||${entry.trackName}`.toLowerCase(), hit)
+    }
+  }
+  return matchMap
+}
+
+/**
+ * Collect every Spotify track entry contained inside a list of playlists.
+ * Deduped by raw artist+title so we don't re-match the same track multiple
+ * times when it appears in several playlists.
+ */
+export function collectPlaylistTracks(playlists: SpotifyPlaylist[]): SpotifyTrackEntry[] {
+  const seen = new Set<string>()
+  const out: SpotifyTrackEntry[] = []
+  for (const playlist of playlists) {
+    for (const track of playlist.tracks) {
+      const key = `${track.artistName}|||${track.trackName}`.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(track)
+    }
+  }
+  return out
+}
+
 export function buildPlaylistsFromMatches(
   spotifyPlaylists: SpotifyPlaylist[],
   matchMap: Map<string, Track>, // key: "artist|||title" -> Tidal track

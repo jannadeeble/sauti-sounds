@@ -2,7 +2,6 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bot,
   ChevronRight,
-  FolderOpen,
   Library,
   ListMusic,
   Play,
@@ -10,6 +9,7 @@ import {
   Search,
   Settings,
   SlidersHorizontal,
+  Upload,
 } from 'lucide-react'
 import AIChatPanel from './AIChatPanel'
 import BottomSheet from './BottomSheet'
@@ -29,16 +29,48 @@ type LibrarySort = 'recent' | 'title' | 'artist'
 const panelClass = 'rounded-[28px] border border-black/8 bg-white shadow-[0_1px_0_rgba(17,17,22,0.03)]'
 const mutedPanelClass = 'rounded-[22px] border border-black/6 bg-[#f8f8f9]'
 
+const ACTIVE_TAB_STORAGE_KEY = 'sauti.activeTab'
+const LIBRARY_FILTER_STORAGE_KEY = 'sauti.libraryFilter'
+
+function readStoredValue<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+  if (typeof window === 'undefined') return fallback
+  try {
+    const raw = window.localStorage.getItem(key)
+    if (raw && (allowed as readonly string[]).includes(raw)) {
+      return raw as T
+    }
+  } catch {
+    // ignore storage failures (private mode, quota, etc.)
+  }
+  return fallback
+}
+
+function writeStoredValue(key: string, value: string) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(key, value)
+  } catch {
+    // ignore
+  }
+}
+
 function formatPlaylistCount(playlist: Playlist) {
   return playlist.trackCount ?? playlist.items.length
 }
 
+const WORKSPACE_TABS: readonly WorkspaceTab[] = ['library', 'playlists']
+const LIBRARY_FILTERS: readonly LibraryFilter[] = ['all', 'local', 'tidal']
+
 export default function WorkspaceShell() {
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>('library')
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(() =>
+    readStoredValue(ACTIVE_TAB_STORAGE_KEY, WORKSPACE_TABS, 'library'),
+  )
   const [showImport, setShowImport] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showAI, setShowAI] = useState(false)
-  const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('all')
+  const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>(() =>
+    readStoredValue(LIBRARY_FILTER_STORAGE_KEY, LIBRARY_FILTERS, 'all'),
+  )
   const [librarySort, setLibrarySort] = useState<LibrarySort>('recent')
   const [query, setQuery] = useState('')
   const [importNotice, setImportNotice] = useState<string | null>(null)
@@ -77,6 +109,14 @@ export default function WorkspaceShell() {
     void loadTracks()
     void loadPlaylists()
   }, [loadPlaylists, loadTracks])
+
+  useEffect(() => {
+    writeStoredValue(ACTIVE_TAB_STORAGE_KEY, activeTab)
+  }, [activeTab])
+
+  useEffect(() => {
+    writeStoredValue(LIBRARY_FILTER_STORAGE_KEY, libraryFilter)
+  }, [libraryFilter])
 
   useEffect(() => {
     if (selectedPlaylist?.kind === 'tidal' && !tidalPlaylistDetails[selectedPlaylist.id]) {
@@ -280,8 +320,8 @@ export default function WorkspaceShell() {
 
           <div className="mt-auto grid gap-2 p-4">
             <SidebarUtilityButton
-              label={importing && importProgress ? `Importing ${importProgress.current}/${importProgress.total}` : 'Import'}
-              icon={<FolderOpen size={16} />}
+              label={importing && importProgress ? `Uploading ${importProgress.current}/${importProgress.total}` : 'Upload'}
+              icon={<Upload size={16} />}
               onClick={() => setShowImport(true)}
             />
             <SidebarUtilityButton
@@ -307,7 +347,7 @@ export default function WorkspaceShell() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <TopbarActionButton label="Import" icon={<FolderOpen size={16} />} onClick={() => setShowImport(true)} />
+                  <TopbarActionButton label="Upload" icon={<Upload size={16} />} onClick={() => setShowImport(true)} />
                   <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
                   <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
                 </div>
@@ -337,7 +377,7 @@ export default function WorkspaceShell() {
                 </label>
 
                 <div className="flex items-center gap-2">
-                  <TopbarActionButton label="Import" icon={<FolderOpen size={16} />} onClick={() => setShowImport(true)} />
+                  <TopbarActionButton label="Upload" icon={<Upload size={16} />} onClick={() => setShowImport(true)} />
                   <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
                   <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} accent />
                 </div>
@@ -357,10 +397,10 @@ export default function WorkspaceShell() {
                   <h1 className="deezer-display text-[2.4rem] leading-none text-[#111116]">Library</h1>
                 </div>
               ) : activeTab === 'playlists' && !selectedPlaylist ? (
-                <div className="flex flex-wrap items-end justify-between gap-4 px-1">
+                <div className="flex flex-wrap items-center justify-between gap-4 px-1">
                   <h1 className="deezer-display text-[2.4rem] leading-none text-[#111116]">Playlists</h1>
                   <ActionPill
-                    label="New playlist"
+                    label="Add a playlist"
                     icon={<Plus size={15} />}
                     onClick={() => void handleCreatePlaylist('app')}
                     accent
@@ -466,10 +506,10 @@ export default function WorkspaceShell() {
                   ) : sortedTracks.length === 0 ? (
                     <EmptyPanel
                       title="Your library is empty"
-                      description="Import local files or connect TIDAL in Settings to rebuild the classic library view."
+                      description="Upload local files or connect TIDAL in Settings to rebuild the classic library view."
                       action={{
-                        label: 'Import music',
-                        icon: <FolderOpen size={15} />,
+                        label: 'Upload music',
+                        icon: <Upload size={15} />,
                         onClick: () => void handleQuickImport(),
                       }}
                     />
@@ -526,6 +566,7 @@ export default function WorkspaceShell() {
                       appPlaylists={appPlaylists}
                       tidalPlaylists={tidalPlaylists}
                       onOpen={(kind, id) => selectPlaylist({ kind, id })}
+                      onCreate={() => void handleCreatePlaylist('app')}
                     />
                   )}
                 </section>
@@ -559,8 +600,8 @@ export default function WorkspaceShell() {
 
       <BottomSheet
         open={showImport}
-        title="Import music"
-        description="Bring local files or Spotify exports into the prototype."
+        title="Upload music"
+        description="Add local files or bring in a Spotify export."
         onClose={() => setShowImport(false)}
       >
         <ImportPanel onDone={finalizeImport} />
@@ -773,10 +814,12 @@ function PlaylistCollectionsView({
   appPlaylists,
   tidalPlaylists,
   onOpen,
+  onCreate,
 }: {
   appPlaylists: Playlist[]
   tidalPlaylists: Playlist[]
   onOpen: (kind: 'app' | 'tidal', id: string) => void
+  onCreate: () => void
 }) {
   type Row = { kind: 'app' | 'tidal'; id: string; playlist: Playlist }
   const rows: Row[] = [
@@ -788,42 +831,33 @@ function PlaylistCollectionsView({
 
   if (rows.length === 0) {
     return (
-      <div className={`${mutedPanelClass} px-5 py-6 text-sm text-[#686973]`}>
-        No playlists yet. Create one above.
+      <div className="flex flex-col items-center justify-center gap-4 px-4 py-16 text-center">
+        <p className="text-sm text-[#686973]">No playlists yet.</p>
+        <ActionPill label="Add a playlist" icon={<Plus size={15} />} onClick={onCreate} accent />
       </div>
     )
   }
 
   return (
-    <section className={panelClass}>
-      <div className="divide-y divide-black/6">
-        {rows.map((row) => (
+    <div className="divide-y divide-black/6">
+      {rows.map((row) => {
+        const count = row.kind === 'app' ? formatPlaylistCount(row.playlist) : row.playlist.trackCount || 0
+        return (
           <button
             key={`${row.kind}:${row.id}`}
             type="button"
             onClick={() => onOpen(row.kind, row.id)}
-            className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-[#fafafb] sm:px-6"
+            className="flex w-full items-center justify-between gap-3 px-2 py-4 text-left transition-colors hover:bg-[#fafafb]"
           >
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <p className="truncate text-sm font-medium text-[#111116]">{row.playlist.name}</p>
-                {row.kind === 'tidal' ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-cyan-500/8 px-2 py-0.5 text-[10px] uppercase tracking-wide text-cyan-700">
-                    TIDAL
-                  </span>
-                ) : null}
-              </div>
-              <p className="mt-1 text-xs text-[#7a7b86]">
-                {row.kind === 'app'
-                  ? `${formatPlaylistCount(row.playlist)} items`
-                  : `${row.playlist.trackCount || 0} tracks${row.playlist.writable ? '' : ' • read only'}`}
-              </p>
+              <p className="truncate text-sm font-medium text-[#111116]">{row.playlist.name}</p>
+              <p className="mt-1 text-xs text-[#7a7b86]">{count} tracks</p>
             </div>
             <ChevronRight size={16} className="shrink-0 text-[#a2a3ad]" />
           </button>
-        ))}
-      </div>
-    </section>
+        )
+      })}
+    </div>
   )
 }
 

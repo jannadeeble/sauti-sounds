@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { AlertCircle, CheckCircle, FileJson, Music, Upload, XCircle } from 'lucide-react'
+import { AlertCircle, CheckCircle, FileJson, FolderOpen, Music, Upload, XCircle } from 'lucide-react'
 import {
   buildPlaylistsFromMatches,
   matchSpotifyToTidal,
@@ -187,23 +187,37 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
     })
   }
 
+  const cardClass = 'rounded-[24px] border border-black/8 bg-white p-5'
+  const iconChipClass = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#f3f3f6]'
+  const primaryBtnClass =
+    'inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-accent-dark disabled:opacity-50'
+  const secondaryBtnClass =
+    'inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-medium text-[#111116] transition-colors hover:bg-[#fafafb] disabled:opacity-50'
+
+  const primaryLabel = importing && importProgress
+    ? `Uploading ${importProgress.current}/${importProgress.total}`
+    : 'Choose files'
+  const secondaryLabel = importing && importProgress
+    ? `Uploading ${importProgress.current}/${importProgress.total}`
+    : 'Choose folder'
+
   return (
     <div className="space-y-6 pb-6">
       {step === 'upload' ? (
-        <div className="space-y-6">
-          <section className="rounded-[24px] border border-black/8 bg-white p-5">
-            <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent/15">
+        <div className="space-y-4">
+          <section className={cardClass}>
+            <header className="mb-4 flex items-center gap-3">
+              <div className={iconChipClass}>
                 <Music size={20} className="text-accent" />
               </div>
-              <div>
-                <h3 className="font-semibold">Local files</h3>
-                <p className="text-sm text-[#7a7b86]">Import audio stored on this device</p>
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-[#111116]">Local files</h3>
+                <p className="text-sm text-[#7a7b86]">Audio stored on this device</p>
               </div>
-            </div>
+            </header>
 
             <p className="mb-4 text-sm text-[#7a7b86]">
-              Supports MP3, FLAC, WAV, AAC, OGG, and M4A. New imports now cache the file data for direct playback.
+              Supports MP3, FLAC, WAV, AAC, OGG, and M4A. Files are cached for direct playback.
             </p>
 
             <input
@@ -215,44 +229,42 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
               onChange={handleLocalImport}
             />
 
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={importing}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-accent-dark disabled:opacity-50"
-            >
-              <Upload size={18} />
-              {importing && importProgress
-                ? `Importing ${importProgress.current}/${importProgress.total}`
-                : 'Select audio files'}
-            </button>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+                className={primaryBtnClass}
+              >
+                <Upload size={16} />
+                {primaryLabel}
+              </button>
 
-            <button
-              type="button"
-              onClick={() => void handleFolderImport()}
-              disabled={importing}
-              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-accent/30 bg-accent/5 px-4 py-3 text-sm font-medium text-accent transition-colors hover:bg-accent/10 disabled:opacity-50"
-            >
-              <Upload size={18} />
-              {importing && importProgress
-                ? `Importing ${importProgress.current}/${importProgress.total}`
-                : 'Select folder to import'}
-            </button>
+              <button
+                type="button"
+                onClick={() => void handleFolderImport()}
+                disabled={importing}
+                className={secondaryBtnClass}
+              >
+                <FolderOpen size={16} />
+                {secondaryLabel}
+              </button>
+            </div>
 
             {importing && importProgress ? (
-              <div className="mt-4 rounded-[22px] border border-[#f4c6cc] bg-[#fff4f6] p-4">
+              <div className="mt-4 rounded-2xl border border-black/8 bg-[#f8f8f9] p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-[#8d3140]">Importing into your library</p>
-                    <p className="mt-1 text-xs text-[#b25563]">
-                      {importProgress.currentFile ? `Processing: ${importProgress.currentFile}` : 'Caching audio and artwork...'}
-                    </p>
-                  </div>
-                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#8d3140]">
+                  <p className="text-sm font-semibold text-[#111116]">Uploading to your library</p>
+                  <span className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#111116] shadow-[0_0_0_1px_rgba(17,17,22,0.06)]">
                     {importProgress.current}/{importProgress.total}
                   </span>
                 </div>
-                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/80">
+                <p className="mt-1 truncate text-xs text-[#7a7b86]">
+                  {importProgress.currentFile
+                    ? `Processing ${importProgress.currentFile}`
+                    : 'Caching audio and artwork…'}
+                </p>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
                   <div
                     className="h-full rounded-full bg-accent transition-[width] duration-300"
                     style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
@@ -262,33 +274,31 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
             ) : null}
           </section>
 
-          <section className="rounded-[24px] border border-black/8 bg-white p-5">
-            <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f3f3f6]">
+          <section className={cardClass}>
+            <header className="mb-4 flex items-center gap-3">
+              <div className={iconChipClass}>
                 <FileJson size={20} className="text-[#1db954]" />
               </div>
-              <div>
-                <h3 className="font-semibold">Spotify import</h3>
-                <p className="text-sm text-[#7a7b86]">Parse exports and rebuild playlists</p>
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-[#111116]">Spotify export</h3>
+                <p className="text-sm text-[#7a7b86]">Rebuild playlists from your export</p>
               </div>
-            </div>
+            </header>
 
-            <p className="mb-2 text-sm text-[#7a7b86]">
-              Upload your Spotify export JSON files. If TIDAL is connected, Sauti will try to match tracks automatically.
+            <p className="mb-4 text-sm text-[#7a7b86]">
+              Upload the JSON files from your Spotify data export.
+              {tidalConnected
+                ? ' Sauti will try to match each track on TIDAL.'
+                : ' Connect TIDAL in Settings first to auto-match tracks; otherwise Sauti will only parse the export.'}
             </p>
-            {!tidalConnected ? (
-              <p className="mb-4 text-xs text-[#8c8d96]">
-                TIDAL is not connected, so this run will only parse and review exported tracks.
-              </p>
-            ) : null}
 
             <button
               type="button"
               onClick={() => void handleSpotifyUpload()}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#111116] px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-[#2a2a32]"
+              className={primaryBtnClass}
             >
-              <Upload size={18} />
-              Select Spotify JSON files
+              <Upload size={16} />
+              Choose Spotify JSON files
             </button>
           </section>
         </div>
@@ -412,7 +422,7 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
             onClick={() => void finishImport()}
             className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-accent px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-accent-dark"
           >
-            Import {matched.length + acceptedUncertain.size} matched tracks
+            Add {matched.length + acceptedUncertain.size} matched tracks
           </button>
         </div>
       ) : null}
@@ -420,7 +430,7 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
       {step === 'done' ? (
         <div className="py-12 text-center">
           <CheckCircle size={48} className="mx-auto mb-4 text-green-400" />
-          <h3 className="text-lg font-semibold">Import complete</h3>
+          <h3 className="text-lg font-semibold">Upload complete</h3>
           <p className="mx-auto mt-2 max-w-sm text-sm text-[#7a7b86]">
             {matched.length + acceptedUncertain.size} tracks were added and {spotifyPlaylists.length} playlists were rebuilt.
           </p>

@@ -1,6 +1,6 @@
 import type { Track } from '../types'
 
-export type LLMProvider = 'claude' | 'openai' | 'gemini'
+export type LLMProvider = 'claude' | 'openai' | 'gemini' | 'openrouter'
 
 interface LLMConfig {
   provider: LLMProvider
@@ -37,6 +37,8 @@ async function callLLM(messages: ChatMessage[], maxTokens = 2048): Promise<strin
       return callOpenAI(messages, maxTokens)
     case 'gemini':
       return callGemini(messages, maxTokens)
+    case 'openrouter':
+      return callOpenRouter(messages, maxTokens)
     default:
       throw new Error(`Unknown provider: ${config.provider}`)
   }
@@ -89,6 +91,33 @@ async function callOpenAI(messages: ChatMessage[], maxTokens: number): Promise<s
   })
 
   if (!res.ok) throw new Error(`OpenAI API error: ${res.status}`)
+  const data = await res.json()
+  return data.choices[0].message.content
+}
+
+async function callOpenRouter(messages: ChatMessage[], maxTokens: number): Promise<string> {
+  // OpenRouter is OpenAI-compatible. The HTTP-Referer and X-Title headers are
+  // optional attribution metadata shown on OpenRouter's leaderboard.
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config!.apiKey}`,
+      'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'https://sauti.app',
+      'X-Title': 'Sauti Sounds',
+    },
+    body: JSON.stringify({
+      model: config!.model || 'anthropic/claude-3.5-sonnet',
+      max_tokens: maxTokens,
+      messages,
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`OpenRouter API error: ${res.status} ${err}`)
+  }
+
   const data = await res.json()
   return data.choices[0].message.content
 }

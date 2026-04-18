@@ -192,6 +192,7 @@ export default function SettingsPanel() {
             <option value="claude">Claude (Anthropic)</option>
             <option value="openai">GPT (OpenAI)</option>
             <option value="gemini">Gemini (Google)</option>
+            <option value="openrouter">OpenRouter (any model)</option>
           </select>
 
           <div className="relative">
@@ -215,7 +216,15 @@ export default function SettingsPanel() {
             type="text"
             value={llmModel}
             onChange={(event) => setLlmModel(event.target.value)}
-            placeholder={llmProvider === 'claude' ? 'claude-sonnet-4-20250514' : llmProvider === 'openai' ? 'gpt-4o' : 'gemini-2.0-flash'}
+            placeholder={
+              llmProvider === 'claude'
+                ? 'claude-sonnet-4-20250514'
+                : llmProvider === 'openai'
+                  ? 'gpt-4o'
+                  : llmProvider === 'gemini'
+                    ? 'gemini-2.0-flash'
+                    : 'anthropic/claude-3.5-sonnet'
+            }
             className={inputClass}
           />
 

@@ -1,10 +1,11 @@
-import { useState } from 'react'
-import { Heart, ListPlus, MoreVertical, Play, Radio } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { Check, HardDrive, Heart, ListPlus, MoreVertical, Plus, Radio } from 'lucide-react'
 import AddToPlaylistDialog from './AddToPlaylistDialog'
 import { useTrackArtworkUrl } from '../lib/artwork'
 import { formatTime } from '../lib/metadata'
 import { useLibraryStore } from '../stores/libraryStore'
 import { type PlaybackContext, usePlaybackSessionStore } from '../stores/playbackSessionStore'
+import { useSelectionStore } from '../stores/selectionStore'
 import { useTidalStore } from '../stores/tidalStore'
 import type { Track } from '../types'
 
@@ -20,9 +21,9 @@ interface TrackRowProps {
   tracks?: Track[]
   playContext: PlaybackContext
   index?: number
-  showIndex?: boolean
   highlighted?: boolean
   extraActions?: TrackAction[]
+  onAddToLibrary?: (track: Track) => void
 }
 
 export default function TrackRow({
@@ -30,16 +31,19 @@ export default function TrackRow({
   tracks,
   playContext,
   index = 0,
-  showIndex = false,
   highlighted = false,
   extraActions = [],
+  onAddToLibrary,
 }: TrackRowProps) {
   const playTracks = usePlaybackSessionStore((state) => state.playTracks)
   const appendTrack = usePlaybackSessionStore((state) => state.appendTrack)
   const currentTrack = usePlaybackSessionStore((state) => state.currentTrack)
   const queuedTracks = usePlaybackSessionStore((state) => state.tracks)
+  const libraryTracks = useLibraryStore((state) => state.tracks)
   const toggleTidalFavorite = useLibraryStore((state) => state.toggleTidalFavorite)
+  const removeTrack = useLibraryStore((state) => state.removeTrack)
   const tidalConnected = useTidalStore((state) => state.tidalConnected)
+  const isInLibrary = libraryTracks.some((candidate) => candidate.id === track.id)
 
   const [showActions, setShowActions] = useState(false)
   const [showPlaylistDialog, setShowPlaylistDialog] = useState(false)
@@ -63,11 +67,47 @@ export default function TrackRow({
           onClick: () => void toggleTidalFavorite(track),
         } satisfies TrackAction]
       : []),
+    ...(isInLibrary
+      ? [{
+          label: 'Remove from library',
+          destructive: true,
+          onClick: () => {
+            if (!window.confirm(`Remove "${track.title}" from your library?`)) return
+            void removeTrack(track.id)
+          },
+        } satisfies TrackAction]
+      : []),
     ...extraActions,
   ]
 
+  const selecting = useSelectionStore((state) => state.selecting)
+  const selectedIds = useSelectionStore((state) => state.selectedIds)
+  const enterSelection = useSelectionStore((state) => state.enter)
+  const toggleSelection = useSelectionStore((state) => state.toggle)
+  const isSelected = selectedIds.has(track.id)
+  const longPressTimer = useRef<number | null>(null)
+
   function handlePlay() {
+    if (selecting) {
+      toggleSelection(track.id)
+      return
+    }
     playTracks(tracks || [track], playContext, index)
+  }
+
+  function handlePointerDown() {
+    if (selecting) return
+    longPressTimer.current = window.setTimeout(() => {
+      enterSelection(track.id)
+      longPressTimer.current = null
+    }, 450)
+  }
+
+  function cancelLongPress() {
+    if (longPressTimer.current != null) {
+      window.clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
   }
 
   return (
@@ -76,24 +116,36 @@ export default function TrackRow({
         className={`group flex items-center gap-3 px-5 py-3 transition-colors ${
           highlighted
             ? 'bg-[#fff0f3] ring-1 ring-inset ring-[#f7c6cd]'
-            : isActive
-              ? 'bg-[#fff4f6]'
-              : 'bg-transparent hover:bg-[#fafafb]'
+            : isSelected
+              ? 'bg-[#fff0f3]'
+              : isActive
+                ? 'bg-[#fff4f6]'
+                : 'bg-transparent hover:bg-[#fafafb]'
         }`}
       >
+        {selecting ? (
+          <button
+            type="button"
+            onClick={() => toggleSelection(track.id)}
+            aria-label={isSelected ? `Deselect ${track.title}` : `Select ${track.title}`}
+            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+              isSelected
+                ? 'border-[#ef5466] bg-[#ef5466] text-white'
+                : 'border-[#c9cad2] bg-white text-transparent'
+            }`}
+          >
+            <Check size={14} strokeWidth={3} />
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={handlePlay}
+          onPointerDown={handlePointerDown}
+          onPointerUp={cancelLongPress}
+          onPointerLeave={cancelLongPress}
+          onPointerCancel={cancelLongPress}
           className="flex min-w-0 flex-1 items-center gap-3 text-left"
         >
-          <div className="flex h-8 w-8 items-center justify-center text-sm text-[#a1a2ac]">
-            {showIndex && !isActive ? (
-              <span>{index + 1}</span>
-            ) : (
-              <Play size={15} className={isActive ? 'text-accent' : 'text-[#7a7b86]'} fill="currentColor" />
-            )}
-          </div>
-
           <div className="h-10 w-10 overflow-hidden rounded-xl bg-[#f1f1f4]">
             {artworkUrl ? (
               <img src={artworkUrl} alt="" className="h-full w-full object-cover" />
@@ -124,14 +176,26 @@ export default function TrackRow({
 
         <div className="flex items-center gap-2">
           <span className="text-xs text-[#8c8d96]">{formatTime(track.duration)}</span>
-          <button
-            type="button"
-            onClick={() => setShowActions(true)}
-            className="rounded-full p-2 text-[#8c8d96] transition-colors hover:bg-black/4 hover:text-[#111116]"
-            aria-label={`More actions for ${track.title}`}
-          >
-            <MoreVertical size={16} />
-          </button>
+          {!selecting && onAddToLibrary ? (
+            <button
+              type="button"
+              onClick={() => onAddToLibrary(track)}
+              className="rounded-full border border-black/8 bg-white p-2 text-[#555661] transition-colors hover:border-black/16 hover:text-[#111116]"
+              aria-label={`Add ${track.title} to library`}
+            >
+              <Plus size={16} />
+            </button>
+          ) : null}
+          {!selecting ? (
+            <button
+              type="button"
+              onClick={() => setShowActions(true)}
+              className="rounded-full p-2 text-[#8c8d96] transition-colors hover:bg-black/4 hover:text-[#111116]"
+              aria-label={`More actions for ${track.title}`}
+            >
+              <MoreVertical size={16} />
+            </button>
+          ) : null}
         </div>
       </article>
 

@@ -32,6 +32,8 @@ interface PlaybackSessionState extends SyncedPlayerState {
   playTracks: (tracks: Track[], context: PlaybackContext, startIndex?: number) => void
   playPlaylist: (kind: 'app' | 'tidal', id: string, tracks: Track[], startIndex?: number) => void
   appendTrack: (track: Track) => void
+  reorderTracks: (from: number, to: number) => void
+  removeQueuedTrack: (trackId: string) => void
   selectPlaylist: (playlist?: SelectedPlaylist) => void
   clearSession: () => void
   setPlayerOpen: (open: boolean) => void
@@ -91,6 +93,36 @@ export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
       return {
         tracks: [...state.tracks, track],
         playerOpen: true,
+      }
+    })
+  },
+
+  reorderTracks: (from, to) => {
+    set((state) => {
+      if (from === to || from < 0 || to < 0 || from >= state.tracks.length || to >= state.tracks.length) {
+        return state
+      }
+      const next = [...state.tracks]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      const currentId = state.currentTrack?.id
+      const nextIndex = currentId ? next.findIndex((track) => track.id === currentId) : state.currentIndex
+      return {
+        tracks: next,
+        currentIndex: nextIndex >= 0 ? nextIndex : state.currentIndex,
+      }
+    })
+  },
+
+  removeQueuedTrack: (trackId) => {
+    set((state) => {
+      const next = state.tracks.filter((track) => track.id !== trackId)
+      if (next.length === state.tracks.length) return state
+      const currentId = state.currentTrack?.id
+      const nextIndex = currentId ? next.findIndex((track) => track.id === currentId) : state.currentIndex
+      return {
+        tracks: next,
+        currentIndex: nextIndex >= 0 ? nextIndex : state.currentIndex,
       }
     })
   },

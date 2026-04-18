@@ -1,9 +1,12 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { Playlist, Track } from './types'
+import type { AppNotification, HistoryEntry, Playlist, PlaylistFolder, Track } from './types'
 
 const db = new Dexie('SautiSoundsDB') as Dexie & {
   tracks: EntityTable<Track, 'id'>
   playlists: EntityTable<Playlist, 'id'>
+  playlistFolders: EntityTable<PlaylistFolder, 'id'>
+  notifications: EntityTable<AppNotification, 'id'>
+  history: EntityTable<HistoryEntry, 'id'>
 }
 
 db.version(1).stores({
@@ -45,6 +48,21 @@ db.version(2).stores({
 db.version(3).stores({
   tracks: 'id, title, artist, album, source, genre, bpm, energy, providerTrackId, isFavorite, addedAt, r2Key, artworkR2Key',
   playlists: 'id, name, kind, createdAt, updatedAt, providerPlaylistId',
+})
+
+db.version(4).stores({
+  tracks: 'id, title, artist, album, source, genre, bpm, energy, providerTrackId, isFavorite, addedAt, r2Key, artworkR2Key',
+  playlists: 'id, name, kind, createdAt, updatedAt, providerPlaylistId, folderId',
+  playlistFolders: 'id, name, parentId, createdAt, updatedAt',
+  notifications: 'id, createdAt, readAt, kind',
+})
+
+db.version(5).stores({
+  tracks: 'id, title, artist, album, source, genre, bpm, energy, providerTrackId, isFavorite, addedAt, r2Key, artworkR2Key',
+  playlists: 'id, name, kind, createdAt, updatedAt, providerPlaylistId, folderId',
+  playlistFolders: 'id, name, parentId, createdAt, updatedAt',
+  notifications: 'id, createdAt, readAt, kind',
+  history: 'id, trackId, playedAt, source',
 })
 
 export { db }

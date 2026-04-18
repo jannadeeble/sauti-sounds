@@ -498,7 +498,7 @@ export default function WorkspaceShell() {
           </div>
         </aside>
 
-        <div className="min-h-0 relative">
+        <div className="min-h-0 flex-1 relative">
           <header className="absolute inset-x-0 top-0 z-10 px-4 pt-3 pb-3 lg:px-8 lg:pt-4 lg:pb-4">
             <div className="flex items-center justify-between gap-3 rounded-[36px] border border-black/10 bg-[#ebebed]/90 px-5 py-3 shadow-[0_4px_32px_rgba(17,17,22,0.12)] backdrop-blur-xl backdrop-saturate-150">
               <div className="flex items-center gap-2">

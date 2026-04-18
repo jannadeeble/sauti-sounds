@@ -185,61 +185,115 @@ img {
   overflow: visible;
 }
 
+/*
+ * react-modern-audio-player renders `.rmap-interface-grid` with inline
+ * `style={display: "grid", gridTemplateColumns, gridTemplateAreas}` and each
+ * child grid item (an unclassed div wrapping .rmap-artwork-container,
+ * .rmap-ctrl-btn-wrapper, etc.) with inline `style={gridArea: "row1-N"}`.
+ * Inline styles beat class selectors, so we use !important to force flex and
+ * unset the inline grid-area on every direct child, then reorder with :has().
+ */
 .workspace-player--floating .rmap-interface-grid {
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto minmax(120px, 1fr) auto auto;
-  grid-template-rows: auto;
-  align-items: center;
-  column-gap: 12px;
-  row-gap: 0;
-  padding: 10px 16px;
-  border-top: none;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  gap: 12px !important;
+  grid-template-columns: none !important;
+  grid-template-areas: none !important;
+  padding: 10px 16px !important;
+  background: transparent !important;
+  border-top: none !important;
+  min-height: 0 !important;
+}
+
+.workspace-player--floating .rmap-interface-grid > * {
+  grid-area: auto !important;
+  justify-self: auto !important;
+  padding: 0 !important;
+  width: auto !important;
+  min-width: 0;
+}
+
+.workspace-player--floating .rmap-interface-grid > *:has(.rmap-ctrl-btn-wrapper) {
+  order: 1;
+  flex: 0 0 auto;
+}
+
+.workspace-player--floating .rmap-interface-grid > *:has(.rmap-artwork-container) {
+  order: 2;
+  flex: 0 0 auto;
+}
+
+.workspace-player--floating .rmap-interface-grid > *:has(.rmap-track-info-container) {
+  order: 3;
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.workspace-player--floating .rmap-interface-grid > *:has(.rmap-track-time-current) {
+  order: 4;
+  flex: 0 0 auto;
+}
+
+.workspace-player--floating .rmap-interface-grid > *:has(.rmap-bar-progress-wrapper) {
+  order: 5;
+  flex: 2 1 140px;
+  min-width: 80px;
+  width: 100% !important;
+}
+
+.workspace-player--floating .rmap-interface-grid > *:has(.rmap-track-time-duration) {
+  order: 6;
+  flex: 0 0 auto;
+}
+
+.workspace-player--floating .rmap-interface-grid > *:has(.rmap-volume-container) {
+  order: 7;
+  flex: 0 0 auto;
+}
+
+.workspace-player--floating .rmap-interface-grid > *:has(.workspace-player-chip) {
+  order: 8;
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .workspace-player--floating .rmap-ctrl-btn-wrapper {
-  grid-column: 1;
   gap: 10px;
 }
 
 .workspace-player--floating .rmap-artwork-container {
-  grid-column: 2;
   flex-shrink: 0;
 }
 
 .workspace-player--floating .rmap-track-info-container {
-  grid-column: 3;
   min-width: 0;
 }
 
 .workspace-player--floating .rmap-track-time-container {
-  display: contents;
-}
-
-.workspace-player--floating .rmap-track-time-current {
-  grid-column: 4;
   white-space: nowrap;
   font-size: 11px;
 }
 
 .workspace-player--floating .rmap-bar-progress-wrapper {
-  grid-column: 5;
   min-width: 60px;
-}
-
-.workspace-player--floating .rmap-track-time-duration {
-  grid-column: 6;
-  white-space: nowrap;
-  font-size: 11px;
+  width: 100%;
 }
 
 .workspace-player--floating .rmap-volume-container {
-  grid-column: 7;
   height: auto;
   overflow: visible;
 }
 
-/* Light frosted glass theme — overrides dark defaults above */
+/* Light frosted glass theme — overrides dark defaults above.
+ * The library's CSS applies `background: var(--rm-audio-player-interface-container)`
+ * to both `.rmap-interface-container` and `.rmap-interface-grid`. The dark
+ * default sets that variable to the opaque `--deezer-player-bg`, which paints
+ * over the wrapper's `backdrop-blur` and kills the glass effect. Overriding the
+ * variable to `transparent` here lets the blurred wrapper show through. */
 .workspace-player--glass.rmap-player-provider {
+  --rm-audio-player-interface-container: transparent;
   --rm-audio-player-text-color: #111116;
   --rm-audio-player-track-current-time: #111116;
   --rm-audio-player-track-duration: rgba(17, 17, 22, 0.55);
@@ -249,8 +303,14 @@ img {
   --rm-audio-player-volume-thumb: #111116;
   --rm-audio-player-volume-panel-background: rgba(255, 255, 255, 0.85);
   --rm-audio-player-volume-panel-border: rgba(17, 17, 22, 0.08);
+  background: transparent;
   border-top: none;
   box-shadow: none;
+}
+
+.workspace-player--glass .rmap-interface-container,
+.workspace-player--glass .rmap-interface-grid {
+  background: transparent !important;
 }
 
 .workspace-player--glass .rmap-track-info-container .title {
@@ -281,21 +341,23 @@ img {
 
 @media (max-width: 720px) {
   .workspace-player--floating .rmap-interface-grid {
-    grid-template-columns: auto auto minmax(0, 1fr) auto;
-    column-gap: 10px;
-    row-gap: 6px;
-    padding: 10px 14px;
+    gap: 10px !important;
+    padding: 10px 14px !important;
+    flex-wrap: wrap !important;
   }
 
-  .workspace-player--floating .rmap-track-time-current,
-  .workspace-player--floating .rmap-track-time-duration,
-  .workspace-player--floating .rmap-volume-container {
-    display: none;
+  /* Hide the grid items containing time / volume on narrow viewports. The
+   * items themselves are unclassed divs, so target them via :has(). */
+  .workspace-player--floating .rmap-interface-grid > *:has(.rmap-track-time-current),
+  .workspace-player--floating .rmap-interface-grid > *:has(.rmap-track-time-duration),
+  .workspace-player--floating .rmap-interface-grid > *:has(.rmap-volume-container) {
+    display: none !important;
   }
 
-  .workspace-player--floating .rmap-bar-progress-wrapper {
-    grid-column: 1 / -1;
-    grid-row: 2;
+  /* Let the progress bar break to its own row underneath the rest. */
+  .workspace-player--floating .rmap-interface-grid > *:has(.rmap-bar-progress-wrapper) {
+    flex: 1 1 100%;
+    order: 10;
   }
 }
 

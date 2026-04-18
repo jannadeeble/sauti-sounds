@@ -499,8 +499,8 @@ export default function WorkspaceShell() {
         </aside>
 
         <div className="min-h-0 flex flex-col">
-          <header className="border-b border-black/8 bg-[#fbfbfc]/95 backdrop-blur-md">
-            <div className="flex items-center justify-between gap-3 px-4 py-3 lg:px-8">
+          <header className="px-4 pt-3 pb-3 lg:px-8 lg:pt-4 lg:pb-4">
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-black/[0.07] bg-white/70 px-5 py-3 shadow-[0_2px_24px_rgba(17,17,22,0.07)] backdrop-blur-xl backdrop-saturate-150">
               <div className="flex items-center gap-2">
                 <button
                   type="button"

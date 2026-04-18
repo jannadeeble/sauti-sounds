@@ -32,7 +32,7 @@ function SetlistModal({
   const library = useLibraryStore((s) => s.tracks)
   const tasteProfile = useTasteStore((s) => s.profile)
   const createAppPlaylist = usePlaylistStore((s) => s.createAppPlaylist)
-  const addTrackToPlaylist = usePlaylistStore((s) => s.addTrackToPlaylist)
+  const appendTracksToAppPlaylist = usePlaylistStore((s) => s.appendTracksToAppPlaylist)
   const upsert = useMixStore((s) => s.upsert)
   const markSaved = useMixStore((s) => s.markSaved)
   const playTracks = usePlaybackSessionStore((s) => s.playTracks)
@@ -93,10 +93,11 @@ function SetlistModal({
 
   async function handleSave() {
     if (!mix || !resolvedTracks.length) return
-    const playlist = await createAppPlaylist(mix.title, mix.blurb)
-    for (const t of resolvedTracks) {
-      await addTrackToPlaylist(playlist, t)
-    }
+    const playlist = await createAppPlaylist(mix.title, mix.blurb, {
+      generatedFromMixId: mix.id,
+      origin: 'generated',
+    })
+    await appendTracksToAppPlaylist(playlist.id, resolvedTracks)
     await markSaved(mix.id)
     onClose()
   }

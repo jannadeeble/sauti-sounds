@@ -202,9 +202,28 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
         return
       }
 
-      const playlistTracks = collectPlaylistTracks(allPlaylists)
+      // Spotify-generated auto-playlists tend to be huge and full of tracks
+      // the user never actually picked (Discover Weekly gets a new 30 tracks
+      // every Monday). Skip them so the playlist list isn't dominated by
+      // algorithm spam.
+      const filteredPlaylists = allPlaylists.filter((p) => {
+        const name = p.name.toLowerCase()
+        if (name.includes('discover weekly')) return false
+        if (name.includes('release radar')) return false
+        if (name.startsWith('daily mix')) return false
+        if (name.startsWith('your daily mix')) return false
+        return true
+      })
+
+      if (filteredPlaylists.length === 0) {
+        alert('All playlists in the selection were auto-generated (Discover Weekly, Daily Mix) and were skipped. Pick a file with hand-made playlists.')
+        setStep('upload')
+        return
+      }
+
+      const playlistTracks = collectPlaylistTracks(filteredPlaylists)
       setSpotifyTracks(playlistTracks)
-      setSpotifyPlaylists(allPlaylists)
+      setSpotifyPlaylists(filteredPlaylists)
 
       const libMatches = buildLibraryMatchMap(playlistTracks, libraryTracks)
       setLibraryMatchMap(libMatches)
@@ -442,9 +461,11 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
             </header>
 
             <p className="mb-4 text-sm text-[#7a7b86]">
-              Run these in order. First load your <span className="font-semibold text-[#111116]">tracks</span> so
-              they sit in your library. Then load your <span className="font-semibold text-[#111116]">playlists</span> —
-              Sauti wires each playlist to the tracks it already has, no re-matching.
+              Run these in order. <span className="font-semibold text-[#111116]">Step 1</span> takes any Spotify
+              JSON (YourLibrary.json, Playlist1.json, Playlist2.json, or all of them at once) and pulls every
+              track it finds into your library. <span className="font-semibold text-[#111116]">Step 2</span> rebuilds
+              your playlists — wiring each one to tracks already in your library, no re-matching. Discover Weekly
+              and Daily Mix are skipped automatically.
               {!tidalConnected
                 ? ' Connect TIDAL in Settings first to auto-match tracks you don\'t already have locally.'
                 : ''}

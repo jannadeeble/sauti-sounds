@@ -3,14 +3,12 @@ import {
   Bot,
   ChevronRight,
   Disc3,
-  ListMusic,
   Play,
   Plus,
   Radio,
   Search,
   Settings,
   SlidersHorizontal,
-  Sparkles,
   Upload,
 } from 'lucide-react'
 import AIChatPanel from './AIChatPanel'
@@ -147,8 +145,6 @@ export default function WorkspaceShell() {
   const playPlaylist = usePlaybackSessionStore((state) => state.playPlaylist)
   const playTracks = usePlaybackSessionStore((state) => state.playTracks)
   const errorMessage = usePlaybackSessionStore((state) => state.errorMessage)
-  const currentTrack = usePlaybackSessionStore((state) => state.currentTrack)
-  const isPlaying = usePlaybackSessionStore((state) => state.isPlaying)
   const playerOpen = usePlaybackSessionStore((state) => state.playerOpen)
   const setPlayerOpen = usePlaybackSessionStore((state) => state.setPlayerOpen)
 
@@ -331,8 +327,6 @@ export default function WorkspaceShell() {
       .slice(0, 8)
   }, [historyEntries, tracks])
 
-  const localTrackCount = tracks.filter((track) => track.source === 'local').length
-  const tidalTrackCount = tracks.length - localTrackCount
   const desktopPlaylistLinks = appPlaylists.slice(0, 6)
 
   async function handleTidalSearch() {
@@ -431,175 +425,6 @@ export default function WorkspaceShell() {
       finalizeImport({ importedTracks: result.tracks })
     }
   }
-
-  const hero = useMemo(() => {
-    if (activeTab === 'home') {
-      return {
-        eyebrow: 'Welcome back',
-        title: 'Home',
-        meta: `${tracks.length} tracks in your library`,
-        description: 'Jump straight back into recent plays, or let Sauti suggest something new.',
-        actions: [
-          recentTracks.length > 0
-            ? {
-                label: 'Resume',
-                icon: <Play size={15} />,
-                onClick: () => playTracks(recentTracks, 'library', 0),
-                accent: true,
-              }
-            : {
-                label: 'Upload music',
-                icon: <Upload size={15} />,
-                onClick: () => void handleQuickImport(),
-                accent: true,
-              },
-          {
-            label: 'Ask Sauti',
-            icon: <Sparkles size={15} />,
-            onClick: () => setShowAI(true),
-          },
-        ] satisfies HeroAction[],
-      }
-    }
-
-    if (libraryFilter === 'playlists' && selectedPlaylist) {
-      const playlist = selectedPlaylist.kind === 'app'
-        ? selectedAppPlaylist
-        : selectedTidalDetail?.playlist || tidalPlaylists.find((item) => item.providerPlaylistId === selectedPlaylist.id)
-      const playlistTracks = selectedPlaylist.kind === 'app'
-        ? appPlaylistTracks.map((entry) => entry.track)
-        : selectedTidalDetail?.tracks || []
-
-      return {
-        eyebrow: selectedPlaylist.kind === 'app' ? 'App playlist' : 'TIDAL playlist',
-        title: playlist?.name || 'Playlist',
-        meta: `${playlistTracks.length} tracks${selectedPlaylist.kind === 'tidal' ? ' • synced from TIDAL' : ''}`,
-        description: playlist?.description || 'Open the queue and play the playlist straight through.',
-        actions: [
-          {
-            label: 'Play all',
-            icon: <Play size={15} />,
-            onClick: () => {
-              if (selectedPlaylist.kind === 'app') handlePlaylistPlayback('app', playlist?.id || '', playlistTracks)
-              else handlePlaylistPlayback('tidal', selectedPlaylist.id, playlistTracks)
-            },
-            accent: true,
-            disabled: playlistTracks.length === 0,
-          },
-          {
-            label: 'Back to playlists',
-            icon: <ListMusic size={15} />,
-            onClick: () => selectPlaylist(undefined),
-          },
-        ] satisfies HeroAction[],
-      }
-    }
-
-    if (libraryFilter === 'playlists') {
-      const totalPlaylists = appPlaylists.length + tidalPlaylists.filter((p) => p.providerPlaylistId).length
-      return {
-        eyebrow: 'Collections',
-        title: 'Playlists',
-        meta: `${totalPlaylists} ${totalPlaylists === 1 ? 'playlist' : 'playlists'}`,
-        description: 'All your playlists in one list — editable mixes and TIDAL collections alike.',
-        actions: [
-          {
-            label: 'Add a playlist',
-            icon: <Plus size={15} />,
-            onClick: () => void handleCreatePlaylist('app'),
-            accent: true,
-          },
-        ] satisfies HeroAction[],
-      }
-    }
-
-    if (libraryFilter === 'artists' && selectedArtist) {
-      return {
-        eyebrow: 'Artist',
-        title: selectedArtist,
-        meta: `${selectedArtistTracks.length} tracks`,
-        description: 'Every track from this artist in your library, grouped in one place.',
-        actions: [
-          {
-            label: 'Play all',
-            icon: <Play size={15} />,
-            onClick: () => playTracks(selectedArtistTracks, 'library', 0),
-            accent: true,
-            disabled: selectedArtistTracks.length === 0,
-          },
-          {
-            label: 'Back to artists',
-            icon: <ListMusic size={15} />,
-            onClick: () => setSelectedArtist(null),
-          },
-        ] satisfies HeroAction[],
-      }
-    }
-
-    if (libraryFilter === 'artists') {
-      return {
-        eyebrow: 'Library',
-        title: 'Artists',
-        meta: `${artistGroups.length} artists`,
-        description: 'Browse your library by artist and open any of them to dig in.',
-        actions: [],
-      }
-    }
-
-    return {
-      eyebrow: currentTrack ? 'Now playing' : 'My music',
-      title: currentTrack ? currentTrack.title : 'Library',
-      meta: currentTrack
-        ? `${currentTrack.artist}${currentTrack.album ? ` • ${currentTrack.album}` : ''}`
-        : `${tracks.length} tracks • ${localTrackCount} local • ${tidalTrackCount} TIDAL`,
-      description: currentTrack
-        ? `Pulled from your ${isPlaying ? 'active queue' : 'library'}.`
-        : 'Your full library across local files and cached TIDAL tracks.',
-      actions: [
-        sortedTracks.length > 0
-          ? {
-              label: 'Play library',
-              icon: <Play size={15} />,
-              onClick: () => playTracks(sortedTracks, 'library', 0),
-              accent: true,
-            }
-          : {
-              label: 'Upload music',
-              icon: <Upload size={15} />,
-              onClick: () => void handleQuickImport(),
-              accent: true,
-            },
-        {
-          label: 'Ask Sauti',
-          icon: <Sparkles size={15} />,
-          onClick: () => setShowAI(true),
-        },
-      ] satisfies HeroAction[],
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    activeTab,
-    appPlaylistTracks,
-    appPlaylists.length,
-    artistGroups.length,
-    currentTrack,
-    handleQuickImport,
-    isPlaying,
-    libraryFilter,
-    localTrackCount,
-    playTracks,
-    recentTracks,
-    selectedAppPlaylist,
-    selectedArtist,
-    selectedArtistTracks,
-    selectedPlaylist,
-    selectedTidalDetail,
-    sortedTracks,
-    tidalConnected,
-    tidalPlaylists,
-    tidalTrackCount,
-    tracks.length,
-  ])
 
   return (
     <div className="workspace-shell">

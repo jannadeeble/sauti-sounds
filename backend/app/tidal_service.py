@@ -13,7 +13,7 @@ import tidalapi
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .database import get_setting_json, set_setting_json
+from .database import SessionLocal, get_setting_json, set_setting_json
 from .security import create_playback_token
 
 TIDAL_SESSION_KEY = "tidal_oauth_session"
@@ -34,10 +34,46 @@ class TidalManager:
         self._session: tidalapi.Session | None = None
         self._lock = threading.RLock()
         self._attempts: dict[str, LoginAttempt] = {}
+        # Last payload we wrote to the DB. Used to detect when the
+        # tidalapi library has silently refreshed the access token (e.g. via
+        # an internal token_refresh()) so we can persist the new credentials
+        # back to settings — otherwise the refreshed token only lives in
+        # memory and is lost on the next process restart, which presents to
+        # the user as "TIDAL became disconnected".
+        self._saved_payload: dict[str, Any] | None = None
 
     def _create_session(self) -> tidalapi.Session:
         config = tidalapi.Config(quality=settings.tidal_quality)
         return tidalapi.Session(config=config)
+
+    @staticmethod
+    def _payload_from_session(session: tidalapi.Session) -> dict[str, Any]:
+        return {
+            "token_type": session.token_type,
+            "access_token": session.access_token,
+            "refresh_token": session.refresh_token,
+            "expiry_time": session.expiry_time.isoformat() if session.expiry_time else None,
+            "is_pkce": bool(session.is_pkce),
+        }
+
+    def _persist_if_changed(self) -> None:
+        """Persist the current session credentials if they differ from what
+        we last wrote to the DB. Safe to call frequently — it short-circuits
+        when nothing has changed."""
+        with self._lock:
+            session = self._session
+            if session is None:
+                return
+            payload = self._payload_from_session(session)
+            if payload == self._saved_payload:
+                return
+            db = SessionLocal()
+            try:
+                set_setting_json(db, TIDAL_SESSION_KEY, payload)
+                db.commit()
+                self._saved_payload = payload
+            finally:
+                db.close()
 
     def load_from_db(self, db: Session) -> bool:
         payload = get_setting_json(db, TIDAL_SESSION_KEY)
@@ -54,27 +90,40 @@ class TidalManager:
             else None,
             is_pkce=bool(payload.get("is_pkce", False)),
         )
-        if loaded and session.check_login():
-            with self._lock:
-                self._session = session
-            return True
-        return False
+        if not loaded:
+            return False
+
+        # If the access token has expired, attempt an explicit refresh using
+        # the stored refresh token before giving up. tidalapi's check_login()
+        # only looks at expiry_time and does not refresh on its own.
+        if not session.check_login() and payload.get("refresh_token"):
+            try:
+                session.token_refresh(payload["refresh_token"])
+            except Exception:  # noqa: BLE001
+                pass
+
+        if not session.check_login():
+            return False
+
+        with self._lock:
+            self._session = session
+            self._saved_payload = self._payload_from_session(session)
+        # Persist immediately in case the refresh above produced new tokens.
+        self._persist_if_changed()
+        return True
 
     def save_to_db(self, db: Session) -> None:
         session = self.require_session()
-        payload = {
-            "token_type": session.token_type,
-            "access_token": session.access_token,
-            "refresh_token": session.refresh_token,
-            "expiry_time": session.expiry_time.isoformat() if session.expiry_time else None,
-            "is_pkce": bool(session.is_pkce),
-        }
+        payload = self._payload_from_session(session)
         set_setting_json(db, TIDAL_SESSION_KEY, payload)
+        with self._lock:
+            self._saved_payload = payload
 
     def clear(self, db: Session) -> None:
         with self._lock:
             self._session = None
             self._attempts.clear()
+            self._saved_payload = None
         set_setting_json(db, TIDAL_SESSION_KEY, None)
 
     def get_session(self) -> tidalapi.Session | None:
@@ -83,8 +132,26 @@ class TidalManager:
 
     def require_session(self) -> tidalapi.Session:
         session = self.get_session()
-        if session is None or not session.check_login():
+        if session is None:
             raise ValueError("TIDAL session not connected")
+
+        if not session.check_login():
+            # Try to refresh before giving up. The tidalapi library exposes
+            # token_refresh(refresh_token) for this.
+            refresh_token = getattr(session, "refresh_token", None)
+            if refresh_token:
+                try:
+                    session.token_refresh(refresh_token)
+                except Exception:  # noqa: BLE001
+                    pass
+            if not session.check_login():
+                raise ValueError("TIDAL session not connected")
+
+        # tidalapi may have rotated tokens during check_login/token_refresh;
+        # also any prior API call on this session could have refreshed in
+        # response to a 401. Persist the latest credentials so a process
+        # restart doesn't silently disconnect the user.
+        self._persist_if_changed()
         return session
 
     def start_login(self) -> LoginAttempt:

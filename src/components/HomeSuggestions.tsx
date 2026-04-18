@@ -43,7 +43,7 @@ export default function HomeSuggestions({ onPlayTracks }: HomeSuggestionsProps) 
   const tasteProfile = useTasteStore((s) => s.profile)
   const tidalConnected = useTidalStore((s) => s.tidalConnected)
   const createAppPlaylist = usePlaylistStore((s) => s.createAppPlaylist)
-  const addTrackToPlaylist = usePlaylistStore((s) => s.addTrackToPlaylist)
+  const appendTracksToAppPlaylist = usePlaylistStore((s) => s.appendTracksToAppPlaylist)
   const dismissMix = useMixStore((s) => s.dismiss)
   const markSaved = useMixStore((s) => s.markSaved)
   const [running, setRunning] = useState(false)
@@ -114,13 +114,15 @@ export default function HomeSuggestions({ onPlayTracks }: HomeSuggestionsProps) 
   }, [onPlayTracks, trackIndex])
 
   const handleSave = useCallback(async (mix: Mix) => {
-    const playlist = await createAppPlaylist(mix.title, mix.blurb)
-    for (const id of mix.trackIds) {
-      const track = trackIndex.get(id)
-      if (track) await addTrackToPlaylist(playlist, track)
-    }
+    const tracks = mix.trackIds.map(id => trackIndex.get(id)).filter((track): track is Track => !!track)
+    if (!tracks.length) return
+    const playlist = await createAppPlaylist(mix.title, mix.blurb, {
+      generatedFromMixId: mix.id,
+      origin: 'generated',
+    })
+    await appendTracksToAppPlaylist(playlist.id, tracks)
     await markSaved(mix.id)
-  }, [addTrackToPlaylist, createAppPlaylist, markSaved, trackIndex])
+  }, [appendTracksToAppPlaylist, createAppPlaylist, markSaved, trackIndex])
 
   const handleDismiss = useCallback((mix: Mix) => {
     void dismissMix(mix.id)

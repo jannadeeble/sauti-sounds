@@ -7,13 +7,20 @@ import {
   getTidalPlaylists,
   removeTrackFromTidalPlaylist,
 } from '../lib/tidal'
-import type { Playlist, PlaylistFolder, PlaylistItem, Track } from '../types'
+import type { Playlist, PlaylistFolder, PlaylistItem, PlaylistOrigin, Track } from '../types'
 import { useLibraryStore } from './libraryStore'
 import { useTidalStore } from './tidalStore'
 
 interface PlaylistDetail {
   playlist: Playlist
   tracks: Track[]
+}
+
+interface CreateAppPlaylistOptions {
+  folderId?: string
+  generatedFromMixId?: string
+  generatedPrompt?: string
+  origin?: PlaylistOrigin
 }
 
 interface PlaylistState {
@@ -24,10 +31,11 @@ interface PlaylistState {
   loading: boolean
   loadPlaylists: () => Promise<void>
   loadTidalPlaylistDetail: (providerPlaylistId: string) => Promise<PlaylistDetail>
-  createAppPlaylist: (name: string, description?: string) => Promise<Playlist>
+  createAppPlaylist: (name: string, description?: string, options?: CreateAppPlaylistOptions) => Promise<Playlist>
   renameAppPlaylist: (id: string, name: string, description?: string) => Promise<void>
   deleteAppPlaylist: (id: string) => Promise<void>
   addTrackToPlaylist: (playlist: Playlist, track: Track) => Promise<void>
+  appendTracksToAppPlaylist: (playlistId: string, tracks: Track[]) => Promise<void>
   removeTrackFromPlaylist: (playlist: Playlist, item: PlaylistItem, index?: number) => Promise<void>
   moveAppPlaylistItem: (playlistId: string, fromIndex: number, toIndex: number) => Promise<void>
   createProviderPlaylist: (name: string, description?: string) => Promise<Playlist>
@@ -91,7 +99,7 @@ export const usePlaylistStore = create<PlaylistState>((set, get) => ({
     return resolved
   },
 
-  createAppPlaylist: async (name, description = '') => {
+  createAppPlaylist: async (name, description = '', options = {}) => {
     const now = Date.now()
     const playlist: Playlist = {
       id: `app-${now}-${Math.random().toString(36).slice(2, 8)}`,
@@ -103,6 +111,10 @@ export const usePlaylistStore = create<PlaylistState>((set, get) => ({
       kind: 'app',
       writable: true,
       trackCount: 0,
+      folderId: options.folderId,
+      origin: options.origin ?? 'manual',
+      generatedFromMixId: options.generatedFromMixId,
+      generatedPrompt: options.generatedPrompt,
     }
     await db.playlists.put(playlist)
     await get().loadPlaylists()
@@ -143,17 +155,37 @@ export const usePlaylistStore = create<PlaylistState>((set, get) => ({
       return
     }
 
-    const existing = await db.playlists.get(playlist.id)
-    if (!existing) return
-    const nextItems = [...existing.items, trackToPlaylistItem(track)]
-    await db.playlists.put({
-      ...existing,
-      items: nextItems,
-      updatedAt: Date.now(),
-      trackCount: nextItems.length,
+    await get().appendTracksToAppPlaylist(playlist.id, [track])
+  },
+
+  appendTracksToAppPlaylist: async (playlistId, tracks) => {
+    if (tracks.length === 0) return
+    const existing = await db.playlists.get(playlistId)
+    if (!existing || existing.kind !== 'app') return
+
+    const nextItems = [...existing.items, ...tracks.map(trackToPlaylistItem)]
+    const now = Date.now()
+
+    await db.transaction('rw', db.playlists, db.tracks, async () => {
+      await db.playlists.put({
+        ...existing,
+        items: nextItems,
+        updatedAt: now,
+        trackCount: nextItems.length,
+      })
+
+      await db.tracks.bulkPut(
+        tracks.map((track) => ({
+          ...track,
+          addedAt: track.addedAt || now,
+        })),
+      )
     })
-    await useLibraryStore.getState().addTrack(track)
-    await get().loadPlaylists()
+
+    await Promise.all([
+      get().loadPlaylists(),
+      useLibraryStore.getState().loadTracks(),
+    ])
   },
 
   removeTrackFromPlaylist: async (playlist, item, index = 0) => {

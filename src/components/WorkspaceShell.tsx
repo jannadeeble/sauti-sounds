@@ -1,6 +1,5 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
-  Bot,
   ChevronRight,
   Disc3,
   Play,
@@ -9,9 +8,9 @@ import {
   Search,
   Settings,
   SlidersHorizontal,
+  Sparkles,
   Upload,
 } from 'lucide-react'
-import AIChatPanel from './AIChatPanel'
 import AIModalHost from './AIModalHost'
 import BatchActionsBar from './BatchActionsBar'
 import PlaylistFooterPanel from './PlaylistFooterPanel'
@@ -19,6 +18,7 @@ import PlaylistDoctorPanel from './PlaylistDoctorPanel'
 import BottomSheet from './BottomSheet'
 import HomeSuggestions from './HomeSuggestions'
 import ImportPanel, { type ImportDoneResult } from './ImportPanel'
+import PlaylistGeneratorPanel from './PlaylistGeneratorPanel'
 import NotificationBell from './NotificationBell'
 import PlaylistTree from './PlaylistTree'
 import QueueSheet from './QueueSheet'
@@ -35,6 +35,7 @@ import { useSelectionStore } from '../stores/selectionStore'
 import { useTasteStore } from '../stores/tasteStore'
 import { searchTidal } from '../lib/tidal'
 import { runTagJob } from '../lib/tagJob'
+import { usePlaylistGeneratorStore } from '../stores/playlistGeneratorStore'
 import { useTidalStore } from '../stores/tidalStore'
 import type { Playlist, PlaylistFolder, Track } from '../types'
 
@@ -97,7 +98,6 @@ export default function WorkspaceShell() {
   )
   const [showImport, setShowImport] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [showAI, setShowAI] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>(() =>
     readStoredValue(LIBRARY_FILTER_STORAGE_KEY, LIBRARY_FILTER_VALUES, 'all'),
@@ -111,6 +111,8 @@ export default function WorkspaceShell() {
   const [importNotice, setImportNotice] = useState<string | null>(null)
   const [highlightedImportIds, setHighlightedImportIds] = useState<string[]>([])
   const mainContentRef = useRef<HTMLElement | null>(null)
+  const tabButtonRefs = useRef<Record<WorkspaceTab, HTMLButtonElement | null>>({ home: null, library: null })
+  const [tabHighlight, setTabHighlight] = useState({ left: 0, width: 0, opacity: 0 })
 
   const tracks = useLibraryStore((state) => state.tracks)
   const libraryLoading = useLibraryStore((state) => state.loading)
@@ -145,6 +147,7 @@ export default function WorkspaceShell() {
   const errorMessage = usePlaybackSessionStore((state) => state.errorMessage)
   const playerOpen = usePlaybackSessionStore((state) => state.playerOpen)
   const setPlayerOpen = usePlaybackSessionStore((state) => state.setPlayerOpen)
+  const playerQueueCount = usePlaybackSessionStore((state) => state.tracks.length)
 
   const loadHistory = useHistoryStore((state) => state.loadHistory)
   const historyEntries = useHistoryStore((state) => state.entries)
@@ -154,6 +157,23 @@ export default function WorkspaceShell() {
 
   const selecting = useSelectionStore((state) => state.selecting)
   const exitSelection = useSelectionStore((state) => state.exit)
+
+  useLayoutEffect(() => {
+    const updateTabHighlight = () => {
+      const activeButton = tabButtonRefs.current[activeTab]
+      if (!activeButton) return
+
+      setTabHighlight({
+        left: activeButton.offsetLeft,
+        width: activeButton.offsetWidth,
+        opacity: 1,
+      })
+    }
+
+    updateTabHighlight()
+    window.addEventListener('resize', updateTabHighlight)
+    return () => window.removeEventListener('resize', updateTabHighlight)
+  }, [activeTab])
 
   useEffect(() => {
     void loadTracks()
@@ -427,15 +447,6 @@ export default function WorkspaceShell() {
     <div className="workspace-shell">
       <div className="mx-auto flex h-full max-w-[1560px] flex-col lg:grid lg:grid-cols-[220px_minmax(0,1fr)]">
         <aside className="hidden min-h-0 flex-col border-r border-black/8 bg-[#fbfbfc] lg:flex">
-          <nav className="space-y-1 px-4 pt-5">
-            <SidebarNavButton
-              label="Search"
-              icon={<Search size={18} />}
-              active={false}
-              onClick={openSearch}
-            />
-          </nav>
-
           <section className="mt-8 px-6">
             <div className="mb-3 flex items-center justify-between">
               <p className="text-[11px] uppercase tracking-[0.24em] text-[#8b8c95]">Playlists</p>
@@ -490,45 +501,47 @@ export default function WorkspaceShell() {
               icon={<Settings size={16} />}
               onClick={() => setShowSettings(true)}
             />
-            <SidebarUtilityButton
-              label="Ask Sauti"
-              icon={<Bot size={16} />}
-              onClick={() => setShowAI(true)}
-            />
           </div>
         </aside>
 
         <div className="min-h-0 flex-1 relative">
           <header className="absolute inset-x-0 top-0 z-10 px-4 pt-3 pb-3 lg:px-8 lg:pt-4 lg:pb-4">
             <div className="flex items-center justify-between gap-3 rounded-[36px] border border-black/10 bg-[#ebebed]/90 px-5 py-3 shadow-[0_4px_32px_rgba(17,17,22,0.12)] backdrop-blur-xl backdrop-saturate-150">
-              <div className="flex items-center gap-2">
+              <div className="relative inline-flex items-center rounded-full border border-white/45 bg-white/55 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_12px_28px_rgba(17,17,22,0.08)] backdrop-blur-xl backdrop-saturate-150">
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-y-1 left-0 rounded-full border border-black/8 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(244,244,246,0.9))] shadow-[0_8px_18px_rgba(17,17,22,0.08),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-md transition-[width,transform,opacity] duration-300 ease-out"
+                  style={{
+                    width: `${tabHighlight.width}px`,
+                    transform: `translateX(${tabHighlight.left}px)`,
+                    opacity: tabHighlight.opacity,
+                  }}
+                />
                 <button
                   type="button"
+                  aria-pressed={activeTab === 'home'}
                   onClick={() => { setActiveTab('home'); selectPlaylist(undefined) }}
-                  className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
-                    activeTab === 'home'
-                      ? 'border-transparent bg-[#ef5466] text-white hover:bg-[#e0364a]'
-                      : 'border-black/8 bg-white text-[#555661] hover:border-black/16 hover:text-[#111116]'
+                  ref={(node) => { tabButtonRefs.current.home = node }}
+                  className={`relative z-10 rounded-full px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/10 focus-visible:ring-offset-2 focus-visible:ring-offset-[#ebebed] ${
+                    activeTab === 'home' ? 'text-[#111116]' : 'text-[#555661] hover:text-[#111116]'
                   }`}
                 >
                   Home
                 </button>
                 <button
                   type="button"
+                  aria-pressed={activeTab === 'library'}
                   onClick={() => { setActiveTab('library'); selectPlaylist(undefined) }}
-                  className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
-                    activeTab === 'library'
-                      ? 'border-transparent bg-[#ef5466] text-white hover:bg-[#e0364a]'
-                      : 'border-black/8 bg-white text-[#555661] hover:border-black/16 hover:text-[#111116]'
+                  ref={(node) => { tabButtonRefs.current.library = node }}
+                  className={`relative z-10 rounded-full px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/10 focus-visible:ring-offset-2 focus-visible:ring-offset-[#ebebed] ${
+                    activeTab === 'library' ? 'text-[#111116]' : 'text-[#555661] hover:text-[#111116]'
                   }`}
                 >
                   Library
                 </button>
               </div>
               <div className="flex items-center gap-2">
-                <TopbarActionButton label="Ask Sauti" icon={<Bot size={16} />} onClick={() => setShowAI(true)} />
                 <TopbarActionButton label="Upload" icon={<Upload size={16} />} onClick={() => setShowImport(true)} />
-                <TopbarActionButton label="Search" icon={<Search size={16} />} onClick={openSearch} />
                 <NotificationBell />
                 <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
               </div>
@@ -653,7 +666,11 @@ export default function WorkspaceShell() {
                         appPlaylists={appPlaylists}
                         appPlaylistFolders={appPlaylistFolders}
                         tidalPlaylists={tidalPlaylists}
+                        onCreateAppPlaylist={() => void handleCreatePlaylist('app')}
                         onOpen={(kind, id) => selectPlaylist({ kind, id })}
+                        onOpenGeneratedPlaylist={(playlistId) => {
+                          selectPlaylist({ kind: 'app', id: playlistId })
+                        }}
                       />
                     )
                   ) : libraryFilter === 'artists' ? (
@@ -722,6 +739,11 @@ export default function WorkspaceShell() {
 
 
       <WorkspacePlayer />
+      <FloatingSearchButton
+        hidden={showSearch}
+        playerVisible={playerQueueCount > 0}
+        onClick={openSearch}
+      />
 
       <BottomSheet
         open={showSearch}
@@ -766,56 +788,12 @@ export default function WorkspaceShell() {
         <SettingsPanel />
       </BottomSheet>
 
-      <BottomSheet
-        open={showAI}
-        title="Sauti AI"
-        description="Chat with the assistant without leaving the workspace."
-        onClose={() => setShowAI(false)}
-        maxHeightClassName="max-h-[88vh]"
-      >
-        <AIChatPanel
-          onOpenPlaylist={(playlistId) => {
-            setActiveTab('library')
-            setLibraryFilter('playlists')
-            selectPlaylist({ kind: 'app', id: playlistId })
-            setShowAI(false)
-          }}
-        />
-      </BottomSheet>
-
       <QueueSheet open={playerOpen} onClose={() => setPlayerOpen(false)} />
 
       <BatchActionsBar />
 
       <AIModalHost />
     </div>
-  )
-}
-
-function SidebarNavButton({
-  label,
-  icon,
-  active,
-  onClick,
-}: {
-  label: string
-  icon: ReactNode
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-medium transition-colors ${
-        active
-          ? 'bg-[#fce5e8] text-[#111116]'
-          : 'text-[#555661] hover:bg-white hover:text-[#111116]'
-      }`}
-    >
-      {icon}
-      <span>{label}</span>
-    </button>
   )
 }
 
@@ -873,6 +851,40 @@ function TopbarActionButton({
       }`}
     >
       {icon}
+    </button>
+  )
+}
+
+function FloatingSearchButton({
+  hidden = false,
+  playerVisible,
+  onClick,
+}: {
+  hidden?: boolean
+  playerVisible: boolean
+  onClick: () => void
+}) {
+  if (hidden) return null
+
+  return (
+    <button
+      type="button"
+      aria-label="Search"
+      title="Search"
+      onClick={onClick}
+      className={`fixed right-4 z-40 inline-flex items-center gap-3 rounded-[1.75rem] border border-white/45 bg-white/70 px-5 py-4 text-[#111116] shadow-[0_18px_44px_rgba(17,17,22,0.16),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-xl backdrop-saturate-150 transition-[bottom,transform,box-shadow] duration-300 hover:-translate-y-0.5 hover:shadow-[0_22px_48px_rgba(17,17,22,0.18),inset_0_1px_0_rgba(255,255,255,0.78)] sm:right-6 ${
+        playerVisible
+          ? 'bottom-[calc(env(safe-area-inset-bottom)+8rem)] sm:bottom-32'
+          : 'bottom-[calc(env(safe-area-inset-bottom)+1rem)] sm:bottom-6'
+      }`}
+    >
+      <span className="flex h-12 w-12 items-center justify-center rounded-full border border-black/8 bg-[linear-gradient(135deg,rgba(255,255,255,0.95),rgba(244,244,246,0.88))] shadow-[0_8px_18px_rgba(17,17,22,0.08)]">
+        <Search size={20} />
+      </span>
+      <span className="min-w-0 text-left">
+        <span className="block text-sm font-semibold leading-none">Search</span>
+        <span className="mt-1 block text-xs text-[#686973]">Tracks, artists, playlists</span>
+      </span>
     </button>
   )
 }
@@ -1202,14 +1214,23 @@ function PlaylistCollectionsView({
   appPlaylists,
   appPlaylistFolders,
   tidalPlaylists,
+  onCreateAppPlaylist,
   onOpen,
+  onOpenGeneratedPlaylist,
 }: {
   appPlaylists: Playlist[]
   appPlaylistFolders: PlaylistFolder[]
   tidalPlaylists: Playlist[]
+  onCreateAppPlaylist: () => void
   onOpen: (kind: 'app' | 'tidal', id: string) => void
+  onOpenGeneratedPlaylist: (playlistId: string) => void
 }) {
   const tidalRowKeyPrefix = 'tidal:'
+  const [showGenerator, setShowGenerator] = useState(false)
+  const generatorStatus = usePlaylistGeneratorStore((state) => state.status)
+  const requestGeneratorCompletionNotification = usePlaylistGeneratorStore((state) => state.requestCompletionNotification)
+  const generatedPlaylists = appPlaylists.filter((playlist) => playlist.origin === 'generated')
+  const libraryAppPlaylists = appPlaylists.filter((playlist) => playlist.origin !== 'generated')
 
   // Project playable TIDAL entries into the shared Playlist shape. Use a prefixed
   // id so we can round-trip back to onOpen('tidal', providerPlaylistId) without
@@ -1222,8 +1243,8 @@ function PlaylistCollectionsView({
       folderId: undefined,
     }))
 
-  const unifiedPlaylists = [...appPlaylists, ...tidalAsRows]
-  const total = unifiedPlaylists.length
+  const libraryPlaylists = [...libraryAppPlaylists, ...tidalAsRows]
+  const total = generatedPlaylists.length + libraryPlaylists.length
 
   const handleOpen = (id: string) => {
     if (id.startsWith(tidalRowKeyPrefix)) {
@@ -1233,24 +1254,88 @@ function PlaylistCollectionsView({
     }
   }
 
+  const toggleGenerator = () => {
+    if (showGenerator && generatorStatus === 'running') {
+      requestGeneratorCompletionNotification()
+    }
+    setShowGenerator((current) => !current)
+  }
+
   return (
-    <section className={panelClass}>
-      {total === 0 ? (
-        <div className="px-5 pb-6 pt-5 sm:px-6">
-          <div className={`${mutedPanelClass} px-4 py-5 text-sm text-[#686973]`}>
-            No playlists yet. Add one above to get started, or connect TIDAL in Settings to sync your collections.
+    <div className="space-y-4">
+      <section className={panelClass}>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 pb-4 pt-5 sm:px-6">
+          <div>
+            <h2 className="deezer-display text-[1.7rem] leading-none text-[#111116]">Playlists</h2>
+            <p className="mt-1 text-sm text-[#7a7b86]">
+              Build your own, generate new ones from prompts, or open synced collections.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <ActionPill
+              label={showGenerator ? 'Hide generator' : 'Generate playlist'}
+              icon={<Sparkles size={15} />}
+              onClick={toggleGenerator}
+              accent
+            />
+            <ActionPill
+              label="New playlist"
+              icon={<Plus size={15} />}
+              onClick={onCreateAppPlaylist}
+            />
           </div>
         </div>
-      ) : (
-        <div className="py-2">
-          <PlaylistTree
-            folders={appPlaylistFolders}
-            playlists={unifiedPlaylists}
-            onOpen={handleOpen}
-          />
-        </div>
-      )}
-    </section>
+
+        {showGenerator ? (
+          <div className="border-t border-black/6 px-5 py-5 sm:px-6">
+            <PlaylistGeneratorPanel
+              variant="inline"
+              onOpenPlaylist={onOpenGeneratedPlaylist}
+            />
+          </div>
+        ) : null}
+      </section>
+
+      {total === 0 ? (
+        <section className={panelClass}>
+          <div className="px-5 pb-6 pt-5 sm:px-6">
+            <div className={`${mutedPanelClass} px-4 py-5 text-sm text-[#686973]`}>
+              No playlists yet. Add one above to get started, or connect TIDAL in Settings to sync your collections.
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {generatedPlaylists.length > 0 ? (
+        <SurfacePanel
+          title="Generated playlists"
+          meta={`${generatedPlaylists.length} ready from prompts and AI mixes`}
+        >
+          <div className="py-2">
+            <PlaylistTree
+              folders={[]}
+              playlists={generatedPlaylists}
+              onOpen={handleOpen}
+            />
+          </div>
+        </SurfacePanel>
+      ) : null}
+
+      {libraryPlaylists.length > 0 ? (
+        <SurfacePanel
+          title="Playlist library"
+          meta={`${libraryPlaylists.length} manual, imported, and synced collections`}
+        >
+          <div className="py-2">
+            <PlaylistTree
+              folders={appPlaylistFolders}
+              playlists={libraryPlaylists}
+              onOpen={handleOpen}
+            />
+          </div>
+        </SurfacePanel>
+      ) : null}
+    </div>
   )
 }
 

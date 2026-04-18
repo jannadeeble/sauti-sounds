@@ -96,4 +96,21 @@ db.version(6).stores({
   })
 })
 
+db.version(7).stores({
+  tracks: 'id, title, artist, album, source, genre, bpm, energy, providerTrackId, isFavorite, addedAt, r2Key, artworkR2Key',
+  playlists: 'id, name, kind, createdAt, updatedAt, providerPlaylistId, folderId, origin',
+  playlistFolders: 'id, name, parentId, createdAt, updatedAt',
+  notifications: 'id, createdAt, readAt, kind',
+  history: 'id, trackId, playedAt, source',
+  listenEvents: 'id, trackId, startedAt, context',
+  mixes: 'id, kind, status, generatedAt, expiresAt',
+  tasteProfile: 'id',
+}).upgrade(async tx => {
+  await tx.table('playlists').toCollection().modify((playlist: Record<string, unknown>) => {
+    if (playlist.kind === 'app' && typeof playlist.origin !== 'string') {
+      playlist.origin = 'manual'
+    }
+  })
+})
+
 export { db }

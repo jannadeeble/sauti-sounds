@@ -52,6 +52,8 @@ export type PlaylistItem =
   | { source: 'local'; trackId: string }
   | { source: 'tidal'; providerTrackId: string }
 
+export type PlaylistOrigin = 'manual' | 'generated' | 'imported'
+
 export interface Playlist {
   id: string
   name: string
@@ -65,6 +67,9 @@ export interface Playlist {
   writable?: boolean
   trackCount?: number
   folderId?: string
+  origin?: PlaylistOrigin
+  generatedFromMixId?: string
+  generatedPrompt?: string
 }
 
 export interface PlaylistFolder {

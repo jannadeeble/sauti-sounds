@@ -16,8 +16,12 @@ import {
   Upload,
 } from 'lucide-react'
 import AIChatPanel from './AIChatPanel'
+import AIModalHost from './AIModalHost'
 import BatchActionsBar from './BatchActionsBar'
+import PlaylistFooterPanel from './PlaylistFooterPanel'
+import PlaylistDoctorPanel from './PlaylistDoctorPanel'
 import BottomSheet from './BottomSheet'
+import HomeSuggestions from './HomeSuggestions'
 import ImportPanel, { type ImportDoneResult } from './ImportPanel'
 import NotificationBell from './NotificationBell'
 import PlaylistTree from './PlaylistTree'
@@ -28,10 +32,13 @@ import WorkspacePlayer from './WorkspacePlayer'
 import { useTrackArtworkUrl } from '../lib/artwork'
 import { useHistoryStore } from '../stores/historyStore'
 import { useLibraryStore } from '../stores/libraryStore'
+import { useMixStore } from '../stores/mixStore'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
 import { usePlaylistStore } from '../stores/playlistStore'
 import { useSelectionStore } from '../stores/selectionStore'
+import { useTasteStore } from '../stores/tasteStore'
 import { searchTidal } from '../lib/tidal'
+import { runTagJob } from '../lib/tagJob'
 import { useTidalStore } from '../stores/tidalStore'
 import type { Playlist, PlaylistFolder, Track } from '../types'
 
@@ -150,6 +157,9 @@ export default function WorkspaceShell() {
   const loadHistory = useHistoryStore((state) => state.loadHistory)
   const historyEntries = useHistoryStore((state) => state.entries)
 
+  const loadMixes = useMixStore((state) => state.load)
+  const loadTasteProfile = useTasteStore((state) => state.load)
+
   const selecting = useSelectionStore((state) => state.selecting)
   const enterSelection = useSelectionStore((state) => state.enter)
   const exitSelection = useSelectionStore((state) => state.exit)
@@ -158,7 +168,28 @@ export default function WorkspaceShell() {
     void loadTracks()
     void loadPlaylists()
     void loadHistory()
-  }, [loadPlaylists, loadTracks, loadHistory])
+    void loadMixes()
+    void loadTasteProfile()
+  }, [loadPlaylists, loadTracks, loadHistory, loadMixes, loadTasteProfile])
+
+  const trackCount = tracks.length
+  const lastTagKick = useRef(0)
+  useEffect(() => {
+    if (!trackCount) return
+    // Debounce: once library loads (or grows), fire the tagger in the
+    // background. The job itself coalesces so repeated calls are cheap.
+    if (Date.now() - lastTagKick.current < 2000) return
+    lastTagKick.current = Date.now()
+    void runTagJob()
+
+    // Catch-up: if a bunch of tracks are already tagged but we never built a
+    // taste profile (older install, migration, etc.), kick a rebuild now.
+    const tasteState = useTasteStore.getState()
+    const tagged = tracks.filter((t) => !!t.tags).length
+    if (!tasteState.profile && !tasteState.rebuilding && tagged >= 20) {
+      void tasteState.rebuild(tracks)
+    }
+  }, [trackCount, tracks])
 
   useEffect(() => {
     writeStoredValue(ACTIVE_TAB_STORAGE_KEY, activeTab)
@@ -738,6 +769,7 @@ export default function WorkspaceShell() {
                 <HomeView
                   recentTracks={recentTracks}
                   onPlayTrack={(track, list) => playTracks(list, 'library', list.indexOf(track))}
+                  onPlayTracks={(list) => playTracks(list, 'library', 0)}
                   onImport={() => void handleQuickImport()}
                   onOpenLibrary={() => setActiveTab('library')}
                 />
@@ -969,6 +1001,8 @@ export default function WorkspaceShell() {
       <QueueSheet open={playerOpen} onClose={() => setPlayerOpen(false)} />
 
       <BatchActionsBar />
+
+      <AIModalHost />
     </div>
   )
 }
@@ -1188,11 +1222,13 @@ function EmptyPanel({
 function HomeView({
   recentTracks,
   onPlayTrack,
+  onPlayTracks,
   onImport,
   onOpenLibrary,
 }: {
   recentTracks: Track[]
   onPlayTrack: (track: Track, list: Track[]) => void
+  onPlayTracks: (list: Track[]) => void
   onImport: () => void
   onOpenLibrary: () => void
 }) {
@@ -1230,17 +1266,7 @@ function HomeView({
       </section>
 
       <section className={`${panelClass} px-5 py-5 sm:px-6`}>
-        <div className="pb-4">
-          <h2 className="deezer-display text-[1.7rem] leading-none text-[#111116]">Suggested for you</h2>
-          <p className="mt-1 text-sm text-[#7a7b86]">AI-picked tracks, playlists, and mixes will appear here.</p>
-        </div>
-
-        <div className={`${mutedPanelClass} flex min-h-[180px] flex-col items-center justify-center gap-3 px-4 py-10 text-center text-sm text-[#686973]`}>
-          <Sparkles size={22} className="text-[#ef5466]" />
-          <p className="max-w-md">
-            Sauti will learn your taste and suggest things to play next. This space is reserved for those picks.
-          </p>
-        </div>
+        <HomeSuggestions onPlayTracks={onPlayTracks} />
       </section>
     </div>
   )
@@ -1570,6 +1596,13 @@ function PlaylistDetailView({
         </div>
       </section>
 
+      {selectedPlaylist.kind === 'app' && appPlaylistTracks.length >= 3 ? (
+        <PlaylistDoctorPanel
+          playlist={playlist}
+          playlistTracks={appPlaylistTracks.map((entry) => entry.track)}
+        />
+      ) : null}
+
       {selectedPlaylist.kind === 'app' ? (
         appPlaylistTracks.length === 0 ? (
           <EmptyPanel
@@ -1636,6 +1669,10 @@ function PlaylistDetailView({
           description="Waiting for the synced playlist details to arrive from the backend."
         />
       )}
+
+      {tracks.length >= 3 ? (
+        <PlaylistFooterPanel playlist={playlist} playlistTracks={tracks} />
+      ) : null}
     </div>
   )
 }

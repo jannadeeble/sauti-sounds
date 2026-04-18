@@ -1,6 +1,14 @@
-import type { Track } from '../types'
+import type { TasteProfile, Track, TrackTags } from '../types'
+
+export type { TasteProfile, TrackTags } from '../types'
 
 export type LLMProvider = 'claude' | 'openai' | 'gemini' | 'openrouter'
+
+// Default models for the suggestion stack. Sonnet 4.6 + extended thinking for
+// generation; Haiku 4.5 (no thinking) for cheap adjudication and blurbs.
+export const MODEL_SONNET_46 = 'claude-sonnet-4-6'
+export const MODEL_HAIKU_45 = 'claude-haiku-4-5-20251001'
+export const DEFAULT_THINKING_BUDGET = 16_000
 
 interface LLMConfig {
   provider: LLMProvider
@@ -27,12 +35,27 @@ interface ChatMessage {
   content: string
 }
 
+export interface ClaudeSystemBlock {
+  type: 'text'
+  text: string
+  cache_control?: { type: 'ephemeral' }
+}
+
+export interface ClaudeCallOptions {
+  model?: string
+  maxTokens?: number
+  thinkingBudget?: number
+  // When provided, takes precedence over the system message inside `messages`.
+  // Pass an array of blocks to attach `cache_control` to the static prefix.
+  systemBlocks?: ClaudeSystemBlock[]
+}
+
 async function callLLM(messages: ChatMessage[], maxTokens = 2048): Promise<string> {
   if (!config) throw new Error('LLM not configured')
 
   switch (config.provider) {
     case 'claude':
-      return callClaude(messages, maxTokens)
+      return callClaude(messages, { maxTokens })
     case 'openai':
       return callOpenAI(messages, maxTokens)
     case 'gemini':
@@ -44,12 +67,27 @@ async function callLLM(messages: ChatMessage[], maxTokens = 2048): Promise<strin
   }
 }
 
-async function callClaude(messages: ChatMessage[], maxTokens: number): Promise<string> {
-  const systemMsg = messages.find(m => m.role === 'system')?.content || ''
+async function callClaude(messages: ChatMessage[], opts: ClaudeCallOptions = {}): Promise<string> {
+  const systemFromMessages = messages.find(m => m.role === 'system')?.content || ''
   const userMessages = messages.filter(m => m.role !== 'system').map(m => ({
     role: m.role,
     content: m.content,
   }))
+
+  const system: string | ClaudeSystemBlock[] = opts.systemBlocks?.length
+    ? opts.systemBlocks
+    : systemFromMessages
+
+  const body: Record<string, unknown> = {
+    model: opts.model || config!.model || MODEL_SONNET_46,
+    max_tokens: opts.maxTokens ?? 2048,
+    system,
+    messages: userMessages,
+  }
+
+  if (typeof opts.thinkingBudget === 'number' && opts.thinkingBudget > 0) {
+    body.thinking = { type: 'enabled', budget_tokens: opts.thinkingBudget }
+  }
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -57,14 +95,10 @@ async function callClaude(messages: ChatMessage[], maxTokens: number): Promise<s
       'Content-Type': 'application/json',
       'x-api-key': config!.apiKey,
       'anthropic-version': '2023-06-01',
+      'anthropic-beta': 'prompt-caching-2024-07-31',
       'anthropic-dangerous-direct-browser-access': 'true',
     },
-    body: JSON.stringify({
-      model: config!.model || 'claude-sonnet-4-20250514',
-      max_tokens: maxTokens,
-      system: systemMsg,
-      messages: userMessages,
-    }),
+    body: JSON.stringify(body),
   })
 
   if (!res.ok) {
@@ -73,7 +107,27 @@ async function callClaude(messages: ChatMessage[], maxTokens: number): Promise<s
   }
 
   const data = await res.json()
-  return data.content[0].text
+  // Skip thinking blocks; return concatenated text blocks.
+  const text = (data.content as Array<{ type: string; text?: string }>)
+    .filter(b => b.type === 'text' && typeof b.text === 'string')
+    .map(b => b.text!)
+    .join('\n')
+  return text
+}
+
+/**
+ * Direct Claude call with first-class options — used by the suggestion stack
+ * for prompt caching, thinking, and Haiku adjudication. Bypasses the user's
+ * provider selection (these calls always need Anthropic features).
+ */
+export async function callClaudeDirect(
+  messages: ChatMessage[],
+  opts: ClaudeCallOptions = {},
+): Promise<string> {
+  if (!config || config.provider !== 'claude') {
+    throw new Error('Anthropic API key required for suggestion features')
+  }
+  return callClaude(messages, opts)
 }
 
 async function callOpenAI(messages: ChatMessage[], maxTokens: number): Promise<string> {
@@ -231,15 +285,6 @@ async function callGemini(messages: ChatMessage[], maxTokens: number): Promise<s
 
 // ── Track Tagging ──
 
-export interface TrackTags {
-  energy: number
-  mood: string
-  genres: string[]
-  bpmEstimate?: number
-  vibeDescriptors: string[]
-  culturalContext?: string
-}
-
 export async function tagTracks(tracks: Track[]): Promise<Map<string, TrackTags>> {
   const batchSize = 20
   const results = new Map<string, TrackTags>()
@@ -281,6 +326,7 @@ Respond with valid JSON array only, one object per track. No markdown, no explan
               bpmEstimate: tags.bpmEstimate,
               vibeDescriptors: Array.isArray(tags.vibeDescriptors) ? tags.vibeDescriptors : [],
               culturalContext: tags.culturalContext,
+              taggedAt: Date.now(),
             })
           }
         })
@@ -294,16 +340,6 @@ Respond with valid JSON array only, one object per track. No markdown, no explan
 }
 
 // ── Taste Profile ──
-
-export interface TasteProfile {
-  coreIdentity: string
-  primaryGenres: string[]
-  energyPreference: { min: number; max: number; sweet_spot: number }
-  culturalMarkers: string[]
-  antiPreferences: string[]
-  favoriteArtists: string[]
-  moodPreferences: string[]
-}
 
 export async function buildTasteProfile(tracks: Track[], _listeningHistory?: any[]): Promise<TasteProfile> {
   const trackSummary = tracks.slice(0, 200).map(t =>
@@ -472,4 +508,115 @@ When recommending tracks, format them clearly. When asked to create playlists, r
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userMessage },
   ])
+}
+
+// ── Suggestion-stack helpers ──
+//
+// These bypass the user's provider selection and call Anthropic directly so
+// they can use prompt caching + extended thinking + Haiku adjudication.
+
+export interface SuggestionContext {
+  // The static, large, cache-friendly prefix (taste profile + tagged library).
+  prefix: string
+  // The seed-specific tail.
+  tail: string
+}
+
+/**
+ * Recommendation call using a SuggestionContext. The prefix is sent as a
+ * cache-controlled system block so the same prefix is free on the 2nd+ call
+ * within Anthropic's ~5min cache TTL.
+ */
+export async function getRecommendationsCached(
+  context: SuggestionContext,
+  instruction: string,
+  options: { count?: number; thinkingBudget?: number; model?: string } = {},
+): Promise<Recommendation[]> {
+  const count = options.count ?? 10
+  const systemPrompt = `You are an expert music curator and DJ. You deeply understand musical flow, energy, mood, genre, and cultural context.
+
+Always respond with a valid JSON array of objects: [{"artist": "...", "title": "...", "reason": "..."}]. No markdown, no explanation outside the JSON.`
+
+  const response = await callClaudeDirect(
+    [
+      { role: 'user', content: `${instruction}\n\nReturn exactly ${count} tracks.\n\n${context.tail}` },
+    ],
+    {
+      model: options.model ?? MODEL_SONNET_46,
+      maxTokens: 4096,
+      thinkingBudget: options.thinkingBudget ?? DEFAULT_THINKING_BUDGET,
+      systemBlocks: [
+        { type: 'text', text: systemPrompt },
+        { type: 'text', text: context.prefix, cache_control: { type: 'ephemeral' } },
+      ],
+    },
+  )
+
+  try {
+    return JSON.parse(response.replace(/```json?\n?|\n?```/g, ''))
+  } catch {
+    console.error('Failed to parse cached recommendations')
+    return []
+  }
+}
+
+export interface AdjudicatorCandidate {
+  id: string
+  title: string
+  artist: string
+  album?: string
+}
+
+/**
+ * Cheap Haiku call: pick the best candidate (by index) for a wanted artist+title,
+ * or null if nothing matches. No thinking, no tools.
+ */
+export async function adjudicateMatch(
+  wanted: { artist: string; title: string },
+  candidates: AdjudicatorCandidate[],
+): Promise<number | null> {
+  if (!candidates.length) return null
+  const payload = {
+    wanted,
+    candidates: candidates.map((c, idx) => ({
+      index: idx,
+      title: c.title,
+      artist: c.artist,
+      album: c.album,
+    })),
+  }
+  const response = await callClaudeDirect(
+    [
+      {
+        role: 'user',
+        content: `Pick the candidate that is the best match for the wanted track. Reject if it's a clearly different track (a cover, live version, karaoke, or different artist). Respond with strict JSON only: {"pickIndex": <number>} or {"pickIndex": null}.\n\n${JSON.stringify(payload)}`,
+      },
+    ],
+    { model: MODEL_HAIKU_45, maxTokens: 64 },
+  )
+  try {
+    const parsed = JSON.parse(response.replace(/```json?\n?|\n?```/g, ''))
+    return typeof parsed.pickIndex === 'number' ? parsed.pickIndex : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 1-2 sentence blurb for a mix tile. Haiku, no thinking.
+ */
+export async function buildBlurb(
+  kind: string,
+  payload: Record<string, unknown>,
+): Promise<string> {
+  const response = await callClaudeDirect(
+    [
+      {
+        role: 'user',
+        content: `Write a 1-2 sentence blurb for a "${kind}" music mix. Voice: warm, knowledgeable, conversational. No headers, no quotes, no markdown — just the sentences. Context:\n${JSON.stringify(payload)}`,
+      },
+    ],
+    { model: MODEL_HAIKU_45, maxTokens: 200 },
+  )
+  return response.trim()
 }

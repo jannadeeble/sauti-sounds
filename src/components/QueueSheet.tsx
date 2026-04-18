@@ -1,4 +1,4 @@
-import { GripVertical, Play, Radio, Trash2 } from 'lucide-react'
+import { GripVertical, Play, Radio, Sparkles, Trash2 } from 'lucide-react'
 import {
   DndContext,
   PointerSensor,
@@ -17,6 +17,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import BottomSheet from './BottomSheet'
 import { useTrackArtworkUrl } from '../lib/artwork'
+import { isAutoRadioTrack } from '../lib/autoRadio'
 import { formatTime } from '../lib/metadata'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
 import type { Track } from '../types'
@@ -130,6 +131,12 @@ function QueueRow({
             <span className="inline-flex items-center gap-1 rounded-full bg-cyan-500/8 px-2 py-0.5 text-[10px] uppercase tracking-wide text-cyan-700">
               <Radio size={10} />
               TIDAL
+            </span>
+          ) : null}
+          {isAutoRadioTrack(track.id) ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-[#fdecef] px-2 py-0.5 text-[10px] uppercase tracking-wide text-[#ef5466]">
+              <Sparkles size={10} />
+              Auto-radio
             </span>
           ) : null}
         </div>

@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef } from 'react'
 import AudioPlayer, { type InterfacePlacement, useAudioPlayer } from 'react-modern-audio-player'
 import { ChevronUp, ListMusic, Radio } from 'lucide-react'
 import { useTrackArtworkUrl } from '../lib/artwork'
+import { maybeFillAutoRadio } from '../lib/autoRadio'
+import { resolveTrackContext } from '../lib/listenContextRegistry'
+import { flushActiveListen, reportPlayerTick } from '../lib/listenTracker'
 import { useResolvedPlayerTracks } from '../lib/playerTracks'
 import { useHistoryStore } from '../stores/historyStore'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
@@ -42,6 +45,34 @@ function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
     lastRecordedTrackId.current = currentTrack.id
     void recordPlay(currentTrack)
   }, [currentTrack, isPlaying, recordPlay])
+
+  useEffect(() => {
+    void reportPlayerTick(
+      {
+        track: currentTrack,
+        isPlaying,
+        positionMs: Math.round(currentTime * 1000),
+        durationSec: duration,
+      },
+      resolveTrackContext,
+    )
+  }, [currentTrack, isPlaying, currentTime, duration])
+
+  useEffect(() => {
+    return () => {
+      void flushActiveListen('unmount')
+    }
+  }, [])
+
+  // Auto-radio: when the last queued track is past 80% playback, request a fresh
+  // batch and append it. The autoRadio module handles cooldown and dedup.
+  useEffect(() => {
+    if (!currentTrack) return
+    if (currentIndex !== tracks.length - 1) return
+    if (duration <= 0) return
+    if (currentTime / duration < 0.8) return
+    void maybeFillAutoRadio(currentTrack)
+  }, [currentTrack, currentIndex, currentTime, duration, tracks.length])
 
   useEffect(() => {
     if (!('mediaSession' in navigator)) return

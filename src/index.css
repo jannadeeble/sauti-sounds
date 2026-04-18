@@ -215,20 +215,22 @@ img {
   min-width: 0;
 }
 
-.workspace-player--floating .rmap-interface-grid > *:has(.rmap-ctrl-btn-wrapper) {
+.workspace-player--floating .rmap-interface-grid > *:has(.rmap-artwork-container) {
   order: 1;
   flex: 0 0 auto;
 }
 
-.workspace-player--floating .rmap-interface-grid > *:has(.rmap-artwork-container) {
-  order: 2;
-  flex: 0 0 auto;
-}
-
 .workspace-player--floating .rmap-interface-grid > *:has(.rmap-track-info-container) {
-  order: 3;
+  order: 2;
   flex: 1 1 120px;
   min-width: 0;
+}
+
+/* Controls centred in the bar — auto margins push surrounding flex items away */
+.workspace-player--floating .rmap-interface-grid > *:has(.rmap-ctrl-btn-wrapper) {
+  order: 3;
+  flex: 0 0 auto;
+  margin: 0 auto;
 }
 
 .workspace-player--floating .rmap-interface-grid > *:has(.rmap-track-time-current) {
@@ -256,11 +258,11 @@ img {
 .workspace-player--floating .rmap-interface-grid > *:has(.workspace-player-chip) {
   order: 8;
   flex: 0 0 auto;
-  margin-left: auto;
 }
 
+/* Spread prev / play / next apart */
 .workspace-player--floating .rmap-ctrl-btn-wrapper {
-  gap: 10px;
+  gap: 24px;
 }
 
 .workspace-player--floating .rmap-artwork-container {

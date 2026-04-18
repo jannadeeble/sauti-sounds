@@ -989,7 +989,7 @@ function HomeView({
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+          <div className="grid grid-cols-4 gap-2">
             {recentTracks.map((track) => (
               <SpeedDialTile key={track.id} track={track} onClick={() => onPlayTrack(track, recentTracks)} />
             ))}
@@ -1010,20 +1010,20 @@ function SpeedDialTile({ track, onClick }: { track: Track; onClick: () => void }
     <button
       type="button"
       onClick={onClick}
-      className="group flex flex-col gap-2 rounded-2xl p-2 text-left transition-colors hover:bg-[#fafafb]"
+      className="group flex flex-col gap-1.5 rounded-2xl p-1.5 text-left transition-colors hover:bg-[#fafafb]"
     >
       <div className="aspect-square w-full overflow-hidden rounded-2xl bg-[#111116]">
         {artworkUrl ? (
           <img src={artworkUrl} alt="" className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]" />
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,#32323d,#121216)] text-white/70">
-            <Disc3 size={36} />
+            <Disc3 size={24} />
           </div>
         )}
       </div>
-      <div className="min-w-0 px-1">
-        <p className="truncate text-sm font-medium text-[#111116]">{track.title}</p>
-        <p className="truncate text-xs text-[#7a7b86]">{track.artist}</p>
+      <div className="min-w-0 px-0.5">
+        <p className="truncate text-xs font-medium text-[#111116]">{track.title}</p>
+        <p className="truncate text-[10px] text-[#7a7b86]">{track.artist}</p>
       </div>
     </button>
   )
@@ -1037,7 +1037,7 @@ function ArtistsGrid({
   onSelect: (artist: string) => void
 }) {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+    <div className="grid grid-cols-4 gap-2">
       {groups.map((group) => (
         <ArtistTile key={group.artist} group={group} onClick={() => onSelect(group.artist)} />
       ))}
@@ -1058,20 +1058,20 @@ function ArtistTile({
     <button
       type="button"
       onClick={onClick}
-      className="group flex flex-col gap-2 rounded-2xl p-2 text-left transition-colors hover:bg-[#fafafb]"
+      className="group flex flex-col gap-1.5 rounded-2xl p-1.5 text-left transition-colors hover:bg-[#fafafb]"
     >
-      <div className="aspect-square w-full overflow-hidden rounded-full bg-[#111116]">
+      <div className="aspect-square w-full overflow-hidden rounded-2xl bg-[#111116]">
         {artworkUrl ? (
           <img src={artworkUrl} alt="" className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]" />
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,#32323d,#121216)] text-white/70">
-            <Disc3 size={32} />
+            <Disc3 size={24} />
           </div>
         )}
       </div>
-      <div className="min-w-0 px-1 text-center">
-        <p className="truncate text-sm font-medium text-[#111116]">{group.artist}</p>
-        <p className="truncate text-xs text-[#7a7b86]">{group.tracks.length} tracks</p>
+      <div className="min-w-0 px-0.5 text-center">
+        <p className="truncate text-xs font-medium text-[#111116]">{group.artist}</p>
+        <p className="truncate text-[10px] text-[#7a7b86]">{group.tracks.length} tracks</p>
       </div>
     </button>
   )

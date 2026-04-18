@@ -487,6 +487,56 @@ img {
   color: #111116;
 }
 
+/* Dark glass variant — black card, white text */
+.workspace-player--glass.workspace-player--dark.rmap-player-provider {
+  --rm-audio-player-text-color: #ffffff;
+  --rm-audio-player-track-current-time: #ffffff;
+  --rm-audio-player-track-duration: rgba(255, 255, 255, 0.5);
+  --rm-audio-player-progress-bar-background: rgba(255, 255, 255, 0.14);
+  --rm-audio-player-volume-background: rgba(255, 255, 255, 0.1);
+  --rm-audio-player-volume-track: rgba(255, 255, 255, 0.2);
+  --rm-audio-player-volume-thumb: #ffffff;
+  --rm-audio-player-volume-panel-background: rgba(20, 20, 24, 0.92);
+  --rm-audio-player-volume-panel-border: rgba(255, 255, 255, 0.1);
+}
+
+.workspace-player--glass.workspace-player--dark .rmap-track-info-container .title {
+  color: #ffffff;
+}
+
+.workspace-player--glass.workspace-player--dark .rmap-track-info-container .writer {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.workspace-player--glass.workspace-player--dark .styled-btn {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.workspace-player--glass.workspace-player--dark .styled-btn:hover {
+  color: #ffffff;
+}
+
+.workspace-player--glass.workspace-player--dark .rmap-track-time-current,
+.workspace-player--glass.workspace-player--dark .rmap-track-time-duration {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.workspace-player--glass.workspace-player--dark .workspace-player-chip__context,
+.workspace-player--glass.workspace-player--dark .workspace-player-chip__toggle {
+  color: rgba(255, 255, 255, 0.8);
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.workspace-player--glass.workspace-player--dark .workspace-player-chip__toggle:hover {
+  background: rgba(255, 255, 255, 0.13);
+  color: #ffffff;
+}
+
+.workspace-player--glass.workspace-player--dark .workspace-player-chip button {
+  color: rgba(255, 255, 255, 0.8);
+}
+
 .workspace-player-chip__meta {
   display: inline-flex;
   align-items: center;

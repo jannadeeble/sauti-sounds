@@ -430,11 +430,7 @@ export default function WorkspaceShell() {
     <div className="workspace-shell">
       <div className="mx-auto flex h-full max-w-[1560px] flex-col lg:grid lg:grid-cols-[220px_minmax(0,1fr)]">
         <aside className="hidden min-h-0 flex-col border-r border-black/8 bg-[#fbfbfc] lg:flex">
-          <div className="px-6 pb-8 pt-7">
-            <BrandMark />
-          </div>
-
-          <nav className="space-y-1 px-4">
+          <nav className="space-y-1 px-4 pt-5">
             <SidebarNavButton
               label="Search"
               icon={<Search size={18} />}
@@ -510,16 +506,13 @@ export default function WorkspaceShell() {
           <header className="border-b border-black/8 bg-[#fbfbfc]/95 backdrop-blur-md">
             <div className="flex items-center justify-between gap-3 px-4 py-3 lg:px-8">
               <div className="flex items-center gap-3">
-                <div className="lg:hidden">
-                  <BrandMark compact />
-                </div>
                 <div className="flex rounded-xl bg-black/8 p-0.5">
                   <button
                     type="button"
                     onClick={() => { setActiveTab('home'); selectPlaylist(undefined) }}
                     className={`rounded-[10px] px-4 py-1.5 text-sm font-medium transition-all ${
                       activeTab === 'home'
-                        ? 'bg-[#111116] text-white shadow-sm'
+                        ? 'bg-[#ef5466] text-white shadow-sm'
                         : 'text-[#686973] hover:text-[#111116]'
                     }`}
                   >
@@ -530,7 +523,7 @@ export default function WorkspaceShell() {
                     onClick={() => { setActiveTab('library'); selectPlaylist(undefined) }}
                     className={`rounded-[10px] px-4 py-1.5 text-sm font-medium transition-all ${
                       activeTab === 'library'
-                        ? 'bg-[#111116] text-white shadow-sm'
+                        ? 'bg-[#ef5466] text-white shadow-sm'
                         : 'text-[#686973] hover:text-[#111116]'
                     }`}
                   >
@@ -800,22 +793,6 @@ export default function WorkspaceShell() {
       <BatchActionsBar />
 
       <AIModalHost />
-    </div>
-  )
-}
-
-function BrandMark({ compact = false }: { compact?: boolean }) {
-  return (
-    <div className={`flex items-center gap-3 ${compact ? 'min-w-0' : ''}`}>
-      <img
-        src="/brand/sauti-wave.png"
-        alt=""
-        aria-hidden="true"
-        className={`shrink-0 object-contain ${compact ? 'h-7 w-12' : 'h-10 w-16'}`}
-      />
-      <div className={`deezer-display ${compact ? 'text-[1.35rem] sm:text-[1.6rem]' : 'text-[2.15rem]'} leading-none text-[#111116]`}>
-        sauti
-      </div>
     </div>
   )
 }

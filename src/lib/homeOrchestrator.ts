@@ -6,6 +6,12 @@ import {
   generateSimilarArtist,
   generateTrackEcho,
 } from './mixGenerator'
+import {
+  getPersistentUiState,
+  hydrateAppStateFromBackend,
+  pushAppStateSnapshot,
+  setPersistentUiState,
+} from './appStateSync'
 import { computePlayStats, pickHotTracks } from './playStats'
 import { useLibraryStore } from '../stores/libraryStore'
 import { useMixStore } from '../stores/mixStore'
@@ -14,7 +20,6 @@ import { useTasteStore } from '../stores/tasteStore'
 import type { Mix, MixKind, Playlist, Track } from '../types'
 
 const RUN_COOLDOWN_MS = 1000 * 60 * 60 * 12 // 12h
-const LAST_RUN_KEY = 'sauti.homeFeed.lastRun'
 let inFlight = false
 
 interface RunOptions {
@@ -22,24 +27,23 @@ interface RunOptions {
   phases?: ('rediscovery' | 'track-echo' | 'playlist-echo' | 'similar-artist' | 'cultural-bridge')[]
 }
 
-export function lastHomeFeedRun(): number {
-  const raw = typeof window !== 'undefined' ? window.localStorage.getItem(LAST_RUN_KEY) : null
-  return raw ? Number(raw) : 0
+async function lastHomeFeedRun(): Promise<number> {
+  await hydrateAppStateFromBackend()
+  return getPersistentUiState().lastHomeFeedRun ?? 0
 }
 
-export function markHomeFeedRun(): void {
-  if (typeof window !== 'undefined') {
-    window.localStorage.setItem(LAST_RUN_KEY, String(Date.now()))
-  }
+async function markHomeFeedRun(): Promise<void> {
+  setPersistentUiState({ lastHomeFeedRun: Date.now() })
+  await pushAppStateSnapshot()
 }
 
 export async function maybeRunHomeFeed(opts: RunOptions = {}): Promise<void> {
   if (inFlight) return
-  if (!opts.force && Date.now() - lastHomeFeedRun() < RUN_COOLDOWN_MS) return
+  if (!opts.force && Date.now() - await lastHomeFeedRun() < RUN_COOLDOWN_MS) return
   inFlight = true
   try {
     await runHomeFeed(opts)
-    markHomeFeedRun()
+    await markHomeFeedRun()
   } finally {
     inFlight = false
   }

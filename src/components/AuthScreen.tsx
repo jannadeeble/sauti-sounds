@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { type ReactNode, useState } from 'react'
 import { ArrowRight, LockKeyhole, Mail, RefreshCcw, UserRound } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 
@@ -53,54 +53,67 @@ export default function AuthScreen() {
   }
 
   const inputClass =
-    'w-full rounded-2xl border border-black/8 bg-[#f8f8f9] px-4 py-3 text-sm text-[#111116] outline-none placeholder:text-[#9ea0aa] focus:ring-2 focus:ring-accent/20'
+    'w-full rounded-[18px] border border-white/10 bg-white/6 px-4 py-3 text-sm text-white outline-none placeholder:text-white/26 focus:border-white/20'
 
   return (
-    <div className="workspace-shell flex min-h-screen items-center justify-center px-5 py-6">
-      <div className="w-full max-w-[400px] rounded-[34px] border border-black/8 bg-white p-6 shadow-[0_1px_0_rgba(17,17,22,0.03)] sm:p-8">
-        <div className="text-center">
-          <div className="deezer-display text-[2.4rem] leading-none text-[#111116]">sauti</div>
-          <h2 className="mt-2 text-sm text-[#9c9da5]">
-            {effectiveMode === 'signin' ? 'Sign in to continue' : 'Create an account'}
-          </h2>
-        </div>
-
-        {!available && (
-          <div className="mt-5 space-y-4 rounded-[28px] border border-black/8 bg-[#f8f8f9] p-5">
-            <p className="text-sm text-[#686973]">
-              The backend is unreachable right now. Please try again.
+    <div className="sauti-theme flex min-h-screen items-center justify-center px-5 py-10">
+      <div className="absolute inset-0 sauti-stage" aria-hidden />
+      <section className="relative flex w-full max-w-[420px] items-center justify-center">
+        <div className="w-full rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(24,27,38,0.86),rgba(14,16,24,0.82))] p-6 shadow-[0_28px_80px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl">
+          <div className="text-center">
+            <div className="sauti-title text-[2.7rem] leading-none text-white">sauti</div>
+            <p className="mt-2 text-sm text-white/44">
+              {effectiveMode === 'signin' ? 'Sign in to continue' : 'Create an account'}
             </p>
-            <button
-              type="button"
-              onClick={() => void initialize()}
-              className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-4 py-2 text-sm text-[#111116] transition-colors hover:bg-[#f1f1f4]"
-            >
-              <RefreshCcw size={15} />
-              Try again
-            </button>
           </div>
-        )}
 
-        {available && (
-          <div className="mt-6 space-y-4">
-            {errorMessage && (
-              <div className="rounded-2xl border border-[#f4c6cc] bg-[#fff4f6] px-4 py-3 text-sm text-[#983749]">
-                {errorMessage}
-              </div>
-            )}
-
-            {effectiveMode === 'signin' ? (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  void handleSignIn()
-                }}
-                className="space-y-4"
+          {!available ? (
+            <div className="mt-6 space-y-4 rounded-[24px] border border-white/10 bg-white/4 p-5">
+              <p className="text-sm text-white/58">
+                The backend is unreachable right now. Try refreshing the session when the service is back.
+              </p>
+              <button
+                type="button"
+                onClick={() => void initialize()}
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/6 px-4 py-2 text-sm text-white/82 transition-colors hover:bg-white/9"
               >
-                <label className="block space-y-2">
-                  <span className="text-xs font-semibold uppercase tracking-[0.28em] text-[#9c9da5]">Email</span>
-                  <div className="relative">
-                    <Mail size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#9ea0aa]" />
+                <RefreshCcw size={15} />
+                Try again
+              </button>
+            </div>
+          ) : null}
+
+          {available ? (
+            <div className="mt-6 space-y-4">
+              <div className="flex rounded-full border border-white/10 bg-white/4 p-1">
+                <ModeButton
+                  active={effectiveMode === 'signin'}
+                  onClick={() => setMode('signin')}
+                  label="Sign in"
+                />
+                <ModeButton
+                  active={effectiveMode === 'register'}
+                  onClick={() => setMode('register')}
+                  label="Create account"
+                  disabled={!canRegister}
+                />
+              </div>
+
+              {errorMessage ? (
+                <div className="rounded-[18px] border border-[#6d2b22] bg-[#311612] px-4 py-3 text-sm text-[#ffb4a6]">
+                  {errorMessage}
+                </div>
+              ) : null}
+
+              {effectiveMode === 'signin' ? (
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void handleSignIn()
+                  }}
+                  className="space-y-4"
+                >
+                  <Field label="Email" icon={<Mail size={16} />}>
                     <input
                       type="email"
                       value={signinEmail}
@@ -109,13 +122,9 @@ export default function AuthScreen() {
                       className={`${inputClass} pl-11`}
                       autoComplete="email"
                     />
-                  </div>
-                </label>
+                  </Field>
 
-                <label className="block space-y-2">
-                  <span className="text-xs font-semibold uppercase tracking-[0.28em] text-[#9c9da5]">Password</span>
-                  <div className="relative">
-                    <LockKeyhole size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#9ea0aa]" />
+                  <Field label="Password" icon={<LockKeyhole size={16} />}>
                     <input
                       type="password"
                       value={signinPassword}
@@ -124,30 +133,26 @@ export default function AuthScreen() {
                       className={`${inputClass} pl-11`}
                       autoComplete="current-password"
                     />
-                  </div>
-                </label>
+                  </Field>
 
-                <button
-                  type="submit"
-                  disabled={submitting || !signinEmail.trim() || signinPassword.length < 8}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-accent-dark disabled:opacity-50"
+                  <button
+                    type="submit"
+                    disabled={submitting || !signinEmail.trim() || signinPassword.length < 8}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-[18px] bg-orange-500 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-orange-600 disabled:opacity-50"
+                  >
+                    <ArrowRight size={16} />
+                    {submitting ? 'Signing in…' : 'Sign in'}
+                  </button>
+                </form>
+              ) : (
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void handleRegister()
+                  }}
+                  className="space-y-4"
                 >
-                  <ArrowRight size={16} />
-                  {submitting ? 'Signing in…' : 'Sign in'}
-                </button>
-              </form>
-            ) : (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  void handleRegister()
-                }}
-                className="space-y-4"
-              >
-                <label className="block space-y-2">
-                  <span className="text-xs font-semibold uppercase tracking-[0.28em] text-[#9c9da5]">Display name</span>
-                  <div className="relative">
-                    <UserRound size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#9ea0aa]" />
+                  <Field label="Display name" icon={<UserRound size={16} />}>
                     <input
                       type="text"
                       value={registerName}
@@ -155,13 +160,9 @@ export default function AuthScreen() {
                       placeholder="Your name"
                       className={`${inputClass} pl-11`}
                     />
-                  </div>
-                </label>
+                  </Field>
 
-                <label className="block space-y-2">
-                  <span className="text-xs font-semibold uppercase tracking-[0.28em] text-[#9c9da5]">Email</span>
-                  <div className="relative">
-                    <Mail size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#9ea0aa]" />
+                  <Field label="Email" icon={<Mail size={16} />}>
                     <input
                       type="email"
                       value={registerEmail}
@@ -170,13 +171,9 @@ export default function AuthScreen() {
                       className={`${inputClass} pl-11`}
                       autoComplete="email"
                     />
-                  </div>
-                </label>
+                  </Field>
 
-                <label className="block space-y-2">
-                  <span className="text-xs font-semibold uppercase tracking-[0.28em] text-[#9c9da5]">Password</span>
-                  <div className="relative">
-                    <LockKeyhole size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#9ea0aa]" />
+                  <Field label="Password" icon={<LockKeyhole size={16} />}>
                     <input
                       type="password"
                       value={registerPassword}
@@ -185,73 +182,90 @@ export default function AuthScreen() {
                       className={`${inputClass} pl-11`}
                       autoComplete="new-password"
                     />
-                  </div>
-                </label>
+                  </Field>
 
-                {requiresInviteCode && (
-                  <label className="block space-y-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.28em] text-[#9c9da5]">Invite code</span>
-                    <input
-                      type="password"
-                      value={inviteCode}
-                      onChange={(event) => setInviteCode(event.target.value)}
-                      placeholder="Shared invite code"
-                      className={inputClass}
-                    />
-                  </label>
-                )}
+                  {requiresInviteCode ? (
+                    <div className="space-y-2">
+                      <span className="text-[11px] uppercase tracking-[0.24em] text-white/34">Invite code</span>
+                      <input
+                        type="password"
+                        value={inviteCode}
+                        onChange={(event) => setInviteCode(event.target.value)}
+                        placeholder="Shared invite code"
+                        className={inputClass}
+                      />
+                    </div>
+                  ) : null}
 
-                <button
-                  type="submit"
-                  disabled={
-                    submitting
-                    || !canRegister
-                    || !registerEmail.trim()
-                    || registerPassword.length < 8
-                    || (requiresInviteCode && !inviteCode.trim())
-                  }
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-accent-dark disabled:opacity-50"
-                >
-                  <ArrowRight size={16} />
-                  {submitting ? 'Creating account…' : 'Create account'}
-                </button>
+                  <button
+                    type="submit"
+                    disabled={
+                      submitting
+                      || !canRegister
+                      || !registerEmail.trim()
+                      || registerPassword.length < 8
+                      || (requiresInviteCode && !inviteCode.trim())
+                    }
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-[18px] bg-orange-500 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-orange-600 disabled:opacity-50"
+                  >
+                    <ArrowRight size={16} />
+                    {submitting ? 'Creating account…' : 'Create account'}
+                  </button>
 
-                {!canRegister && (
-                  <p className="text-sm text-[#7a7b86]">
-                    Registration is closed — this shared backend already has its full set of accounts.
-                  </p>
-                )}
-              </form>
-            )}
-
-            {canRegister && effectiveMode === 'signin' && (
-              <p className="text-center text-sm text-[#7a7b86]">
-                Don't have an account?{' '}
-                <button
-                  type="button"
-                  onClick={() => setMode('register')}
-                  className="text-accent underline-offset-2 hover:underline"
-                >
-                  Create one
-                </button>
-              </p>
-            )}
-
-            {effectiveMode === 'register' && (
-              <p className="text-center text-sm text-[#7a7b86]">
-                Already have an account?{' '}
-                <button
-                  type="button"
-                  onClick={() => setMode('signin')}
-                  className="text-accent underline-offset-2 hover:underline"
-                >
-                  Sign in
-                </button>
-              </p>
-            )}
-          </div>
-        )}
-      </div>
+                  {!canRegister ? (
+                    <p className="text-sm text-white/44">Registration is currently closed for this workspace.</p>
+                  ) : null}
+                </form>
+              )}
+            </div>
+          ) : null}
+        </div>
+      </section>
     </div>
+  )
+}
+
+function Field({
+  label,
+  icon,
+  children,
+}: {
+  label: string
+  icon: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <label className="block space-y-2">
+      <span className="text-[11px] uppercase tracking-[0.24em] text-white/34">{label}</span>
+      <div className="relative">
+        <div className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/34">{icon}</div>
+        {children}
+      </div>
+    </label>
+  )
+}
+
+function ModeButton({
+  active,
+  disabled,
+  label,
+  onClick,
+}: {
+  active: boolean
+  disabled?: boolean
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-colors disabled:opacity-40 ${
+        active ? 'bg-white/12 text-white' : 'text-white/54 hover:text-white'
+      }`}
+    >
+      {label}
+    </button>
   )
 }

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -24,5 +26,23 @@ class PlaylistCreateRequest(BaseModel):
 
 class PlaylistAddItemsRequest(BaseModel):
     track_ids: list[str] = Field(alias="trackIds", min_length=1)
+
+    model_config = {"populate_by_name": True}
+
+
+class LibrarySnapshotRequest(BaseModel):
+    tracks: list[dict[str, Any]] = Field(default_factory=list)
+    playlists: list[dict[str, Any]] = Field(default_factory=list)
+    folders: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AppStateSnapshotRequest(BaseModel):
+    notifications: list[dict[str, Any]] = Field(default_factory=list)
+    history: list[dict[str, Any]] = Field(default_factory=list)
+    listen_events: list[dict[str, Any]] = Field(default_factory=list, alias="listenEvents")
+    mixes: list[dict[str, Any]] = Field(default_factory=list)
+    taste_profile: dict[str, Any] | None = Field(default=None, alias="tasteProfile")
+    settings: dict[str, Any] = Field(default_factory=dict)
+    ui: dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"populate_by_name": True}

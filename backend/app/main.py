@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+import json
 from pathlib import Path
 import time
 import uuid
@@ -8,14 +9,25 @@ import uuid
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .database import User, get_db, init_db, migrate_db
+from .database import (
+    LibraryPlaylist,
+    LibraryPlaylistFolder,
+    LibraryTrack,
+    UserAppStateSnapshot,
+    User,
+    get_db,
+    init_db,
+    migrate_db,
+)
 from .schemas import (
+    AppStateSnapshotRequest,
     AuthLoginRequest,
     AuthRegisterRequest,
+    LibrarySnapshotRequest,
     PlaylistAddItemsRequest,
     PlaylistCreateRequest,
 )
@@ -67,6 +79,16 @@ def auth_required(request: Request) -> None:
     require_session(request)
 
 
+def auth_user_id(request: Request) -> str:
+    require_session(request)
+    user_id = get_session_user_id(request)
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="App login required"
+        )
+    return user_id
+
+
 def playback_allowed(request: Request, track_id: str, token: str | None) -> None:
     if has_valid_session(request):
         return
@@ -106,6 +128,200 @@ def count_users(db: Session) -> int:
 
 def registration_open(db: Session) -> bool:
     return count_users(db) < settings.auth_max_users
+
+
+def _deserialize_payloads(rows: list[LibraryTrack] | list[LibraryPlaylist] | list[LibraryPlaylistFolder]) -> list[dict]:
+    return [json.loads(row.payload) for row in rows]
+
+
+def _track_asset_keys(track: dict) -> list[str]:
+    keys: list[str] = []
+    r2_key = track.get("r2Key")
+    artwork_r2_key = track.get("artworkR2Key")
+    if isinstance(r2_key, str) and r2_key:
+        keys.append(r2_key)
+    if isinstance(artwork_r2_key, str) and artwork_r2_key:
+        keys.append(artwork_r2_key)
+    return keys
+
+
+def _delete_r2_assets_for_removed_tracks(
+    existing_tracks: list[LibraryTrack], next_tracks: list[dict]
+) -> None:
+    if not r2_is_configured():
+        return
+
+    next_ids = {
+        str(track.get("id"))
+        for track in next_tracks
+        if isinstance(track, dict) and track.get("id") is not None
+    }
+    keys_to_delete: set[str] = set()
+    for row in existing_tracks:
+        payload = json.loads(row.payload)
+        track_id = str(payload.get("id", ""))
+        if track_id and track_id not in next_ids:
+            keys_to_delete.update(_track_asset_keys(payload))
+
+    for key in keys_to_delete:
+        try:
+            delete_object(key)
+        except Exception:
+            # Blob cleanup should not block library metadata writes.
+            continue
+
+
+def read_library_snapshot(db: Session, user_id: str) -> dict[str, list[dict]]:
+    tracks = db.scalars(
+        select(LibraryTrack)
+        .where(LibraryTrack.user_id == user_id)
+        .order_by(LibraryTrack.updated_at.desc())
+    ).all()
+    playlists = db.scalars(
+        select(LibraryPlaylist)
+        .where(LibraryPlaylist.user_id == user_id)
+        .order_by(LibraryPlaylist.updated_at.desc())
+    ).all()
+    folders = db.scalars(
+        select(LibraryPlaylistFolder)
+        .where(LibraryPlaylistFolder.user_id == user_id)
+        .order_by(LibraryPlaylistFolder.updated_at.desc())
+    ).all()
+    return {
+        "tracks": _deserialize_payloads(tracks),
+        "playlists": _deserialize_payloads(playlists),
+        "folders": _deserialize_payloads(folders),
+    }
+
+
+def replace_library_snapshot(
+    db: Session,
+    user_id: str,
+    payload: LibrarySnapshotRequest,
+) -> dict[str, list[dict]]:
+    now = int(time.time() * 1000)
+    next_tracks = [track for track in payload.tracks if isinstance(track, dict) and track.get("id")]
+    next_playlists = [playlist for playlist in payload.playlists if isinstance(playlist, dict) and playlist.get("id")]
+    next_folders = [folder for folder in payload.folders if isinstance(folder, dict) and folder.get("id")]
+
+    existing_tracks = db.scalars(
+        select(LibraryTrack).where(LibraryTrack.user_id == user_id)
+    ).all()
+    _delete_r2_assets_for_removed_tracks(existing_tracks, next_tracks)
+
+    db.execute(delete(LibraryTrack).where(LibraryTrack.user_id == user_id))
+    db.execute(delete(LibraryPlaylist).where(LibraryPlaylist.user_id == user_id))
+    db.execute(delete(LibraryPlaylistFolder).where(LibraryPlaylistFolder.user_id == user_id))
+
+    db.add_all(
+        [
+            LibraryTrack(
+                user_id=user_id,
+                id=str(track["id"]),
+                payload=json.dumps(track),
+                updated_at=int(track.get("addedAt") or now),
+            )
+            for track in next_tracks
+        ]
+    )
+    db.add_all(
+        [
+            LibraryPlaylist(
+                user_id=user_id,
+                id=str(playlist["id"]),
+                payload=json.dumps(playlist),
+                updated_at=int(playlist.get("updatedAt") or now),
+            )
+            for playlist in next_playlists
+        ]
+    )
+    db.add_all(
+        [
+            LibraryPlaylistFolder(
+                user_id=user_id,
+                id=str(folder["id"]),
+                payload=json.dumps(folder),
+                updated_at=int(folder.get("updatedAt") or now),
+            )
+            for folder in next_folders
+        ]
+    )
+    db.commit()
+    return {
+        "tracks": next_tracks,
+        "playlists": next_playlists,
+        "folders": next_folders,
+    }
+
+
+def clear_library_snapshot(db: Session, user_id: str) -> None:
+    if r2_is_configured():
+        existing_tracks = db.scalars(
+            select(LibraryTrack).where(LibraryTrack.user_id == user_id)
+        ).all()
+        for row in existing_tracks:
+            payload = json.loads(row.payload)
+            for key in _track_asset_keys(payload):
+                try:
+                    delete_object(key)
+                except Exception:
+                    continue
+
+    db.execute(delete(LibraryTrack).where(LibraryTrack.user_id == user_id))
+    db.execute(delete(LibraryPlaylist).where(LibraryPlaylist.user_id == user_id))
+    db.execute(delete(LibraryPlaylistFolder).where(LibraryPlaylistFolder.user_id == user_id))
+    db.commit()
+
+
+def read_app_state_snapshot(db: Session, user_id: str) -> dict:
+    snapshot = db.get(UserAppStateSnapshot, user_id)
+    if snapshot is None:
+        return {
+            "notifications": [],
+            "history": [],
+            "listenEvents": [],
+            "mixes": [],
+            "tasteProfile": None,
+            "settings": {},
+            "ui": {},
+        }
+    payload = json.loads(snapshot.payload)
+    return {
+        "notifications": payload.get("notifications", []),
+        "history": payload.get("history", []),
+        "listenEvents": payload.get("listenEvents", []),
+        "mixes": payload.get("mixes", []),
+        "tasteProfile": payload.get("tasteProfile"),
+        "settings": payload.get("settings", {}),
+        "ui": payload.get("ui", {}),
+    }
+
+
+def replace_app_state_snapshot(
+    db: Session,
+    user_id: str,
+    payload: AppStateSnapshotRequest,
+) -> dict:
+    now = int(time.time() * 1000)
+    snapshot = db.get(UserAppStateSnapshot, user_id)
+    value = {
+        "notifications": payload.notifications,
+        "history": payload.history,
+        "listenEvents": payload.listen_events,
+        "mixes": payload.mixes,
+        "tasteProfile": payload.taste_profile,
+        "settings": payload.settings,
+        "ui": payload.ui,
+    }
+    encoded = json.dumps(value)
+    if snapshot is None:
+        snapshot = UserAppStateSnapshot(user_id=user_id, payload=encoded, updated_at=now)
+        db.add(snapshot)
+    else:
+        snapshot.payload = encoded
+        snapshot.updated_at = now
+    db.commit()
+    return value
 
 
 def build_auth_session_payload(
@@ -433,6 +649,45 @@ def storage_delete(key: str, request: Request) -> dict:
         )
     delete_object(key)
     return {"ok": True}
+
+
+@app.get("/api/library/snapshot")
+def library_snapshot(request: Request, db: Session = Depends(get_db)) -> dict:
+    user_id = auth_user_id(request)
+    return read_library_snapshot(db, user_id)
+
+
+@app.put("/api/library/snapshot")
+def library_snapshot_replace(
+    payload: LibrarySnapshotRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    user_id = auth_user_id(request)
+    return replace_library_snapshot(db, user_id, payload)
+
+
+@app.delete("/api/library/snapshot")
+def library_snapshot_clear(request: Request, db: Session = Depends(get_db)) -> dict[str, bool]:
+    user_id = auth_user_id(request)
+    clear_library_snapshot(db, user_id)
+    return {"ok": True}
+
+
+@app.get("/api/state/snapshot")
+def app_state_snapshot(request: Request, db: Session = Depends(get_db)) -> dict:
+    user_id = auth_user_id(request)
+    return read_app_state_snapshot(db, user_id)
+
+
+@app.put("/api/state/snapshot")
+def app_state_snapshot_replace(
+    payload: AppStateSnapshotRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    user_id = auth_user_id(request)
+    return replace_app_state_snapshot(db, user_id, payload)
 
 
 @app.exception_handler(ValueError)

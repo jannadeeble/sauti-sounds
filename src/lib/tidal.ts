@@ -38,7 +38,9 @@ export interface TidalSearchResult {
 function normalizeTrack(track: Track): Track {
   return {
     ...track,
-    audioUrl: track.audioUrl ? toApiUrl(track.audioUrl) : undefined,
+    audioUrl: track.audioUrl
+      ? (/^https?:\/\//.test(track.audioUrl) ? track.audioUrl : toApiUrl(track.audioUrl))
+      : undefined,
   }
 }
 

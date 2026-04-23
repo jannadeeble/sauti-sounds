@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { RectLike } from '../lib/rect'
 import type { Track } from '../types'
 
 export type PlaybackContext =
@@ -25,8 +26,10 @@ interface PlaybackSessionState extends SyncedPlayerState {
   context: PlaybackContext
   tracks: Track[]
   startIndex: number
+  requestedTrackId: string | null
   sessionId: number
   playerOpen: boolean
+  playerOpenOriginRect: RectLike | null
   selectedPlaylist?: SelectedPlaylist
   errorMessage: string | null
   playTracks: (tracks: Track[], context: PlaybackContext, startIndex?: number) => void
@@ -36,7 +39,7 @@ interface PlaybackSessionState extends SyncedPlayerState {
   removeQueuedTrack: (trackId: string) => void
   selectPlaylist: (playlist?: SelectedPlaylist) => void
   clearSession: () => void
-  setPlayerOpen: (open: boolean) => void
+  setPlayerOpen: (open: boolean, originRect?: RectLike | null) => void
   setErrorMessage: (message: string | null) => void
   syncPlayerState: (state: Partial<SyncedPlayerState>) => void
 }
@@ -49,21 +52,30 @@ const initialSyncedState: SyncedPlayerState = {
   duration: 0,
 }
 
+function normalizeStartIndex(tracks: Track[], startIndex: number) {
+  if (tracks.length === 0) return 0
+  return Math.max(0, Math.min(startIndex, tracks.length - 1))
+}
+
 export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
   ...initialSyncedState,
   context: 'library',
   tracks: [],
   startIndex: 0,
+  requestedTrackId: null,
   sessionId: 0,
   playerOpen: false,
+  playerOpenOriginRect: null,
   selectedPlaylist: undefined,
   errorMessage: null,
 
   playTracks: (tracks, context, startIndex = 0) => {
+    const nextIndex = normalizeStartIndex(tracks, startIndex)
     set((state) => ({
       context,
       tracks,
-      startIndex,
+      startIndex: nextIndex,
+      requestedTrackId: tracks[nextIndex]?.id ?? null,
       sessionId: state.sessionId + 1,
       errorMessage: null,
       ...initialSyncedState,
@@ -71,11 +83,13 @@ export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
   },
 
   playPlaylist: (kind, id, tracks, startIndex = 0) => {
+    const nextIndex = normalizeStartIndex(tracks, startIndex)
     set((state) => ({
       selectedPlaylist: { kind, id },
       context: kind === 'app' ? 'app-playlist' : 'tidal-playlist',
       tracks,
-      startIndex,
+      startIndex: nextIndex,
+      requestedTrackId: tracks[nextIndex]?.id ?? null,
       sessionId: state.sessionId + 1,
       errorMessage: null,
       ...initialSyncedState,
@@ -133,12 +147,16 @@ export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
       ...initialSyncedState,
       tracks: [],
       startIndex: 0,
+      requestedTrackId: null,
       errorMessage: null,
     })
   },
 
-  setPlayerOpen: (playerOpen) => {
-    set({ playerOpen })
+  setPlayerOpen: (playerOpen, originRect = null) => {
+    set({
+      playerOpen,
+      playerOpenOriginRect: playerOpen ? originRect : null,
+    })
   },
 
   setErrorMessage: (errorMessage) => {

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { db } from '../db'
+import { hydrateLibrarySnapshotFromBackend, pushDexieLibrarySnapshot } from '../lib/librarySync'
 import {
   addTracksToTidalPlaylist,
   createTidalPlaylist,
@@ -55,6 +56,10 @@ async function readAppPlaylists(): Promise<Playlist[]> {
   return db.playlists.where('kind').equals('app').sortBy('updatedAt')
 }
 
+async function syncPlaylistsToBackend() {
+  await pushDexieLibrarySnapshot()
+}
+
 export const usePlaylistStore = create<PlaylistState>((set, get) => ({
   appPlaylists: [],
   appPlaylistFolders: [],
@@ -65,10 +70,9 @@ export const usePlaylistStore = create<PlaylistState>((set, get) => ({
   loadPlaylists: async () => {
     set({ loading: true })
     try {
-      const [appPlaylistsRaw, appPlaylistFolders] = await Promise.all([
-        readAppPlaylists(),
-        db.playlistFolders.orderBy('name').toArray(),
-      ])
+      const snapshot = await hydrateLibrarySnapshotFromBackend()
+      const appPlaylistsRaw = [...snapshot.playlists].sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0))
+      const appPlaylistFolders = [...snapshot.folders].sort((a, b) => a.name.localeCompare(b.name))
       const appPlaylists = appPlaylistsRaw.reverse()
       const tidalPlaylists = useTidalStore.getState().tidalConnected
         ? await getTidalPlaylists()
@@ -117,6 +121,7 @@ export const usePlaylistStore = create<PlaylistState>((set, get) => ({
       generatedPrompt: options.generatedPrompt,
     }
     await db.playlists.put(playlist)
+    await syncPlaylistsToBackend()
     await get().loadPlaylists()
     return playlist
   },
@@ -130,11 +135,13 @@ export const usePlaylistStore = create<PlaylistState>((set, get) => ({
       description,
       updatedAt: Date.now(),
     })
+    await syncPlaylistsToBackend()
     await get().loadPlaylists()
   },
 
   deleteAppPlaylist: async (id) => {
     await db.playlists.delete(id)
+    await syncPlaylistsToBackend()
     await get().loadPlaylists()
   },
 
@@ -182,6 +189,7 @@ export const usePlaylistStore = create<PlaylistState>((set, get) => ({
       )
     })
 
+    await syncPlaylistsToBackend()
     await Promise.all([
       get().loadPlaylists(),
       useLibraryStore.getState().loadTracks(),
@@ -212,6 +220,7 @@ export const usePlaylistStore = create<PlaylistState>((set, get) => ({
       updatedAt: Date.now(),
       trackCount: nextItems.length,
     })
+    await syncPlaylistsToBackend()
     await get().loadPlaylists()
   },
 
@@ -229,6 +238,7 @@ export const usePlaylistStore = create<PlaylistState>((set, get) => ({
       items,
       updatedAt: Date.now(),
     })
+    await syncPlaylistsToBackend()
     await get().loadPlaylists()
   },
 
@@ -305,6 +315,7 @@ export const usePlaylistStore = create<PlaylistState>((set, get) => ({
     if (toPut.length > 0) {
       await db.playlists.bulkPut(toPut)
     }
+    await syncPlaylistsToBackend()
     await get().loadPlaylists()
     return { created, merged, replaced, skipped }
   },

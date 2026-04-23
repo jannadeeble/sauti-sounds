@@ -1,4 +1,5 @@
 import { db } from '../db'
+import { hydrateAppStateFromBackend } from './appStateSync'
 
 export interface TrackPlayStat {
   playCount: number
@@ -10,6 +11,7 @@ const HOT_WINDOW_MS = 1000 * 60 * 60 * 24 * 14 // 14 days
 const HOT_THRESHOLD = 5
 
 export async function computePlayStats(): Promise<Map<string, TrackPlayStat>> {
+  await hydrateAppStateFromBackend()
   const events = await db.listenEvents.toArray()
   const cutoff = Date.now() - HOT_WINDOW_MS
   const stats = new Map<string, TrackPlayStat>()

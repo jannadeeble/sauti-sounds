@@ -53,15 +53,40 @@ export interface ClaudeCallOptions {
 async function callLLM(messages: ChatMessage[], maxTokens = 2048): Promise<string> {
   if (!config) throw new Error('LLM not configured')
 
+  return callConfiguredProvider(messages, { maxTokens })
+}
+
+function mergeSystemPrompt(messages: ChatMessage[], systemBlocks?: ClaudeSystemBlock[]): ChatMessage[] {
+  if (!systemBlocks?.length) return messages
+
+  const injected = systemBlocks
+    .map((block) => block.text.trim())
+    .filter(Boolean)
+    .join('\n\n')
+
+  if (!injected) return messages
+
+  const existingSystem = messages.find((message) => message.role === 'system')?.content.trim()
+  const mergedSystem = existingSystem ? `${injected}\n\n${existingSystem}` : injected
+  const withoutSystem = messages.filter((message) => message.role !== 'system')
+  return [{ role: 'system', content: mergedSystem }, ...withoutSystem]
+}
+
+async function callConfiguredProvider(
+  messages: ChatMessage[],
+  opts: ClaudeCallOptions = {},
+): Promise<string> {
+  if (!config) throw new Error('LLM not configured')
+
   switch (config.provider) {
     case 'claude':
-      return callClaude(messages, { maxTokens })
+      return callClaude(messages, opts)
     case 'openai':
-      return callOpenAI(messages, maxTokens)
+      return callOpenAI(mergeSystemPrompt(messages, opts.systemBlocks), opts.maxTokens ?? 2048)
     case 'gemini':
-      return callGemini(messages, maxTokens)
+      return callGemini(mergeSystemPrompt(messages, opts.systemBlocks), opts.maxTokens ?? 2048)
     case 'openrouter':
-      return callOpenRouter(messages, maxTokens)
+      return callOpenRouter(mergeSystemPrompt(messages, opts.systemBlocks), opts.maxTokens ?? 2048)
     default:
       throw new Error(`Unknown provider: ${config.provider}`)
   }
@@ -116,18 +141,15 @@ async function callClaude(messages: ChatMessage[], opts: ClaudeCallOptions = {})
 }
 
 /**
- * Direct Claude call with first-class options — used by the suggestion stack
- * for prompt caching, thinking, and Haiku adjudication. Bypasses the user's
- * provider selection (these calls always need Anthropic features).
+ * Direct provider call with first-class options. Claude keeps prompt caching
+ * and thinking support; other configured providers receive the same prompt
+ * without Claude-specific features.
  */
 export async function callClaudeDirect(
   messages: ChatMessage[],
   opts: ClaudeCallOptions = {},
 ): Promise<string> {
-  if (!config || config.provider !== 'claude') {
-    throw new Error('Anthropic API key required for suggestion features')
-  }
-  return callClaude(messages, opts)
+  return callConfiguredProvider(messages, opts)
 }
 
 async function callOpenAI(messages: ChatMessage[], maxTokens: number): Promise<string> {
@@ -157,6 +179,27 @@ export interface OpenRouterModel {
   completionPrice?: number
 }
 
+interface OpenRouterModelsResponse {
+  data?: Array<{
+    context_length?: number
+    id: string
+    name?: string
+    pricing?: {
+      completion?: string
+      prompt?: string
+    }
+  }>
+}
+
+interface GeneratedTrackTags {
+  bpmEstimate?: number
+  culturalContext?: string
+  energy?: number
+  genres?: unknown
+  mood?: string
+  vibeDescriptors?: unknown
+}
+
 let openRouterModelsCache: OpenRouterModel[] | null = null
 let openRouterModelsPromise: Promise<OpenRouterModel[]> | null = null
 
@@ -175,8 +218,8 @@ export async function listOpenRouterModels(): Promise<OpenRouterModel[]> {
       openRouterModelsPromise = null
       throw new Error(`OpenRouter models fetch failed: ${res.status}`)
     }
-    const data = await res.json()
-    const models: OpenRouterModel[] = (data.data ?? []).map((m: any) => ({
+    const data = await res.json() as OpenRouterModelsResponse
+    const models: OpenRouterModel[] = (data.data ?? []).map((m) => ({
       id: m.id,
       name: m.name ?? m.id,
       contextLength: m.context_length,
@@ -210,7 +253,10 @@ function supportsReasoning(modelId: string): boolean {
   )
 }
 
-async function callOpenRouter(messages: ChatMessage[], maxTokens: number): Promise<string> {
+async function callOpenRouter(
+  messages: ChatMessage[],
+  maxTokens: number,
+): Promise<string> {
   // OpenRouter is OpenAI-compatible. The HTTP-Referer and X-Title headers are
   // optional attribution metadata shown on OpenRouter's leaderboard.
   const model = config!.model || 'anthropic/claude-sonnet-4.6'
@@ -252,7 +298,10 @@ async function callOpenRouter(messages: ChatMessage[], maxTokens: number): Promi
   return data.choices[0].message.content
 }
 
-async function callGemini(messages: ChatMessage[], maxTokens: number): Promise<string> {
+async function callGemini(
+  messages: ChatMessage[],
+  maxTokens: number,
+): Promise<string> {
   const model = config!.model || 'gemini-2.0-flash'
   const contents = messages
     .filter(m => m.role !== 'system')
@@ -317,7 +366,7 @@ Respond with valid JSON array only, one object per track. No markdown, no explan
     try {
       const parsed = JSON.parse(response.replace(/```json?\n?|\n?```/g, ''))
       if (Array.isArray(parsed)) {
-        parsed.forEach((tags: any, idx: number) => {
+        parsed.forEach((tags: GeneratedTrackTags, idx: number) => {
           if (batch[idx]) {
             results.set(batch[idx].id, {
               energy: typeof tags.energy === 'number' ? tags.energy : 0.5,
@@ -341,7 +390,7 @@ Respond with valid JSON array only, one object per track. No markdown, no explan
 
 // ── Taste Profile ──
 
-export async function buildTasteProfile(tracks: Track[], _listeningHistory?: any[]): Promise<TasteProfile> {
+export async function buildTasteProfile(tracks: Track[]): Promise<TasteProfile> {
   const trackSummary = tracks.slice(0, 200).map(t =>
     `"${t.title}" by ${t.artist}${t.genre ? ` [${t.genre}]` : ''}`
   ).join('\n')
@@ -512,8 +561,9 @@ When recommending tracks, format them clearly. When asked to create playlists, r
 
 // ── Suggestion-stack helpers ──
 //
-// These bypass the user's provider selection and call Anthropic directly so
-// they can use prompt caching + extended thinking + Haiku adjudication.
+// These power the suggestion stack. Claude gets prompt caching + extended
+// thinking; other configured providers reuse the same prompts without those
+// Anthropic-only features.
 
 export interface SuggestionContext {
   // The static, large, cache-friendly prefix (taste profile + tagged library).
@@ -523,9 +573,9 @@ export interface SuggestionContext {
 }
 
 /**
- * Recommendation call using a SuggestionContext. The prefix is sent as a
- * cache-controlled system block so the same prefix is free on the 2nd+ call
- * within Anthropic's ~5min cache TTL.
+ * Recommendation call using a SuggestionContext. On Claude, the prefix is sent
+ * as a cache-controlled system block so the same prefix is free on the 2nd+
+ * call within Anthropic's ~5min cache TTL.
  */
 export async function getRecommendationsCached(
   context: SuggestionContext,

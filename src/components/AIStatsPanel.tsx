@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BarChart3, RefreshCw } from 'lucide-react'
 import { db } from '../db'
+import { hydrateAppStateFromBackend } from '../lib/appStateSync'
 import type { ListenEvent, MixKind } from '../types'
 
 interface KindRow {
@@ -31,6 +32,7 @@ export default function AIStatsPanel() {
   async function load() {
     setLoading(true)
     try {
+      await hydrateAppStateFromBackend()
       const events = await db.listenEvents.toArray()
       const buckets = new Map<KindRow['kind'], KindRow>()
       for (const k of ALL_KINDS) buckets.set(k, { kind: k, plays: 0, completes: 0, skips: 0 })

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { db } from '../db'
+import { hydrateAppStateFromBackend, pushAppStateSnapshot } from '../lib/appStateSync'
 import { buildTasteProfile } from '../lib/llm'
 import type { TasteProfile, TasteProfileRecord, Track } from '../types'
 
@@ -25,12 +26,19 @@ export const useTasteStore = create<TasteState>((set, get) => ({
 
   load: async () => {
     set({ loading: true })
+    await hydrateAppStateFromBackend()
     const record = await db.tasteProfile.get('current')
     if (record) {
       set({
         profile: record.profile,
         builtAt: record.builtAt,
         builtFromTrackCount: record.builtFromTrackCount,
+      })
+    } else {
+      set({
+        profile: null,
+        builtAt: null,
+        builtFromTrackCount: null,
       })
     }
     set({ loading: false })
@@ -51,6 +59,7 @@ export const useTasteStore = create<TasteState>((set, get) => ({
         builtFromTrackCount: source.length,
       }
       await db.tasteProfile.put(record)
+      await pushAppStateSnapshot()
       set({
         profile,
         builtAt: record.builtAt,

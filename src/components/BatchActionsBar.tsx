@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ListPlus, Trash2, X } from 'lucide-react'
 import AddToPlaylistDialog from './AddToPlaylistDialog'
+import { rectFromElement } from '../lib/rect'
 import { useLibraryStore } from '../stores/libraryStore'
 import { useSelectionStore } from '../stores/selectionStore'
 
@@ -12,6 +13,7 @@ export default function BatchActionsBar() {
   const removeTrack = useLibraryStore((state) => state.removeTrack)
 
   const [showPlaylistDialog, setShowPlaylistDialog] = useState(false)
+  const [playlistOriginRect, setPlaylistOriginRect] = useState<ReturnType<typeof rectFromElement>>(null)
 
   const selectedTracks = useMemo(
     () => tracks.filter((track) => selectedIds.has(track.id)),
@@ -56,7 +58,10 @@ export default function BatchActionsBar() {
           <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={() => setShowPlaylistDialog(true)}
+              onClick={(event) => {
+                setPlaylistOriginRect(rectFromElement(event.currentTarget))
+                setShowPlaylistDialog(true)
+              }}
               disabled={count === 0}
               aria-label="Add selected to playlist"
               className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#111116] transition-colors hover:bg-black/5 disabled:opacity-40"
@@ -79,8 +84,10 @@ export default function BatchActionsBar() {
       <AddToPlaylistDialog
         open={showPlaylistDialog}
         tracks={selectedTracks}
+        originRect={playlistOriginRect}
         onClose={() => {
           setShowPlaylistDialog(false)
+          setPlaylistOriginRect(null)
           exitSelection()
         }}
       />

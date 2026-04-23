@@ -1,13 +1,16 @@
 import { useEffect } from 'react'
 import AuthScreen from './components/AuthScreen'
 import WorkspaceShell from './components/WorkspaceShell'
+import { resetPersistentAppStateCache } from './lib/appStateSync'
 import { useAuthStore } from './stores/authStore'
 import { useLibraryStore } from './stores/libraryStore'
 import { useSettingsStore } from './stores/settingsStore'
 import { useTidalStore } from './stores/tidalStore'
 
 export default function App() {
+  const hydrateSettings = useSettingsStore(s => s.hydrate)
   const initializeServices = useSettingsStore(s => s.initializeServices)
+  const resetSettings = useSettingsStore(s => s.reset)
   const initializeAuth = useAuthStore(s => s.initialize)
   const authenticated = useAuthStore(s => s.authenticated)
   const authLoading = useAuthStore(s => s.loading)
@@ -22,13 +25,16 @@ export default function App() {
 
   useEffect(() => {
     if (authenticated) {
+      void hydrateSettings()
       void initializeTidal()
       void checkR2Status()
       return
     }
 
+    resetSettings()
     resetTidal()
-  }, [authenticated, initializeTidal, resetTidal, checkR2Status])
+    void resetPersistentAppStateCache()
+  }, [authenticated, hydrateSettings, initializeTidal, resetSettings, resetTidal, checkR2Status])
 
   if (authLoading) {
     return null

@@ -20,7 +20,6 @@
     "music-metadata-browser": "^2.5.11",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-modern-audio-player": "^2.0.0",
     "zustand": "^5.0.12"
   },
   "devDependencies": {

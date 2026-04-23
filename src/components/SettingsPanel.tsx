@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Brain, Eye, EyeOff, HardDrive, Info, KeyRound, LogOut, Radio, RefreshCw, Server, Trash2 } from 'lucide-react'
 import AIStatsPanel from './AIStatsPanel'
-import { db } from '../db'
+import { clearPersistedLibrary } from '../lib/librarySync'
 import { listOpenRouterModels, type LLMProvider, type OpenRouterModel } from '../lib/llm'
 import { runTagJob } from '../lib/tagJob'
 import { useAuthStore } from '../stores/authStore'
@@ -74,11 +74,10 @@ export default function SettingsPanel() {
     'w-full rounded-2xl border border-black/8 bg-[#f8f8f9] px-3 py-3 text-sm text-[#111116] outline-none placeholder:text-[#9ea0aa] focus:ring-2 focus:ring-accent/20'
 
   async function clearLibrary() {
-    if (!window.confirm('Remove all cached local tracks and app playlists from this prototype?')) return
+    if (!window.confirm('Remove your synced library tracks and app playlists from this account?')) return
 
     setClearing(true)
-    await db.tracks.clear()
-    await db.playlists.where('kind').equals('app').delete()
+    await clearPersistedLibrary()
     await loadTracks()
     setClearing(false)
   }
@@ -155,7 +154,7 @@ export default function SettingsPanel() {
           className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300 transition-colors hover:bg-red-500/15 disabled:opacity-40"
         >
           <Trash2 size={16} />
-          Clear cached library
+          Clear synced library
         </button>
       </section>
 

@@ -79,17 +79,17 @@ export default function AddToPlaylistDialog({ open, track, tracks, onClose, orig
       title="Add to playlist"
       description={isBatch ? `${batch.length} tracks selected` : `${batch[0].title} · ${batch[0].artist}`}
       originRect={originRect}
-      variant="dark"
+      variant="light"
       size="md"
       align="bottom"
     >
       <div className="max-h-[56vh] space-y-5 overflow-y-auto pr-1">
         <section>
           <div className="mb-2 flex items-center justify-between">
-            <p className="text-[11px] uppercase tracking-[0.24em] text-white/40">App playlists</p>
+            <p className="sauti-modal-kicker">App playlists</p>
             <button
               onClick={() => void handleCreateAppPlaylist()}
-              className="inline-flex items-center gap-1 text-xs text-orange-300 transition-colors hover:text-orange-200"
+              className="inline-flex items-center gap-1 text-xs text-accent transition-colors hover:text-accent-dark"
             >
               <Plus size={12} />
               New
@@ -99,7 +99,7 @@ export default function AddToPlaylistDialog({ open, track, tracks, onClose, orig
             {appPlaylists.length === 0 ? (
               <button
                 onClick={() => void handleCreateAppPlaylist()}
-                className="w-full rounded-[20px] border border-dashed border-white/12 bg-white/4 px-4 py-3 text-left text-sm text-white/62 transition-colors hover:bg-white/6"
+                className="w-full rounded-[20px] border border-dashed border-[color:var(--sauti-border-strong)] bg-[var(--sauti-panel-muted)] px-4 py-3 text-left text-sm text-[var(--sauti-text-secondary)] transition-colors hover:bg-[var(--sauti-panel-hover)]"
               >
                 Create your first mixed playlist
               </button>
@@ -108,10 +108,10 @@ export default function AddToPlaylistDialog({ open, track, tracks, onClose, orig
                 <button
                   key={playlist.id}
                   onClick={() => void handleAdd(playlist.id, 'app')}
-                  className="w-full rounded-[20px] border border-white/10 bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/8"
+                  className="sauti-modal-card w-full px-4 py-3 text-left transition-colors hover:bg-[var(--sauti-panel-hover)]"
                 >
-                  <span className="block text-sm font-medium text-white">{playlist.name}</span>
-                  <span className="text-xs text-white/48">
+                  <span className="block text-sm font-medium text-[var(--sauti-text)]">{playlist.name}</span>
+                  <span className="text-xs text-[var(--sauti-text-muted)]">
                     {playlist.items.length} item{playlist.items.length === 1 ? '' : 's'}
                   </span>
                 </button>
@@ -123,11 +123,11 @@ export default function AddToPlaylistDialog({ open, track, tracks, onClose, orig
         {tidalConnected ? (
           <section>
             <div className="mb-2 flex items-center justify-between">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-white/40">TIDAL playlists</p>
+              <p className="sauti-modal-kicker">TIDAL playlists</p>
               {!isBatch && hasTidalTrack ? (
                 <button
                   onClick={() => void handleCreateTidalPlaylist()}
-                  className="inline-flex items-center gap-1 text-xs text-orange-300 transition-colors hover:text-orange-200"
+                  className="inline-flex items-center gap-1 text-xs text-accent transition-colors hover:text-accent-dark"
                 >
                   <Plus size={12} />
                   New
@@ -136,7 +136,7 @@ export default function AddToPlaylistDialog({ open, track, tracks, onClose, orig
             </div>
             <div className="space-y-2">
               {tidalPlaylists.length === 0 ? (
-                <div className="rounded-[20px] border border-white/10 bg-white/4 px-4 py-3 text-sm text-white/58">
+                <div className="sauti-modal-card-muted px-4 py-3 text-sm text-[var(--sauti-text-secondary)]">
                   {hasTidalTrack && !isBatch
                     ? 'Create a TIDAL playlist to save this track.'
                     : 'No TIDAL playlists yet.'}
@@ -150,13 +150,13 @@ export default function AddToPlaylistDialog({ open, track, tracks, onClose, orig
                       key={playlist.id}
                       disabled={disabled}
                       onClick={() => void handleAdd(playlist.id, 'tidal')}
-                      className="w-full rounded-[20px] border border-white/10 bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/8 disabled:opacity-50"
+                      className="sauti-modal-card w-full px-4 py-3 text-left transition-colors hover:bg-[var(--sauti-panel-hover)] disabled:opacity-50"
                     >
-                      <span className="flex items-center gap-2 text-sm font-medium text-white">
-                        <Radio size={12} className="text-sky-300" />
+                      <span className="flex items-center gap-2 text-sm font-medium text-[var(--sauti-text)]">
+                        <Radio size={12} className="text-cyan-700" />
                         {playlist.name}
                       </span>
-                      <span className="mt-1 flex items-center gap-1 text-xs text-white/48">
+                      <span className="mt-1 flex items-center gap-1 text-xs text-[var(--sauti-text-muted)]">
                         <Shapes size={12} />
                         {playlist.trackCount || 0} track{playlist.trackCount === 1 ? '' : 's'}
                         {!playlist.writable ? ' · read only' : ''}

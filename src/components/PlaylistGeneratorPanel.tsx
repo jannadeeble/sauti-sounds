@@ -32,6 +32,10 @@ export default function PlaylistGeneratorPanel({
   const run = usePlaylistGeneratorStore((state) => state.run)
   const status = usePlaylistGeneratorStore((state) => state.status)
   const reset = usePlaylistGeneratorStore((state) => state.reset)
+  const cardClass = 'sauti-modal-card p-5'
+  const inputClass = 'sauti-modal-input mt-2 px-4 py-3 text-sm'
+  const secondaryButtonClass = 'sauti-modal-secondary-button px-4 py-2.5 text-sm font-medium'
+  const primaryButtonClass = 'sauti-modal-primary-button px-4 py-2.5 text-sm font-medium'
 
   function handleSubmit(nextPrompt?: string) {
     const prompt = (nextPrompt ?? input).trim()
@@ -42,10 +46,10 @@ export default function PlaylistGeneratorPanel({
 
   if (!isLLMConfigured()) {
     return (
-      <section className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.03))] px-6 py-10 text-center shadow-[0_22px_70px_rgba(0,0,0,0.28)]">
-        <Sparkles size={34} className="mx-auto text-[#ff9c55]" />
-        <h3 className="sauti-title mt-4 text-[1.8rem] leading-none text-white">Playlist generator</h3>
-        <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-white/54">
+      <section className="sauti-modal-card px-6 py-10 text-center">
+        <Sparkles size={34} className="mx-auto text-accent" />
+        <h3 className="sauti-title mt-4 text-[1.8rem] leading-none text-[#111116]">Playlist generator</h3>
+        <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-[#7a7b86]">
           Configure an AI provider in Settings before generating playlists from prompts.
         </p>
       </section>
@@ -56,29 +60,29 @@ export default function PlaylistGeneratorPanel({
     <div className={`flex flex-col ${isInline ? 'gap-4' : 'h-full min-h-[60vh]'}`}>
       {status === 'running' ? (
         <div className={`flex flex-1 flex-col items-center justify-center text-center ${isInline ? 'gap-4 py-2' : 'gap-6 py-8'}`}>
-          <div className={`${isInline ? 'h-36 w-36' : 'h-44 w-44'} rounded-full border border-white/8 bg-[radial-gradient(circle_at_top,rgba(255,122,26,0.22),rgba(255,255,255,0.05)_65%)] p-5 shadow-[0_20px_54px_rgba(0,0,0,0.28)]`}>
+          <div className={`${isInline ? 'h-36 w-36' : 'h-44 w-44'} rounded-full border border-black/8 bg-[radial-gradient(circle_at_top,rgba(239,84,102,0.14),rgba(255,255,255,0.8)_65%)] p-5 shadow-[0_20px_54px_rgba(17,17,22,0.10)]`}>
             <NetworkLoadingAnimation />
           </div>
           <div className="space-y-2">
-            <h3 className={`sauti-title leading-none text-white ${isInline ? 'text-[1.55rem]' : 'text-[1.9rem]'}`}>Building your playlist</h3>
-            <p className="mx-auto max-w-md text-sm leading-6 text-white/54">
+            <h3 className={`sauti-title leading-none text-[#111116] ${isInline ? 'text-[1.55rem]' : 'text-[1.9rem]'}`}>Building your playlist</h3>
+            <p className="mx-auto max-w-md text-sm leading-6 text-[#7a7b86]">
               Sauti is resolving tracks and shaping the arc.
             </p>
-            <p className="mx-auto max-w-lg rounded-[22px] border border-white/8 bg-white/5 px-4 py-3 text-sm text-white/82">
+            <p className="sauti-modal-card-muted mx-auto max-w-lg px-4 py-3 text-sm text-[#555661]">
               {currentPrompt}
             </p>
           </div>
         </div>
       ) : status === 'success' && result ? (
         <div className={`flex flex-1 flex-col justify-center ${isInline ? 'py-1' : 'py-8'}`}>
-          <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.03))] p-6 shadow-[0_22px_70px_rgba(0,0,0,0.28)]">
-            <p className="text-xs uppercase tracking-[0.24em] text-white/34">Generated playlist</p>
-            <h3 className="sauti-title mt-3 text-[2rem] leading-none text-white">{result.name}</h3>
-            <p className="mt-3 text-sm text-white/54">
+          <div className="sauti-modal-card p-6">
+            <p className="sauti-modal-kicker">Generated playlist</p>
+            <h3 className="sauti-title mt-3 text-[2rem] leading-none text-[#111116]">{result.name}</h3>
+            <p className="mt-3 text-sm text-[#7a7b86]">
               {result.trackCount} tracks built from your prompt.
             </p>
             {result.blurb ? (
-              <p className="mt-4 rounded-[22px] border border-white/8 bg-white/5 px-4 py-4 text-sm leading-6 text-white/72">
+              <p className="sauti-modal-card-muted mt-4 px-4 py-4 text-sm leading-6 text-[#555661]">
                 {result.blurb}
               </p>
             ) : null}
@@ -86,7 +90,7 @@ export default function PlaylistGeneratorPanel({
               <button
                 type="button"
                 onClick={() => onOpenPlaylist?.(result.id)}
-                className="inline-flex items-center gap-2 rounded-full bg-[#ff7a1a] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#ff8b38]"
+                className={primaryButtonClass}
               >
                 <Music size={15} />
                 Open playlist
@@ -99,7 +103,7 @@ export default function PlaylistGeneratorPanel({
                   setTitleOverride(result.name)
                   reset()
                 }}
-                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-white/82 transition-colors hover:bg-white/8"
+                className={secondaryButtonClass}
               >
                 <RefreshCw size={15} />
                 Generate another
@@ -110,9 +114,9 @@ export default function PlaylistGeneratorPanel({
       ) : (
         <div className={`flex-1 space-y-5 ${isInline ? 'pb-1' : 'pb-4'}`}>
           <div className="text-center">
-            <Sparkles size={isInline ? 28 : 36} className="mx-auto text-[#ff9c55]" />
-            <h3 className={`sauti-title mt-3 leading-none text-white ${isInline ? 'text-[1.55rem]' : 'text-[1.9rem]'}`}>Playlist generator</h3>
-            <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-white/54">
+            <Sparkles size={isInline ? 28 : 36} className="mx-auto text-accent" />
+            <h3 className={`sauti-title mt-3 leading-none text-[#111116] ${isInline ? 'text-[1.55rem]' : 'text-[1.9rem]'}`}>Playlist generator</h3>
+            <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-[#7a7b86]">
               Describe the mood, the flow, the edge cases, and Sauti will file the result into your playlists.
             </p>
           </div>
@@ -126,39 +130,39 @@ export default function PlaylistGeneratorPanel({
                   setInput(suggestion)
                   handleSubmit(suggestion)
                 }}
-                className="block w-full rounded-[22px] border border-white/8 bg-white/5 px-4 py-3 text-left text-sm text-white/82 transition-colors hover:bg-white/8"
+                className="sauti-modal-card-muted block w-full px-4 py-3 text-left text-sm text-[#555661] transition-colors hover:bg-[#f3f3f6]"
               >
-                <Music size={14} className="mr-2 inline text-[#ff9c55]" />
+                <Music size={14} className="mr-2 inline text-accent" />
                 {suggestion}
               </button>
             ))}
           </div>
 
-          <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.03))] p-5 shadow-[0_22px_70px_rgba(0,0,0,0.28)]">
+          <div className={cardClass}>
             <label className="block">
-              <span className="text-xs uppercase tracking-[0.24em] text-white/34">Name your playlist</span>
+              <span className="sauti-modal-kicker">Name your playlist</span>
               <input
                 type="text"
                 value={titleOverride}
                 onChange={(event) => setTitleOverride(event.target.value)}
                 placeholder="Optional custom title"
-                className="mt-2 w-full rounded-[22px] border border-white/10 bg-white/6 px-4 py-3 text-sm text-white outline-none placeholder:text-white/24 focus:border-white/18"
+                className={inputClass}
               />
             </label>
 
             <label className="mt-4 block">
-              <span className="text-xs uppercase tracking-[0.24em] text-white/34">Prompt</span>
+              <span className="sauti-modal-kicker">Prompt</span>
               <textarea
                 rows={4}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 placeholder="A spacious late-night set that starts in Lagos, drifts through Lisbon, and lands in dubby house before sunrise."
-                className="mt-2 w-full rounded-[22px] border border-white/10 bg-white/6 px-4 py-3 text-sm text-white outline-none placeholder:text-white/24 focus:border-white/18"
+                className={inputClass}
               />
             </label>
 
             <div className="mt-4 flex flex-wrap items-center gap-3">
-              <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/6 px-3 py-2 text-sm text-white/72">
+              <label className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-[#f8f8f9] px-3 py-2 text-sm text-[#555661]">
                 Tracks
                 <input
                   type="number"
@@ -166,7 +170,7 @@ export default function PlaylistGeneratorPanel({
                   max={30}
                   value={count}
                   onChange={(event) => setCount(Math.max(8, Math.min(30, Number(event.target.value) || 15)))}
-                  className="w-14 bg-transparent text-white outline-none"
+                  className="w-14 bg-transparent text-[#111116] outline-none"
                 />
               </label>
 
@@ -175,8 +179,8 @@ export default function PlaylistGeneratorPanel({
                 onClick={() => setUseTaste((value) => !value)}
                 className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm transition-colors ${
                   useTaste
-                    ? 'bg-[#ff7a1a] text-white'
-                    : 'border border-white/10 bg-white/5 text-white/72 hover:bg-white/8'
+                    ? 'bg-[#ef5466] text-white'
+                    : 'border border-black/8 bg-[#f8f8f9] text-[#555661] hover:bg-[#f3f3f6]'
                 }`}
                 title={tasteProfile ? 'Toggle taste profile context' : 'No taste profile yet'}
                 disabled={!tasteProfile}
@@ -187,11 +191,11 @@ export default function PlaylistGeneratorPanel({
             </div>
 
             {!tasteProfile ? (
-              <p className="mt-3 text-xs text-white/34">Analyze your library in Settings to use taste profile context.</p>
+              <p className="mt-3 text-xs text-[#8b8c95]">Analyze your library in Settings to use taste profile context.</p>
             ) : null}
 
             {error ? (
-              <p className="mt-4 rounded-[22px] border border-[#6d2b22] bg-[#311612] px-4 py-3 text-sm text-[#ffb4a6]">
+              <p className="mt-4 rounded-[22px] border border-[var(--sauti-accent-border)] bg-[var(--sauti-accent-soft)] px-4 py-3 text-sm text-[var(--sauti-accent-text)]">
                 {error}
               </p>
             ) : null}
@@ -201,7 +205,7 @@ export default function PlaylistGeneratorPanel({
                 type="button"
                 onClick={() => handleSubmit()}
                 disabled={!input.trim()}
-                className="inline-flex items-center gap-2 rounded-full bg-[#ff7a1a] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#ff8b38] disabled:opacity-40"
+                className={`${primaryButtonClass} disabled:opacity-40`}
               >
                 <Sparkles size={15} />
                 Generate playlist

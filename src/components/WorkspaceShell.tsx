@@ -570,7 +570,7 @@ export default function WorkspaceShell() {
                       />
                     ) : (
                       <SurfaceCard title="Tracks" meta={`${sortedTracks.length} tracks`}>
-                        <div className="divide-y divide-white/8">
+                        <div className="divide-y divide-black/6">
                           {sortedTracks.map((track, index) => (
                             <TrackRow
                               key={track.id}
@@ -700,7 +700,7 @@ export default function WorkspaceShell() {
           title="Settings"
           description="Account, TIDAL, and AI configuration for this workspace."
           onClose={closeModal}
-          variant="dark"
+          variant="light"
           originRect={modal?.kind === 'settings' ? modal.originRect : null}
           size="lg"
           maxHeightClassName="max-h-[88vh]"
@@ -713,7 +713,7 @@ export default function WorkspaceShell() {
           title="Playlist generator"
           description="Turn a prompt into a saved playlist."
           onClose={closeModal}
-          variant="dark"
+          variant="light"
           originRect={modal?.kind === 'generator' ? modal.originRect : null}
           size="lg"
           maxHeightClassName="max-h-[88vh]"
@@ -726,12 +726,12 @@ export default function WorkspaceShell() {
           title={artistModal?.artist ?? 'Artist'}
           description={artistModal ? `${artistModalTracks.length} tracks` : undefined}
           onClose={closeModal}
-          variant="dark"
+          variant="light"
           originRect={artistModal?.originRect}
           size="lg"
           maxHeightClassName="max-h-[88vh]"
         >
-          <div className="divide-y divide-white/8 rounded-[24px] border border-white/8 bg-white/4">
+          <div className="divide-y divide-black/6 rounded-[24px] border border-black/8 bg-white">
             {artistModalTracks.map((track, index) => (
               <TrackRow
                 key={track.id}
@@ -749,7 +749,7 @@ export default function WorkspaceShell() {
           title={selectedAppPlaylist?.name || selectedTidalDetail?.playlist.name || playlistRows.find((item) => item.id === playlistModal?.playlistId)?.name || 'Playlist'}
           description={playlistModal?.playlistKind === 'app' ? 'App playlist' : 'TIDAL playlist'}
           onClose={closeModal}
-          variant="dark"
+          variant="light"
           originRect={playlistModal?.originRect}
           size="xl"
           maxHeightClassName="max-h-[92vh]"
@@ -966,7 +966,7 @@ function SearchPanel({
 
       {query.trim() && localResults.length > 0 ? (
         <SurfaceCard title="Library results" meta={`${localResults.length} matches`}>
-          <div className="divide-y divide-white/8">
+          <div className="divide-y divide-black/6">
             {localResults.map((track, index) => (
               <TrackRow
                 key={track.id}
@@ -999,7 +999,7 @@ function SearchPanel({
 
           {tidalSearched && tidalResults.length > 0 ? (
             <SurfaceCard title="TIDAL results" meta={`${tidalResults.length} matches`}>
-              <div className="divide-y divide-white/8">
+              <div className="divide-y divide-black/6">
                 {tidalResults.map((track, index) => {
                   const inLibrary = libraryTrackIds.has(track.id)
                   return (
@@ -1144,11 +1144,11 @@ function PlaylistDetailModal({
   const tracks = playlistModal.playlistKind === 'app' ? appPlaylistTracks.map((entry) => entry.track) : tidalDetail?.tracks || []
 
   if (playlistModal.playlistKind === 'app' && !appPlaylist) {
-    return <div className="rounded-[24px] border border-white/8 bg-white/4 px-4 py-4 text-sm text-white/46">Playlist not found.</div>
+    return <div className="rounded-[24px] border border-black/8 bg-white px-4 py-4 text-sm text-[#7a7b86]">Playlist not found.</div>
   }
 
   if (playlistModal.playlistKind === 'tidal' && !tidalDetail) {
-    return <div className="rounded-[24px] border border-white/8 bg-white/4 px-4 py-4 text-sm text-white/46">Loading TIDAL playlist…</div>
+    return <div className="rounded-[24px] border border-black/8 bg-white px-4 py-4 text-sm text-[#7a7b86]">Loading TIDAL playlist…</div>
   }
 
   const playlist = playlistModal.playlistKind === 'app' ? appPlaylist! : tidalDetail!.playlist
@@ -1172,11 +1172,11 @@ function PlaylistDetailModal({
       </div>
 
       {tracks.length === 0 ? (
-        <div className="rounded-[24px] border border-white/8 bg-white/4 px-4 py-5 text-sm text-white/46">
+        <div className="rounded-[24px] border border-black/8 bg-white px-4 py-5 text-sm text-[#7a7b86]">
           This playlist is empty.
         </div>
       ) : (
-        <div className="divide-y divide-white/8 rounded-[24px] border border-white/8 bg-white/4">
+        <div className="divide-y divide-black/6 rounded-[24px] border border-black/8 bg-white">
           {playlistModal.playlistKind === 'app'
             ? appPlaylistTracks.map(({ item, track, index }) => {
                 const extraActions: TrackAction[] = [

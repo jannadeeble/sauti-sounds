@@ -118,16 +118,16 @@ function SetlistModal({
       title={title}
       description={seed.artist}
       originRect={originRect}
-      variant="dark"
+      variant="light"
       size="md"
       align="center"
     >
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-500/16 text-orange-200">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#fff4f6] text-accent">
           <Sparkles size={18} />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm text-white/52">
+          <p className="truncate text-sm text-[var(--sauti-text-muted)]">
             {kind === 'setlist-seed' ? 'Setlist builder' : 'Track-inspired playlist'}
           </p>
         </div>
@@ -136,41 +136,41 @@ function SetlistModal({
       {!mix ? (
         <div className="mt-4 space-y-3">
           <div>
-            <label className="text-xs text-white/48">Focus (optional)</label>
+            <label className="text-xs text-[var(--sauti-text-muted)]">Focus (optional)</label>
             <textarea
               rows={2}
               value={focus}
               onChange={(e) => setFocus(e.target.value)}
               placeholder="e.g. peak-time, deep and bassy, vocals forward…"
-              className="mt-1 w-full rounded-[18px] border border-white/10 bg-white/6 px-3 py-2 text-sm text-white outline-none placeholder:text-white/28 focus:border-white/20"
+              className="sauti-modal-input mt-1 px-3 py-2 text-sm"
             />
           </div>
           <div className="flex items-center gap-3">
-            <label className="text-xs text-white/48">Tracks</label>
+            <label className="text-xs text-[var(--sauti-text-muted)]">Tracks</label>
             <input
               type="number"
               min={5}
               max={50}
               value={count}
               onChange={(e) => setCount(Number(e.target.value) || 15)}
-              className="w-20 rounded-xl border border-white/10 bg-white/6 px-2 py-1 text-sm text-white outline-none"
+              className="sauti-modal-input w-20 rounded-xl px-2 py-1 text-sm"
             />
-            <label className="ml-auto flex cursor-pointer items-center gap-2 text-xs text-white/62">
+            <label className="ml-auto flex cursor-pointer items-center gap-2 text-xs text-[var(--sauti-text-secondary)]">
               <input
                 type="checkbox"
                 checked={useProfile}
                 onChange={(e) => setUseProfile(e.target.checked)}
-                className="h-4 w-4 accent-orange-500"
+                className="h-4 w-4 accent-[#ef5466]"
               />
               Use my taste
             </label>
           </div>
-          {error ? <p className="text-xs text-[#ffb4a6]">{error}</p> : null}
+          {error ? <p className="text-xs text-[var(--sauti-accent-text)]">{error}</p> : null}
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-white/62"
+              className="sauti-modal-secondary-button px-3 py-1.5 text-sm"
             >
               Cancel
             </button>
@@ -178,7 +178,7 @@ function SetlistModal({
               type="button"
               onClick={() => void handleGenerate()}
               disabled={running}
-              className="inline-flex items-center gap-2 rounded-full bg-orange-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-orange-600 disabled:opacity-60"
+              className="sauti-modal-primary-button px-4 py-1.5 text-sm font-medium disabled:opacity-60"
             >
               {running ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
               {running ? 'Building…' : 'Build'}
@@ -187,12 +187,12 @@ function SetlistModal({
         </div>
       ) : (
         <div className="mt-4 space-y-3">
-          {mix.blurb ? <p className="text-sm text-white/72">{mix.blurb}</p> : null}
-          <p className="text-xs text-white/48">
+          {mix.blurb ? <p className="text-sm text-[var(--sauti-text-secondary)]">{mix.blurb}</p> : null}
+          <p className="text-xs text-[var(--sauti-text-muted)]">
             {resolvedTracks.length} tracks
             {mix.unresolvedCount ? ` · ${mix.unresolvedCount} couldn't resolve` : ''}
           </p>
-          <div className="max-h-72 space-y-1 overflow-y-auto rounded-[20px] border border-white/8 bg-white/4 p-2">
+          <div className="sauti-modal-card-muted max-h-72 space-y-1 overflow-y-auto p-2">
             {resolvedTracks.map((t, i) => (
               <PreviewRow key={t.id + i} track={t} index={i} />
             ))}
@@ -201,21 +201,21 @@ function SetlistModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-white/62"
+              className="sauti-modal-secondary-button px-3 py-1.5 text-sm"
             >
               Dismiss
             </button>
             <button
               type="button"
               onClick={() => void handlePreview()}
-              className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-white hover:bg-white/6"
+              className="sauti-modal-secondary-button px-3 py-1.5 text-sm"
             >
               Preview
             </button>
             <button
               type="button"
               onClick={() => void handleSave()}
-              className="rounded-full bg-orange-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-orange-600"
+              className="sauti-modal-primary-button px-4 py-1.5 text-sm font-medium"
             >
               Save as playlist
             </button>
@@ -230,19 +230,19 @@ function PreviewRow({ track, index }: { track: Track; index: number }) {
   const url = useTrackArtworkUrl(track)
   return (
     <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs">
-      <span className="w-5 text-right text-white/32">{index + 1}</span>
-      <div className="h-7 w-7 overflow-hidden rounded-md bg-white/8">
+      <span className="w-5 text-right text-[var(--sauti-text-hint)]">{index + 1}</span>
+      <div className="h-7 w-7 overflow-hidden rounded-md bg-white">
         {url ? (
           <img src={url} alt="" className="h-full w-full object-cover" />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-white/70">
+          <div className="flex h-full w-full items-center justify-center text-[var(--sauti-text-muted)]">
             <Disc3 size={12} />
           </div>
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-white">{track.title}</p>
-        <p className="truncate text-white/48">{track.artist}</p>
+        <p className="truncate text-[var(--sauti-text)]">{track.title}</p>
+        <p className="truncate text-[var(--sauti-text-muted)]">{track.artist}</p>
       </div>
     </div>
   )

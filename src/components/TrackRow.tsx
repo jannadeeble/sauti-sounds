@@ -259,21 +259,21 @@ export default function TrackRow({
         title={track.title}
         description={track.artist}
         originRect={originRect}
-        variant="dark"
+        variant="light"
         size="sm"
         align="bottom"
       >
-        <div className="mb-3 flex items-center gap-3 rounded-[20px] border border-white/8 bg-white/4 px-3 py-3">
-          <div className="h-12 w-12 overflow-hidden rounded-[14px] bg-white/8">
+        <div className="sauti-modal-card-muted mb-3 flex items-center gap-3 px-3 py-3">
+          <div className="h-12 w-12 overflow-hidden rounded-[14px] bg-white">
             {artworkUrl ? (
               <img src={artworkUrl} alt="" className="h-full w-full object-cover" />
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-lg text-white/44">♪</div>
+              <div className="flex h-full w-full items-center justify-center text-lg text-[#9ea0aa]">♪</div>
             )}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-white">{track.title}</p>
-            <p className="truncate text-xs text-white/48">{track.artist}</p>
+            <p className="truncate text-sm font-semibold text-[#111116]">{track.title}</p>
+            <p className="truncate text-xs text-[#7a7b86]">{track.artist}</p>
           </div>
         </div>
 
@@ -287,13 +287,9 @@ export default function TrackRow({
                 action.onClick()
                 setShowActions(false)
               }}
-              className={`flex w-full items-center gap-3 rounded-[18px] px-4 py-3 text-left text-sm transition-colors disabled:opacity-40 ${
-                action.destructive
-                  ? 'text-[#ffab9b] hover:bg-[#3a1714]'
-                  : 'text-white hover:bg-white/6'
-              }`}
+              className={`sauti-modal-action-row text-sm disabled:opacity-40 ${action.destructive ? 'sauti-modal-action-row-danger' : ''}`}
             >
-              {action.label === 'Add to current queue' ? <ListPlus size={15} className="text-orange-300" /> : null}
+              {action.label === 'Add to current queue' ? <ListPlus size={15} className="text-accent" /> : null}
               <span>{action.label}</span>
             </button>
           ))}

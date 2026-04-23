@@ -50,7 +50,7 @@ export default function QueueSheet({ open, onClose }: { open: boolean; onClose: 
       description={tracks.length === 0 ? 'Nothing queued yet.' : `${tracks.length} tracks up next. Drag to reorder.`}
       onClose={onClose}
       maxHeightClassName="max-h-[90vh]"
-      variant="dark"
+      variant="light"
       originRect={originRect}
     >
       {tracks.length === 0 ? (
@@ -104,11 +104,11 @@ function QueueRow({
     <li
       ref={setNodeRef}
       style={style}
-      className={`flex items-center gap-3 px-4 py-3 ${isCurrent ? 'bg-white/8' : 'bg-transparent hover:bg-white/4'}`}
+      className={`flex items-center gap-3 px-4 py-3 ${isCurrent ? 'bg-[#fff4f6]' : 'bg-transparent hover:bg-[#f3f3f6]'}`}
     >
       <button
         type="button"
-        className="cursor-grab touch-none rounded-full p-1 text-white/42 transition-colors hover:text-white active:cursor-grabbing"
+        className="cursor-grab touch-none rounded-full p-1 text-[#8b8c95] transition-colors hover:text-[#111116] active:cursor-grabbing"
         aria-label={`Drag ${track.title}`}
         {...attributes}
         {...listeners}
@@ -116,41 +116,41 @@ function QueueRow({
         <GripVertical size={16} />
       </button>
 
-      <div className="h-10 w-10 overflow-hidden rounded-xl bg-white/8">
+      <div className="h-10 w-10 overflow-hidden rounded-xl bg-[#f1f1f4]">
         {artworkUrl ? (
           <img src={artworkUrl} alt="" className="h-full w-full object-cover" />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-lg text-white/50">♪</div>
+          <div className="flex h-full w-full items-center justify-center text-lg text-[#9ea0aa]">♪</div>
         )}
       </div>
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           {isCurrent ? <Play size={12} className="text-accent" /> : null}
-          <p className={`truncate text-sm font-medium ${isCurrent ? 'text-[#fbbf24]' : 'text-white'}`}>
+          <p className={`truncate text-sm font-medium ${isCurrent ? 'text-accent' : 'text-[#111116]'}`}>
             {track.title}
           </p>
           {track.source === 'tidal' ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-sky-400/14 px-2 py-0.5 text-[10px] uppercase tracking-wide text-sky-200">
+            <span className="inline-flex items-center gap-1 rounded-full bg-cyan-500/8 px-2 py-0.5 text-[10px] uppercase tracking-wide text-cyan-700">
               <Radio size={10} />
               TIDAL
             </span>
           ) : null}
           {isAutoRadioTrack(track.id) ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/12 px-2 py-0.5 text-[10px] uppercase tracking-wide text-orange-200">
+            <span className="inline-flex items-center gap-1 rounded-full bg-[#fff4f6] px-2 py-0.5 text-[10px] uppercase tracking-wide text-[#8d3140]">
               <Sparkles size={10} />
               Auto-radio
             </span>
           ) : null}
         </div>
-        <p className="truncate text-xs text-white/56">{track.artist}</p>
+        <p className="truncate text-xs text-[#7a7b86]">{track.artist}</p>
       </div>
 
-      <span className="text-xs text-white/42">{formatTime(track.duration)}</span>
+      <span className="text-xs text-[#8b8c95]">{formatTime(track.duration)}</span>
       <button
         type="button"
         onClick={onRemove}
-        className="rounded-full p-2 text-white/42 transition-colors hover:bg-white/6 hover:text-[#ff9b87]"
+        className="rounded-full p-2 text-[#8b8c95] transition-colors hover:bg-[#fff4f6] hover:text-[#8d3140]"
         aria-label={`Remove ${track.title} from queue`}
       >
         <Trash2 size={15} />

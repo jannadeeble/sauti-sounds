@@ -604,11 +604,132 @@ input[type="range"]::-moz-range-thumb {
     0 1px 0 rgba(17, 17, 22, 0.04);
 }
 
+.sauti-modal-overlay {
+  background: rgba(17, 17, 22, 0.18);
+  backdrop-filter: blur(12px);
+}
+
 .sauti-modal-title {
   font-family: "Mabry Pro Medium", "Avenir Next", "Helvetica Neue", sans-serif;
   font-size: 1.9rem;
   line-height: 1;
   letter-spacing: -0.05em;
+}
+
+.sauti-modal-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid var(--sauti-border);
+  background: var(--sauti-panel-muted);
+  color: var(--sauti-text-secondary);
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.sauti-modal-icon-button:hover {
+  border-color: var(--sauti-border-strong);
+  background: var(--sauti-panel-hover);
+  color: var(--sauti-text);
+}
+
+.sauti-modal-card {
+  border: 1px solid var(--sauti-border);
+  border-radius: 24px;
+  background: var(--sauti-panel);
+  box-shadow: 0 6px 18px rgba(17, 17, 22, 0.06);
+}
+
+.sauti-modal-card-muted {
+  border: 1px solid var(--sauti-border-soft);
+  border-radius: 22px;
+  background: var(--sauti-panel-muted);
+}
+
+.sauti-modal-kicker {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  color: var(--sauti-text-hint);
+}
+
+.sauti-modal-input {
+  width: 100%;
+  border: 1px solid var(--sauti-border);
+  border-radius: 18px;
+  background: var(--sauti-panel-muted);
+  color: var(--sauti-text);
+  outline: none;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.sauti-modal-input::placeholder {
+  color: var(--sauti-text-hint);
+}
+
+.sauti-modal-input:focus {
+  border-color: var(--sauti-border-strong);
+  background: var(--sauti-panel);
+}
+
+.sauti-modal-primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: var(--sauti-accent);
+  color: #fff;
+  transition: background-color 0.2s ease, opacity 0.2s ease;
+}
+
+.sauti-modal-primary-button:hover {
+  background: var(--sauti-accent-deep);
+}
+
+.sauti-modal-secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid var(--sauti-border);
+  background: var(--sauti-panel);
+  color: var(--sauti-text-secondary);
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+}
+
+.sauti-modal-secondary-button:hover {
+  border-color: var(--sauti-border-strong);
+  background: var(--sauti-panel-hover);
+  color: var(--sauti-text);
+}
+
+.sauti-modal-action-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  border-radius: 18px;
+  padding: 12px 16px;
+  text-align: left;
+  color: var(--sauti-text);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.sauti-modal-action-row:hover {
+  background: var(--sauti-panel-hover);
+}
+
+.sauti-modal-action-row-danger {
+  color: var(--sauti-accent-text);
+}
+
+.sauti-modal-action-row-danger:hover {
+  background: var(--sauti-accent-soft);
 }
 
 .sauti-track-shell {

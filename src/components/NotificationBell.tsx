@@ -54,7 +54,7 @@ export default function NotificationBell() {
       >
         <Bell size={16} />
         {unreadCount > 0 ? (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-orange-500 px-1 text-[10px] font-semibold leading-none text-white">
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold leading-none text-white">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         ) : null}
@@ -77,7 +77,7 @@ export default function NotificationBell() {
               <button
                 type="button"
                 onClick={() => void markAllRead()}
-                className="inline-flex items-center gap-1 rounded-full border border-black/8 bg-[#f8f8f9] px-3 py-1.5 text-xs text-[#555661] transition-colors hover:border-black/14 hover:text-[#111116]"
+                className="sauti-modal-secondary-button px-3 py-1.5 text-xs"
               >
                 <Check size={12} /> Mark all read
               </button>
@@ -89,14 +89,14 @@ export default function NotificationBell() {
               aria-label="Clear all notifications"
               title="Clear all"
               onClick={() => void clearAll()}
-              className="inline-flex items-center justify-center rounded-full border border-black/8 bg-[#f8f8f9] p-2 text-[#7a7b86] transition-colors hover:text-[#111116]"
+              className="sauti-modal-icon-button"
             >
               <Trash2 size={13} />
             </button>
           ) : null}
         </div>
 
-        <div className="max-h-[60vh] overflow-y-auto rounded-[22px] border border-black/8 bg-white">
+        <div className="sauti-modal-card max-h-[60vh] overflow-y-auto">
           {notifications.length === 0 ? (
             <div className="px-4 py-8 text-center text-xs text-[#7a7b86]">You're all caught up.</div>
           ) : (
@@ -131,7 +131,7 @@ function NotificationItem({
     <li
       onClick={unread ? onMarkRead : undefined}
       className={`group flex gap-3 px-4 py-3 transition-colors ${
-        unread ? 'cursor-pointer bg-[#fff0f3] hover:bg-[#ffe6eb]' : 'hover:bg-[#fafafb]'
+        unread ? 'cursor-pointer bg-[var(--sauti-accent-wash)] hover:bg-[var(--sauti-accent-wash-strong)]' : 'hover:bg-[var(--sauti-panel-hover)]'
       }`}
     >
       <div className="mt-0.5 shrink-0">{kindIcon(notification.kind)}</div>
@@ -155,7 +155,7 @@ function NotificationItem({
           event.stopPropagation()
           onRemove()
         }}
-        className="shrink-0 self-start rounded-full p-1 text-[#b0b2bc] opacity-0 transition-opacity hover:bg-black/4 hover:text-[#111116] group-hover:opacity-100"
+        className="shrink-0 self-start rounded-full p-1 text-[#b0b2bc] opacity-0 transition-opacity hover:bg-[var(--sauti-panel-muted)] hover:text-[#111116] group-hover:opacity-100"
       >
         <XCircle size={14} />
       </button>

@@ -44,7 +44,6 @@ export default function MorphSurface({
   description,
   children,
   originRect,
-  variant = 'dark',
   size = 'lg',
   align = 'bottom',
   showCloseButton = true,
@@ -95,23 +94,21 @@ export default function MorphSurface({
   const center = rectCenter(originRect)
 
   const overlayClassName = visible ? 'opacity-100' : 'opacity-0'
-  const panelClassName = variant === 'dark'
-    ? 'sauti-modal-surface text-white'
-    : 'rounded-[28px] border border-black/10 bg-white text-[#111116] shadow-[0_26px_80px_rgba(17,17,22,0.22)]'
+  const panelClassName = 'sauti-modal-surface text-[var(--sauti-text)]'
 
   const headerNode = header ?? (
-    <div className={`flex items-start justify-between gap-4 border-b px-6 py-5 sm:px-7 ${variant === 'dark' ? 'border-white/8' : 'border-black/8'}`}>
+    <div className="flex items-start justify-between gap-4 border-b border-[color:var(--sauti-border)] px-6 py-5 sm:px-7">
       <div className="min-w-0">
-        {title ? <h2 className={`sauti-modal-title ${variant === 'dark' ? 'text-white' : 'text-[#111116]'}`}>{title}</h2> : null}
+        {title ? <h2 className="sauti-modal-title text-[var(--sauti-text)]">{title}</h2> : null}
         {description ? (
-          <p className={`mt-2 text-sm ${variant === 'dark' ? 'text-white/56' : 'text-[#6f7180]'}`}>{description}</p>
+          <p className="mt-2 text-sm text-[var(--sauti-text-muted)]">{description}</p>
         ) : null}
       </div>
       {showCloseButton ? (
         <button
           type="button"
           onClick={onClose}
-          className={variant === 'dark' ? 'sauti-glass-button shrink-0' : 'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-black/10 bg-[#f8f8f9] text-[#6f7180] transition-colors hover:text-[#111116]'}
+          className="sauti-modal-icon-button shrink-0"
           aria-label={title ? `Close ${title}` : 'Close dialog'}
         >
           <X size={18} />
@@ -196,7 +193,7 @@ export default function MorphSurface({
       <button
         type="button"
         aria-label={title ? `Close ${title}` : 'Close dialog'}
-        className={`fixed inset-0 z-40 bg-[rgba(3,4,8,0.58)] backdrop-blur-[10px] transition-opacity duration-200 ${overlayClassName}`}
+        className={`sauti-modal-overlay fixed inset-0 z-40 transition-opacity duration-200 ${overlayClassName}`}
         onClick={onClose}
       />
       <section className={`fixed z-50 flex flex-col overflow-hidden ${panelClassName}`} style={panelStyle}>

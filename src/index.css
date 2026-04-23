@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "react-modern-audio-player/dist/index.css";
 
 @font-face {
   font-family: "Mabry Pro Medium";
@@ -93,16 +92,27 @@ img {
   min-height: 54px;
   width: 100%;
   border-radius: 999px;
-  border: 1px solid var(--deezer-border);
-  background: var(--deezer-panel);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(180deg, rgba(30, 34, 46, 0.78), rgba(14, 16, 24, 0.74)),
+    rgba(10, 12, 18, 0.72);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(22px) saturate(150%);
   padding: 0 1rem;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .deezer-search-shell:hover,
 .deezer-search-shell:focus-within {
-  border-color: var(--deezer-border-strong);
-  background: #fff;
+  border-color: rgba(255, 255, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(34, 39, 52, 0.84), rgba(18, 20, 30, 0.8)),
+    rgba(14, 16, 24, 0.76);
+  box-shadow:
+    0 22px 46px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .deezer-search-shell input {
@@ -110,12 +120,12 @@ img {
   min-width: 0;
   border: 0;
   background: transparent;
-  color: var(--deezer-text);
+  color: #ffffff;
   outline: none;
 }
 
 .deezer-search-shell input::placeholder {
-  color: #a2a3ad;
+  color: rgba(255, 255, 255, 0.42);
 }
 
 .deezer-tab-link {
@@ -144,193 +154,88 @@ img {
   background: var(--color-accent);
 }
 
-.deezer-player.rmap-player-provider,
-.workspace-player.rmap-player-provider {
-  --rm-audio-player-text-color: #f7f7fb;
-  --rm-audio-player-shadow: 0 0 0;
-  --rm-audio-player-interface-container: var(--deezer-player-bg);
-  --rm-audio-player-volume-background: #3f4048;
-  --rm-audio-player-volume-panel-background: #1e1f27;
-  --rm-audio-player-volume-panel-border: rgba(255, 255, 255, 0.08);
-  --rm-audio-player-volume-thumb: #ffffff;
-  --rm-audio-player-volume-fill: var(--color-accent);
-  --rm-audio-player-volume-track: #4a4b54;
-  --rm-audio-player-track-current-time: #ffffff;
-  --rm-audio-player-track-duration: rgba(255, 255, 255, 0.55);
-  --rm-audio-player-progress-bar: var(--color-accent);
-  --rm-audio-player-progress-bar-background: rgba(255, 255, 255, 0.14);
-  --rm-audio-player-waveform-cursor: #ffffff;
-  --rm-audio-player-waveform-background: rgba(255, 255, 255, 0.1);
-  --rm-audio-player-waveform-bar: var(--color-accent);
-  --rm-audio-player-sortable-list: var(--deezer-player-panel);
-  --rm-audio-player-sortable-list-button-active: var(--color-accent);
-  --rm-audio-player-selected-list-item-background: rgba(239, 84, 102, 0.16);
-  border-top: 1px solid var(--deezer-player-border);
-  box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.2);
+.workspace-player__card {
+  overflow: visible;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 36px;
+  background:
+    linear-gradient(180deg, rgba(30, 34, 46, 0.78), rgba(14, 16, 24, 0.74)),
+    rgba(10, 12, 18, 0.72);
+  box-shadow:
+    0 24px 56px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(24px) saturate(150%);
 }
 
-.workspace-player .rmap-interface-container {
-  border-radius: 0;
-  background: var(--deezer-player-bg);
+.workspace-player__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px 24px 12px;
 }
 
-.workspace-player .rmap-interface-grid {
-  padding: 10px 16px 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.03);
+.workspace-player__identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
-.workspace-player--floating .rmap-interface-container {
+.workspace-player__artwork {
+  flex: 0 0 auto;
+  padding-left: 4px;
+  padding-top: 2px;
+}
+
+.workspace-player__artwork-image,
+.workspace-player__artwork-fallback {
+  width: 56px;
+  height: 56px;
   border-radius: 16px;
-  background: transparent;
-  overflow: visible;
 }
 
-/*
- * react-modern-audio-player renders `.rmap-interface-grid` with inline
- * `style={display: "grid", gridTemplateColumns, gridTemplateAreas}` and each
- * child grid item (an unclassed div wrapping .rmap-artwork-container,
- * .rmap-ctrl-btn-wrapper, etc.) with inline `style={gridArea: "row1-N"}`.
- * Inline styles beat class selectors, so we use !important to force flex and
- * unset the inline grid-area on every direct child, then reorder with :has().
- */
-.workspace-player--floating .rmap-interface-grid {
-  display: flex !important;
-  flex-direction: row !important;
-  flex-wrap: nowrap !important;
-  align-items: center !important;
-  gap: 10px !important;
-  grid-template-columns: none !important;
-  grid-template-areas: none !important;
-  padding: 10px 16px !important;
-  background: transparent !important;
-  border-top: none !important;
-  min-height: 0 !important;
+.workspace-player__artwork-image {
+  object-fit: cover;
 }
 
-.workspace-player--floating .rmap-interface-grid > * {
-  grid-area: auto !important;
-  justify-self: auto !important;
-  padding: 0 !important;
-  width: auto !important;
+.workspace-player__artwork-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08));
+  color: rgba(255, 255, 255, 0.72);
+  font-family: "Mabry Pro Medium", "Avenir Next", sans-serif;
+  font-size: 24px;
+}
+
+.workspace-player__copy {
   min-width: 0;
 }
 
-.workspace-player--floating .rmap-interface-grid > *:has(.rmap-artwork-container) {
-  order: 1;
-  flex: 0 0 auto;
-}
-
-.workspace-player--floating .rmap-interface-grid > *:has(.rmap-track-info-container) {
-  order: 2;
-  flex: 1 1 120px;
-  min-width: 0;
-}
-
-/* Controls centred in the bar — auto margins push surrounding flex items away */
-.workspace-player--floating .rmap-interface-grid > *:has(.rmap-ctrl-btn-wrapper) {
-  order: 6;
-  flex: 0 0 auto;
-  margin-left: auto;
-}
-
-.workspace-player--floating .rmap-interface-grid > *:has(.rmap-track-time-current) {
-  order: 4;
-  flex: 0 0 auto;
-}
-
-.workspace-player--floating .rmap-interface-grid > *:has(.rmap-bar-progress-wrapper) {
-  order: 5;
-  flex: 2 1 140px;
-  min-width: 80px;
-  width: 100% !important;
-}
-
-.workspace-player--floating .rmap-interface-grid > *:has(.rmap-track-time-duration) {
-  order: 5;
-  flex: 0 0 auto;
-}
-
-.workspace-player--floating .rmap-interface-grid > *:has(.rmap-repeat-btn) {
-  order: 7;
-  flex: 0 0 auto;
-}
-
-.workspace-player--floating .rmap-interface-grid > *:has(.rmap-volume-container) {
-  order: 8;
-  flex: 0 0 auto;
-}
-
-.workspace-player--floating .rmap-interface-grid > *:has(.workspace-player-chip) {
-  order: 9;
-  flex: 0 0 auto;
-}
-
-/* Keep the transport cluster tight so it reads as one control group. */
-.workspace-player--floating .rmap-ctrl-btn-wrapper {
-  gap: 10px;
-  justify-content: flex-end;
-}
-
-.workspace-player--floating .rmap-artwork-container {
-  flex-shrink: 0;
-}
-
-.workspace-player--floating .rmap-track-info-container {
-  min-width: 0;
-}
-
-.workspace-player--floating .rmap-track-time-container {
+.workspace-player__title,
+.workspace-player__artist {
+  margin: 0;
   white-space: nowrap;
-  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.workspace-player--floating .rmap-bar-progress-wrapper {
-  min-width: 60px;
-  width: 100%;
+.workspace-player__title {
+  font-family: "Mabry Pro Medium", "Avenir Next", sans-serif;
+  font-size: 18px;
+  letter-spacing: -0.04em;
+  color: #ffffff;
 }
 
-.workspace-player--floating .rmap-volume-container {
-  height: auto;
-  overflow: visible;
+.workspace-player__artist {
+  margin-top: 3px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.62);
 }
 
-/* Light frosted glass theme — overrides dark defaults above.
- * The library's CSS applies `background: var(--rm-audio-player-interface-container)`
- * to both `.rmap-interface-container` and `.rmap-interface-grid`. The dark
- * default sets that variable to the opaque `--deezer-player-bg`, which paints
- * over the wrapper's `backdrop-blur` and kills the glass effect. Overriding the
- * variable to `transparent` here lets the blurred wrapper show through. */
-.workspace-player--glass.rmap-player-provider {
-  --rm-audio-player-interface-container: transparent;
-  --rm-audio-player-text-color: #111116;
-  --rm-audio-player-track-current-time: #111116;
-  --rm-audio-player-track-duration: rgba(17, 17, 22, 0.55);
-  --rm-audio-player-progress-bar-background: rgba(17, 17, 22, 0.12);
-  --rm-audio-player-volume-background: rgba(17, 17, 22, 0.08);
-  --rm-audio-player-volume-track: rgba(17, 17, 22, 0.18);
-  --rm-audio-player-volume-thumb: #111116;
-  --rm-audio-player-volume-panel-background: rgba(255, 255, 255, 0.85);
-  --rm-audio-player-volume-panel-border: rgba(17, 17, 22, 0.08);
-  background: transparent;
-  border-top: none;
-  box-shadow: none;
-}
-
-.workspace-player--glass .rmap-interface-container,
-.workspace-player--glass .rmap-interface-grid {
-  background: transparent !important;
-}
-
-.workspace-player--glass .rmap-track-info-container .title {
-  color: #111116;
-}
-
-.workspace-player--glass .rmap-track-info-container .writer {
-  color: rgba(17, 17, 22, 0.6);
-}
-
-.workspace-player--glass .styled-btn,
-.workspace-player--glass .workspace-player-chip__toggle {
+.workspace-player__icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -339,283 +244,183 @@ img {
   min-width: 44px;
   min-height: 44px;
   padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 999px;
-  border: 1px solid rgba(17, 17, 22, 0.08);
-  background: #ffffff;
-  color: #111116;
-  box-shadow: 0 1px 0 rgba(17, 17, 22, 0.03);
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06)),
+    rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  box-shadow:
+    0 14px 28px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  backdrop-filter: blur(18px) saturate(140%);
 }
 
-.workspace-player--glass .styled-btn:hover,
-.workspace-player--glass .workspace-player-chip__toggle:hover {
-  background: #f8f8f9;
-  border-color: rgba(17, 17, 22, 0.12);
-  color: #111116;
+.workspace-player__icon-button:hover {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.08)),
+    rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+  transform: translateY(-1px);
 }
 
-.workspace-player--glass .styled-btn.rmap-play-btn {
-  background: #ffffff;
-  color: #111116;
+.workspace-player__icon-button--large {
+  width: 54px;
+  height: 54px;
+  min-width: 54px;
+  min-height: 54px;
 }
 
-.workspace-player--glass .styled-btn svg,
-.workspace-player--glass .workspace-player-chip__toggle svg {
+.workspace-player__icon-button svg {
   width: 18px;
   height: 18px;
 }
 
-.workspace-player--glass .rmap-track-time-current,
-.workspace-player--glass .rmap-track-time-duration {
-  color: rgba(17, 17, 22, 0.7);
+.workspace-player__icon-button--large svg {
+  width: 20px;
+  height: 20px;
 }
 
-@media (max-width: 720px) {
-  .workspace-player--floating .rmap-interface-grid {
-    gap: 8px !important;
-    padding: 10px 14px 8px !important;
-    flex-wrap: wrap !important;
-  }
-
-  /* Hide the grid items containing time / volume on narrow viewports. The
-   * items themselves are unclassed divs, so target them via :has(). */
-  .workspace-player--floating .rmap-interface-grid > *:has(.rmap-track-time-current),
-  .workspace-player--floating .rmap-interface-grid > *:has(.rmap-track-time-duration),
-  .workspace-player--floating .rmap-interface-grid > *:has(.rmap-volume-container) {
-    display: none !important;
-  }
-
-  /* Let the progress bar break to its own row underneath the rest. */
-  .workspace-player--floating .rmap-interface-grid > *:has(.rmap-bar-progress-wrapper) {
-    flex: 1 1 100%;
-    order: 10;
-    padding: 0 0 4px !important;
-  }
-
-  /* Bigger touch targets on mobile */
-  .workspace-player--floating .rmap-ctrl-btn-wrapper {
-    gap: 32px !important;
-  }
-
-  .workspace-player--floating .styled-btn {
-    min-height: 48px !important;
-    min-width: 36px !important;
-  }
-
-  .workspace-player--floating .styled-btn.rmap-play-btn {
-    width: 52px !important;
-    height: 52px !important;
-    padding: 14px !important;
-  }
-
-  /* Slightly larger artwork on mobile */
-  .workspace-player--floating .rmap-artwork-container img,
-  .workspace-player--floating .rmap-artwork-container .rmap-artwork-fallback {
-    width: 48px !important;
-    height: 48px !important;
-  }
-}
-
-.workspace-player .rmap-ctrl-btn-wrapper {
-  gap: 14px;
-}
-
-.workspace-player .rmap-artwork-container img,
-.workspace-player .rmap-artwork-container .rmap-artwork-fallback {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-}
-
-.workspace-player .rmap-track-info-container {
-  row-gap: 1px;
-}
-
-.workspace-player .rmap-track-info-container .title {
-  font-family: "Mabry Pro Medium", "Avenir Next", sans-serif;
-  font-size: 16px;
-  letter-spacing: -0.04em;
-}
-
-.workspace-player .rmap-track-info-container .writer {
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 12px;
-}
-
-.workspace-player .styled-btn {
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  min-height: 44px;
-  display: flex;
-  color: rgba(255, 255, 255, 0.88);
-}
-
-.workspace-player .styled-btn.rmap-play-btn {
-  width: 46px;
-  height: 46px;
-  padding: 12px;
-  border-radius: 999px;
-  background: var(--color-accent);
-  color: #fff;
-}
-
-.workspace-player .styled-btn.rmap-play-btn:hover {
-  background: var(--color-accent-dark);
-}
-
-.workspace-player .rmap-bar-progress-wrapper {
-  height: 12px;
-  padding: 4px 0;
-}
-
-.workspace-player .rmap-bar-progress-wrapper .rmap-progress-bar {
-  height: 2px;
-  border-radius: 999px;
-}
-
-.workspace-player .rmap-bar-progress-wrapper .rmap-progress-handle {
-  width: 9px;
-  height: 9px;
-}
-
-.workspace-player .rmap-track-time-container {
-  font-size: 12px !important;
-}
-
-.workspace-player .rmap-playlist-container {
-  max-height: min(60vh, 560px);
-  overflow-y: auto;
-  background: #17171d;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.workspace-player .rmap-sortable-playlist {
-  box-shadow: none;
-}
-
-.workspace-player .rmap-playlist-item {
-  padding: 10px 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.workspace-player .rmap-playlist-item .rmap-playlist-item-contents {
-  align-items: center;
-}
-
-.workspace-player .rmap-playlist-item .rmap-playlist-album-cover img {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-}
-
-.workspace-player .rmap-playlist-item .rmap-playlist-album-info {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.78);
-}
-
-.workspace-player .rmap-playlist-item .rmap-playlist-album-info span:last-child {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.workspace-player-chip {
+.workspace-player__transport {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 24px 16px;
+}
+
+.workspace-player__transport-side {
+  display: flex;
+  flex: 1 1 0;
+}
+
+.workspace-player__transport-side--left {
+  justify-content: flex-start;
+}
+
+.workspace-player__transport-side--right {
   justify-content: flex-end;
-  min-width: 0;
-  overflow: visible;
 }
 
-.workspace-player--glass .workspace-player-chip button {
-  color: #111116;
-}
-
-/* Dark glass variant — black card, white text */
-.workspace-player--glass.workspace-player--dark.rmap-player-provider {
-  --rm-audio-player-text-color: #ffffff;
-  --rm-audio-player-track-current-time: #ffffff;
-  --rm-audio-player-track-duration: rgba(255, 255, 255, 0.5);
-  --rm-audio-player-progress-bar-background: rgba(255, 255, 255, 0.14);
-  --rm-audio-player-volume-background: rgba(255, 255, 255, 0.1);
-  --rm-audio-player-volume-track: rgba(255, 255, 255, 0.2);
-  --rm-audio-player-volume-thumb: #ffffff;
-  --rm-audio-player-volume-panel-background: rgba(20, 20, 24, 0.92);
-  --rm-audio-player-volume-panel-border: rgba(255, 255, 255, 0.1);
-}
-
-.workspace-player--glass.workspace-player--dark .rmap-track-info-container .title {
-  color: #ffffff;
-}
-
-.workspace-player--glass.workspace-player--dark .rmap-track-info-container .writer {
-  color: rgba(255, 255, 255, 0.55);
-}
-
-.workspace-player--glass.workspace-player--dark .styled-btn {
-  color: rgba(255, 255, 255, 0.75);
-}
-
-.workspace-player--glass.workspace-player--dark .styled-btn:hover {
-  color: #ffffff;
-}
-
-.workspace-player--glass.workspace-player--dark .rmap-track-time-current,
-.workspace-player--glass.workspace-player--dark .rmap-track-time-duration {
-  color: rgba(255, 255, 255, 0.65);
-}
-
-.workspace-player--glass.workspace-player--dark .workspace-player-chip__context,
-.workspace-player--glass.workspace-player--dark .workspace-player-chip__toggle {
-  color: rgba(255, 255, 255, 0.8);
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.07);
-}
-
-.workspace-player--glass.workspace-player--dark .workspace-player-chip__toggle:hover {
-  background: rgba(255, 255, 255, 0.13);
-  color: #ffffff;
-}
-
-.workspace-player--glass.workspace-player--dark .workspace-player-chip button {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.workspace-player-chip__toggle {
-  display: inline-flex;
+.workspace-player__transport-center {
+  display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
-  flex-shrink: 0;
-  cursor: pointer;
+  gap: 14px;
+  flex: 0 0 auto;
 }
 
-.workspace-player-chip__toggle:focus-visible {
+.workspace-player__progress {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 2px 28px 24px;
+}
+
+.workspace-player__time {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.workspace-player__seekbar {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 24px;
+}
+
+.workspace-player__seekbar-track {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.18),
+    0 1px 0 rgba(255, 255, 255, 0.08);
+  transform: translateY(-50%);
+  overflow: hidden;
+}
+
+.workspace-player__seekbar-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: left center;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ef5466, #f36f7e);
+}
+
+.workspace-player__seekbar-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  margin: 0;
+}
+
+.workspace-player__icon-button:focus-visible {
   outline: 2px solid rgba(239, 84, 102, 0.7);
   outline-offset: 2px;
 }
 
 @media (max-width: 720px) {
-  .workspace-player .rmap-interface-grid {
-    padding: 10px 14px 12px;
+  .workspace-player__header {
+    gap: 12px;
+    padding: 20px 18px 12px;
   }
 
-  .workspace-player .rmap-track-info-container .title {
-    font-size: 14px;
+  .workspace-player__identity {
+    gap: 12px;
   }
 
-  .workspace-player .rmap-track-time-container {
-    font-size: 11px !important;
+  .workspace-player__artwork-image,
+  .workspace-player__artwork-fallback {
+    width: 50px;
+    height: 50px;
+    border-radius: 14px;
   }
 
-  .workspace-player-chip {
-    align-items: center;
-    flex-direction: row;
+  .workspace-player__title {
+    font-size: 16px;
   }
-}
 
-.workspace-player-chip button {
-  font: inherit;
-  color: #fff;
+  .workspace-player__artist,
+  .workspace-player__time {
+    font-size: 12px;
+  }
+
+  .workspace-player__icon-button {
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    min-height: 42px;
+  }
+
+  .workspace-player__icon-button--large {
+    width: 52px;
+    height: 52px;
+    min-width: 52px;
+    min-height: 52px;
+  }
+
+  .workspace-player__transport {
+    gap: 10px;
+    padding: 10px 18px 14px;
+  }
+
+  .workspace-player__transport-center {
+    gap: 10px;
+  }
+
+  .workspace-player__progress {
+    gap: 10px;
+    padding: 2px 20px 20px;
+  }
 }
 
 input[type="range"] {
@@ -625,10 +430,15 @@ input[type="range"] {
   cursor: pointer;
 }
 
+.workspace-player__seekbar-input::-webkit-slider-runnable-track {
+  height: 6px;
+  background: transparent;
+}
+
 input[type="range"]::-webkit-slider-track {
   height: 4px;
   border-radius: 999px;
-  background: rgba(17, 17, 22, 0.14);
+  background: rgba(17, 17, 22, 0.16);
 }
 
 input[type="range"]::-webkit-slider-thumb {
@@ -640,10 +450,19 @@ input[type="range"]::-webkit-slider-thumb {
   background: var(--color-accent);
 }
 
+.workspace-player__seekbar-input::-moz-range-track {
+  height: 6px;
+  background: transparent;
+}
+
 input[type="range"]::-moz-range-track {
   height: 4px;
   border-radius: 999px;
-  background: rgba(17, 17, 22, 0.14);
+  background: rgba(17, 17, 22, 0.16);
+}
+
+.workspace-player__seekbar-input::-webkit-slider-thumb {
+  margin-top: -4px;
 }
 
 input[type="range"]::-moz-range-thumb {
@@ -652,4 +471,152 @@ input[type="range"]::-moz-range-thumb {
   border: 0;
   border-radius: 50%;
   background: var(--color-accent);
+}
+
+:root {
+  --sauti-bg: #f8f8f9;
+  --sauti-bg-elev-0: #ffffff;
+  --sauti-panel: #ffffff;
+  --sauti-panel-hover: #f3f3f6;
+  --sauti-panel-muted: #f1f1f4;
+  --sauti-sidebar: #fbfbfc;
+  --sauti-sheet: #ffffff;
+  --sauti-border: rgba(17, 17, 22, 0.08);
+  --sauti-border-strong: rgba(17, 17, 22, 0.14);
+  --sauti-border-soft: rgba(17, 17, 22, 0.05);
+  --sauti-divider: rgba(17, 17, 22, 0.06);
+  --sauti-text: #111116;
+  --sauti-text-secondary: #555661;
+  --sauti-text-muted: #7a7b86;
+  --sauti-text-hint: #8b8c95;
+  --sauti-accent: #ef5466;
+  --sauti-accent-light: #f36f7e;
+  --sauti-accent-deep: #e0364a;
+  --sauti-accent-soft: #fff4f6;
+  --sauti-accent-ghost: #fce5e8;
+  --sauti-accent-border: rgba(239, 84, 102, 0.24);
+  --sauti-accent-text: #8d3140;
+  --sauti-glass-bg: rgba(10, 12, 18, 0.72);
+  --sauti-glass-gradient: linear-gradient(180deg, rgba(30, 34, 46, 0.78), rgba(14, 16, 24, 0.74));
+  --sauti-glass-border: rgba(255, 255, 255, 0.10);
+  --sauti-glass-border-strong: rgba(255, 255, 255, 0.18);
+  --sauti-glass-fg: #ffffff;
+  --sauti-glass-fg-secondary: rgba(255, 255, 255, 0.8);
+  --sauti-glass-fg-muted: rgba(255, 255, 255, 0.62);
+  --sauti-glass-button-surface: rgba(255, 255, 255, 0.08);
+  --sauti-glass-button-surface-hover: rgba(255, 255, 255, 0.14);
+}
+
+.sauti-theme {
+  min-height: 100%;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(239, 84, 102, 0.1), transparent 55%),
+    radial-gradient(circle at 80% 80%, rgba(17, 17, 22, 0.05), transparent 60%),
+    var(--sauti-bg);
+  color: var(--sauti-text);
+}
+
+.sauti-stage {
+  min-height: 100%;
+  background: var(--sauti-bg);
+}
+
+.sauti-glass-panel {
+  border: 1px solid var(--sauti-glass-border);
+  background: var(--sauti-glass-gradient), var(--sauti-glass-bg);
+  box-shadow:
+    0 24px 56px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(24px) saturate(150%);
+}
+
+.sauti-glass-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid var(--sauti-glass-border);
+  background: var(--sauti-glass-button-surface);
+  color: var(--sauti-glass-fg-secondary);
+  box-shadow:
+    0 14px 28px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(18px) saturate(140%);
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.sauti-glass-button:hover {
+  color: var(--sauti-glass-fg);
+  border-color: var(--sauti-glass-border-strong);
+  background: var(--sauti-glass-button-surface-hover);
+  transform: translateY(-1px);
+}
+
+.sauti-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--sauti-border);
+  background: var(--sauti-panel);
+  color: var(--sauti-text-secondary);
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.sauti-filter-pill:hover {
+  color: var(--sauti-text);
+  border-color: var(--sauti-border-strong);
+}
+
+.sauti-filter-pill[data-active="true"] {
+  background: var(--sauti-accent);
+  border-color: transparent;
+  color: #fff;
+}
+
+.sauti-card {
+  border: 1px solid var(--sauti-border);
+  border-radius: 24px;
+  background: var(--sauti-panel);
+  box-shadow: 0 6px 18px rgba(17, 17, 22, 0.06);
+}
+
+.sauti-card-muted {
+  border: 1px solid var(--sauti-border-soft);
+  border-radius: 20px;
+  background: var(--sauti-panel-muted);
+}
+
+.sauti-title {
+  font-family: "Mabry Pro Medium", "Avenir Next", "Helvetica Neue", sans-serif;
+  letter-spacing: -0.04em;
+}
+
+.sauti-modal-surface {
+  border-radius: 30px;
+  border: 1px solid var(--sauti-border);
+  background: var(--sauti-sheet);
+  box-shadow:
+    0 16px 48px rgba(17, 17, 22, 0.14),
+    0 1px 0 rgba(17, 17, 22, 0.04);
+}
+
+.sauti-modal-title {
+  font-family: "Mabry Pro Medium", "Avenir Next", "Helvetica Neue", sans-serif;
+  font-size: 1.9rem;
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.sauti-track-shell {
+  border: 1px solid var(--sauti-border);
+  border-radius: 24px;
+  background: var(--sauti-panel);
+}
+
+.sauti-mono {
+  font-variant-numeric: tabular-nums;
 }

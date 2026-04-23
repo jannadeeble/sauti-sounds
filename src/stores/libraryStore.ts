@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { db } from '../db'
+import { hydrateLibrarySnapshotFromBackend, pushDexieLibrarySnapshot } from '../lib/librarySync'
 import { getStorageStatus, uploadToR2 } from '../lib/r2Storage'
 import { addTidalFavoriteTrack, getTidalFavoriteTracks, removeTidalFavoriteTrack } from '../lib/tidal'
 import { findTidalDuplicates, type LocalDedupMatch } from '../lib/localDedup'
@@ -157,6 +158,10 @@ async function runAutoDedupe(importedTracks: Track[]): Promise<{
   return { applied, uncertain }
 }
 
+async function syncLibraryStateToBackend() {
+  await pushDexieLibrarySnapshot()
+}
+
 export const useLibraryStore = create<LibraryState>((set, get) => ({
   tracks: [],
   loading: false,
@@ -180,7 +185,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   loadTracks: async () => {
     set({ loading: true })
     try {
-      const tracks = await db.tracks.orderBy('addedAt').reverse().toArray()
+      const snapshot = await hydrateLibrarySnapshotFromBackend()
+      const tracks = [...snapshot.tracks].sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0))
       set({ tracks })
     } finally {
       set({ loading: false })
@@ -233,6 +239,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       if (uncertain.length > 0) {
         set(state => ({ pendingLocalSwaps: [...state.pendingLocalSwaps, ...uncertain] }))
       }
+      await syncLibraryStateToBackend()
       await get().loadTracks()
       return { tracks: importedTracks, dedupeApplied: applied, dedupeUncertain: uncertain }
     } catch (err: unknown) {
@@ -274,6 +281,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       if (uncertain.length > 0) {
         set(state => ({ pendingLocalSwaps: [...state.pendingLocalSwaps, ...uncertain] }))
       }
+      await syncLibraryStateToBackend()
       await get().loadTracks()
       return { tracks: importedTracks, dedupeApplied: applied, dedupeUncertain: uncertain }
     } finally {
@@ -289,6 +297,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         m => !consumedIds.has(m.local.id + '|' + m.tidal.id),
       ),
     }))
+    await syncLibraryStateToBackend()
     await get().loadTracks()
     return count
   },
@@ -498,6 +507,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       if (uncertain.length > 0) {
         set(state => ({ pendingLocalSwaps: [...state.pendingLocalSwaps, ...uncertain] }))
       }
+      await syncLibraryStateToBackend()
       await get().loadTracks()
 
       if (importedTracks.length > 0) {
@@ -528,11 +538,13 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   addTrack: async (track) => {
     await db.tracks.put({ ...track, addedAt: track.addedAt || Date.now() })
+    await syncLibraryStateToBackend()
     await get().loadTracks()
   },
 
   cacheTidalTracks: async (tracks) => {
     await upsertTracks(tracks)
+    await syncLibraryStateToBackend()
     await get().loadTracks()
   },
 
@@ -554,6 +566,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       }
 
       await upsertTracks(favorites.map(track => ({ ...track, isFavorite: true })))
+      await syncLibraryStateToBackend()
       await get().loadTracks()
     } finally {
       set({ syncingFavorites: false })
@@ -571,6 +584,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       await db.tracks.put({ ...track, isFavorite: true, addedAt: track.addedAt || Date.now() })
     }
 
+    await syncLibraryStateToBackend()
     await get().loadTracks()
   },
 
@@ -588,6 +602,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       }
     }
     await db.tracks.delete(id)
+    await syncLibraryStateToBackend()
     await get().loadTracks()
   },
 }))

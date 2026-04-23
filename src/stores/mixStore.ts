@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { db } from '../db'
+import { hydrateAppStateFromBackend, pushAppStateSnapshot } from '../lib/appStateSync'
 import { tagTrackContexts } from '../lib/listenContextRegistry'
 import type { Mix, MixKind, MixStatus } from '../types'
 
@@ -22,6 +23,7 @@ export const useMixStore = create<MixState>((set, get) => ({
 
   load: async () => {
     set({ loading: true })
+    await hydrateAppStateFromBackend()
     const all = await db.mixes.orderBy('generatedAt').reverse().toArray()
     for (const m of all) {
       if (m.status === 'fresh') {
@@ -33,6 +35,7 @@ export const useMixStore = create<MixState>((set, get) => ({
 
   upsert: async (mix) => {
     await db.mixes.put(mix)
+    await pushAppStateSnapshot()
     tagTrackContexts(mix.trackIds, `suggestion:${mix.id}` as const)
     const existing = get().mixes.filter(m => m.id !== mix.id)
     set({ mixes: [mix, ...existing] })
@@ -43,6 +46,7 @@ export const useMixStore = create<MixState>((set, get) => ({
     if (!existing) return
     const updated: Mix = { ...existing, status }
     await db.mixes.put(updated)
+    await pushAppStateSnapshot()
     set({ mixes: get().mixes.map(m => m.id === id ? updated : m) })
   },
 
@@ -62,6 +66,7 @@ export const useMixStore = create<MixState>((set, get) => ({
       const updated = { ...m, status: 'stale' as MixStatus }
       await db.mixes.put(updated)
     }
+    await pushAppStateSnapshot()
     set({
       mixes: get().mixes.map(m =>
         target.find(t => t.id === m.id) ? { ...m, status: 'stale' } : m,
@@ -71,6 +76,7 @@ export const useMixStore = create<MixState>((set, get) => ({
 
   remove: async (id) => {
     await db.mixes.delete(id)
+    await pushAppStateSnapshot()
     set({ mixes: get().mixes.filter(m => m.id !== id) })
   },
 

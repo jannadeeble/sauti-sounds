@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { db } from '../db'
+import { hydrateAppStateFromBackend, pushAppStateSnapshot } from '../lib/appStateSync'
 import type { HistoryEntry, Track } from '../types'
 
 const MAX_HISTORY = 500
@@ -18,6 +19,7 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
   loaded: false,
 
   loadHistory: async () => {
+    await hydrateAppStateFromBackend()
     const entries = await db.history.orderBy('playedAt').reverse().limit(MAX_HISTORY).toArray()
     set({ entries, loaded: true })
   },
@@ -48,11 +50,13 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
       await db.history.bulkDelete(excess)
     }
 
+    await pushAppStateSnapshot()
     await get().loadHistory()
   },
 
   clear: async () => {
     await db.history.clear()
+    await pushAppStateSnapshot()
     set({ entries: [] })
   },
 }))

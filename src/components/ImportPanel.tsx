@@ -432,12 +432,12 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
     })
   }
 
-  const cardClass = 'rounded-[24px] border border-black/8 bg-white p-5'
-  const iconChipClass = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#f3f3f6]'
+  const cardClass = 'rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(30,34,46,0.9),rgba(14,16,24,0.9))] p-5 text-white shadow-[0_18px_48px_rgba(0,0,0,0.22)]'
+  const iconChipClass = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/8'
   const primaryBtnClass =
     'inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-accent-dark disabled:opacity-50'
   const secondaryBtnClass =
-    'inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-medium text-[#111116] transition-colors hover:bg-[#fafafb] disabled:opacity-50'
+    'inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/6 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-white/10 disabled:opacity-50'
 
   const primaryLabel = importing && importProgress
     ? `Uploading ${importProgress.current}/${importProgress.total}`
@@ -456,12 +456,12 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
                 <Music size={20} className="text-accent" />
               </div>
               <div className="min-w-0">
-                <h3 className="text-base font-semibold text-[#111116]">Local files</h3>
-                <p className="text-sm text-[#7a7b86]">Audio stored on this device</p>
+                <h3 className="text-base font-semibold text-white">Local files</h3>
+                <p className="text-sm text-white/54">Audio stored on this device</p>
               </div>
             </header>
 
-            <p className="mb-4 text-sm text-[#7a7b86]">
+            <p className="mb-4 text-sm text-white/54">
               Supports MP3, FLAC, WAV, AAC, OGG, and M4A. Files are cached for direct playback.
             </p>
 
@@ -497,19 +497,19 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
             </div>
 
             {importing && importProgress ? (
-              <div className="mt-4 rounded-2xl border border-black/8 bg-[#f8f8f9] p-4">
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/6 p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-[#111116]">Uploading to your library</p>
-                  <span className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#111116] shadow-[0_0_0_1px_rgba(17,17,22,0.06)]">
+                  <p className="text-sm font-semibold text-white">Uploading to your library</p>
+                  <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white">
                     {importProgress.current}/{importProgress.total}
                   </span>
                 </div>
-                <p className="mt-1 truncate text-xs text-[#7a7b86]">
+                <p className="mt-1 truncate text-xs text-white/54">
                   {importProgress.currentFile
                     ? `Processing ${importProgress.currentFile}`
                     : 'Caching audio and artwork…'}
                 </p>
-                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
                   <div
                     className="h-full rounded-full bg-accent transition-[width] duration-300"
                     style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
@@ -525,15 +525,15 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
                 <FileJson size={20} className="text-[#1db954]" />
               </div>
               <div className="min-w-0">
-                <h3 className="text-base font-semibold text-[#111116]">Spotify export</h3>
-                <p className="text-sm text-[#7a7b86]">Tracks first, then rebuild playlists</p>
+                <h3 className="text-base font-semibold text-white">Spotify export</h3>
+                <p className="text-sm text-white/54">Tracks first, then rebuild playlists</p>
               </div>
             </header>
 
-            <p className="mb-4 text-sm text-[#7a7b86]">
-              Run these in order. <span className="font-semibold text-[#111116]">Step 1</span> takes any Spotify
+            <p className="mb-4 text-sm text-white/54">
+              Run these in order. <span className="font-semibold text-white">Step 1</span> takes any Spotify
               JSON (YourLibrary.json, Playlist1.json, Playlist2.json, or all of them at once) and pulls every
-              track it finds into your library. <span className="font-semibold text-[#111116]">Step 2</span> rebuilds
+              track it finds into your library. <span className="font-semibold text-white">Step 2</span> rebuilds
               your playlists — wiring each one to tracks already in your library, no re-matching. Discover Weekly
               and Daily Mix are skipped automatically.
               {!tidalConnected
@@ -563,7 +563,7 @@ export default function ImportPanel({ onDone }: ImportPanelProps) {
               </button>
             </div>
 
-            <p className="mt-3 text-xs text-[#8c8d96]">
+            <p className="mt-3 text-xs text-white/38">
               {libraryTracks.length === 0
                 ? 'Library is empty — run step 1 first.'
                 : `Library has ${libraryTracks.length.toLocaleString()} track${libraryTracks.length === 1 ? '' : 's'} ready to reference.`}

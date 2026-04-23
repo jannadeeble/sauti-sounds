@@ -1,17 +1,20 @@
 import { useEffect } from 'react'
 import { Plus, Radio, Shapes } from 'lucide-react'
+import type { RectLike } from '../lib/rect'
 import type { Playlist, Track } from '../types'
 import { usePlaylistStore } from '../stores/playlistStore'
 import { useTidalStore } from '../stores/tidalStore'
+import MorphSurface from './MorphSurface'
 
 interface Props {
   open: boolean
   track?: Track
   tracks?: Track[]
   onClose: () => void
+  originRect?: RectLike | null
 }
 
-export default function AddToPlaylistDialog({ open, track, tracks, onClose }: Props) {
+export default function AddToPlaylistDialog({ open, track, tracks, onClose, originRect }: Props) {
   const {
     appPlaylists,
     tidalPlaylists,
@@ -70,115 +73,102 @@ export default function AddToPlaylistDialog({ open, track, tracks, onClose }: Pr
   }
 
   return (
-    <>
-      <button
-        className="fixed inset-0 z-50 bg-black/35"
-        onClick={onClose}
-        aria-label="Close playlist picker"
-      />
-      <div className="fixed inset-x-4 bottom-4 z-[60] rounded-[24px] border border-black/8 bg-white p-4 shadow-[0_20px_40px_rgba(17,17,22,0.16)]">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <p className="deezer-display text-[1.5rem] leading-none text-[#111116]">Add to playlist</p>
-            <p className="mt-1 truncate text-xs text-[#7a7b86]">
-              {isBatch ? `${batch.length} tracks selected` : `${batch[0].title} · ${batch[0].artist}`}
-            </p>
+    <MorphSurface
+      open={open}
+      onClose={onClose}
+      title="Add to playlist"
+      description={isBatch ? `${batch.length} tracks selected` : `${batch[0].title} · ${batch[0].artist}`}
+      originRect={originRect}
+      variant="dark"
+      size="md"
+      align="bottom"
+    >
+      <div className="max-h-[56vh] space-y-5 overflow-y-auto pr-1">
+        <section>
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-[11px] uppercase tracking-[0.24em] text-white/40">App playlists</p>
+            <button
+              onClick={() => void handleCreateAppPlaylist()}
+              className="inline-flex items-center gap-1 text-xs text-orange-300 transition-colors hover:text-orange-200"
+            >
+              <Plus size={12} />
+              New
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="text-xs text-[#7a7b86] transition-colors hover:text-[#111116]"
-          >
-            Close
-          </button>
-        </div>
-
-        <div className="max-h-[50vh] space-y-4 overflow-y-auto">
-          <section>
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-xs uppercase tracking-[0.24em] text-[#8b8c95]">App playlists</p>
+          <div className="space-y-2">
+            {appPlaylists.length === 0 ? (
               <button
                 onClick={() => void handleCreateAppPlaylist()}
-                className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent-dark"
+                className="w-full rounded-[20px] border border-dashed border-white/12 bg-white/4 px-4 py-3 text-left text-sm text-white/62 transition-colors hover:bg-white/6"
               >
-                <Plus size={12} />
-                New
+                Create your first mixed playlist
               </button>
+            ) : (
+              appPlaylists.map(playlist => (
+                <button
+                  key={playlist.id}
+                  onClick={() => void handleAdd(playlist.id, 'app')}
+                  className="w-full rounded-[20px] border border-white/10 bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/8"
+                >
+                  <span className="block text-sm font-medium text-white">{playlist.name}</span>
+                  <span className="text-xs text-white/48">
+                    {playlist.items.length} item{playlist.items.length === 1 ? '' : 's'}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </section>
+
+        {tidalConnected ? (
+          <section>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-white/40">TIDAL playlists</p>
+              {!isBatch && hasTidalTrack ? (
+                <button
+                  onClick={() => void handleCreateTidalPlaylist()}
+                  className="inline-flex items-center gap-1 text-xs text-orange-300 transition-colors hover:text-orange-200"
+                >
+                  <Plus size={12} />
+                  New
+                </button>
+              ) : null}
             </div>
             <div className="space-y-2">
-              {appPlaylists.length === 0 ? (
-                <button
-                  onClick={() => void handleCreateAppPlaylist()}
-                  className="w-full rounded-2xl border border-dashed border-black/10 px-3 py-3 text-left text-sm text-[#686973] transition-colors hover:border-black/16 hover:bg-[#f8f8f9]"
-                >
-                  Create your first mixed playlist
-                </button>
+              {tidalPlaylists.length === 0 ? (
+                <div className="rounded-[20px] border border-white/10 bg-white/4 px-4 py-3 text-sm text-white/58">
+                  {hasTidalTrack && !isBatch
+                    ? 'Create a TIDAL playlist to save this track.'
+                    : 'No TIDAL playlists yet.'}
+                </div>
               ) : (
-                appPlaylists.map(playlist => (
-                  <button
-                    key={playlist.id}
-                    onClick={() => void handleAdd(playlist.id, 'app')}
-                    className="w-full rounded-2xl border border-black/6 bg-[#f8f8f9] px-3 py-3 text-left transition-colors hover:bg-[#f1f1f4]"
-                  >
-                    <span className="block text-sm font-medium text-[#111116]">{playlist.name}</span>
-                    <span className="text-xs text-[#7a7b86]">
-                      {playlist.items.length} item{playlist.items.length === 1 ? '' : 's'}
-                    </span>
-                  </button>
-                ))
+                tidalPlaylists.map(playlist => {
+                  const allTidal = batch.every((item) => item.source === 'tidal')
+                  const disabled = !allTidal || !playlist.writable
+                  return (
+                    <button
+                      key={playlist.id}
+                      disabled={disabled}
+                      onClick={() => void handleAdd(playlist.id, 'tidal')}
+                      className="w-full rounded-[20px] border border-white/10 bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/8 disabled:opacity-50"
+                    >
+                      <span className="flex items-center gap-2 text-sm font-medium text-white">
+                        <Radio size={12} className="text-sky-300" />
+                        {playlist.name}
+                      </span>
+                      <span className="mt-1 flex items-center gap-1 text-xs text-white/48">
+                        <Shapes size={12} />
+                        {playlist.trackCount || 0} track{playlist.trackCount === 1 ? '' : 's'}
+                        {!playlist.writable ? ' · read only' : ''}
+                      </span>
+                    </button>
+                  )
+                })
               )}
             </div>
           </section>
-
-          {tidalConnected && (
-            <section>
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-xs uppercase tracking-[0.24em] text-[#8b8c95]">TIDAL playlists</p>
-                {!isBatch && hasTidalTrack && (
-                  <button
-                    onClick={() => void handleCreateTidalPlaylist()}
-                    className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent-dark"
-                  >
-                    <Plus size={12} />
-                    New
-                  </button>
-                )}
-              </div>
-              <div className="space-y-2">
-                {tidalPlaylists.length === 0 ? (
-                  <div className="rounded-2xl border border-black/8 bg-[#f8f8f9] px-3 py-3 text-sm text-[#686973]">
-                    {hasTidalTrack && !isBatch
-                      ? 'Create a TIDAL playlist to save this track.'
-                      : 'No TIDAL playlists yet.'}
-                  </div>
-                ) : (
-                  tidalPlaylists.map(playlist => {
-                    const allTidal = batch.every((item) => item.source === 'tidal')
-                    const disabled = !allTidal || !playlist.writable
-                    return (
-                      <button
-                        key={playlist.id}
-                        disabled={disabled}
-                        onClick={() => void handleAdd(playlist.id, 'tidal')}
-                        className="w-full rounded-2xl border border-black/6 bg-[#f8f8f9] px-3 py-3 text-left transition-colors hover:bg-[#f1f1f4] disabled:opacity-50 disabled:hover:bg-[#f8f8f9]"
-                      >
-                        <span className="flex items-center gap-2 text-sm font-medium text-[#111116]">
-                          <Radio size={12} className="text-cyan-400" />
-                          {playlist.name}
-                        </span>
-                        <span className="mt-1 flex items-center gap-1 text-xs text-[#7a7b86]">
-                          <Shapes size={12} />
-                          {playlist.trackCount || 0} track{playlist.trackCount === 1 ? '' : 's'}
-                          {!playlist.writable ? ' · read only' : ''}
-                        </span>
-                      </button>
-                    )
-                  })
-                )}
-              </div>
-            </section>
-          )}
-        </div>
+        ) : null}
       </div>
-    </>
+    </MorphSurface>
   )
 }

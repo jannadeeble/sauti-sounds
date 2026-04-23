@@ -1,9 +1,11 @@
 import { useRef, useState } from 'react'
 import { Check, Heart, ListPlus, MoreVertical, Play, Plus, Radio } from 'lucide-react'
 import AddToPlaylistDialog from './AddToPlaylistDialog'
+import MorphSurface from './MorphSurface'
 import { useTrackArtworkUrl } from '../lib/artwork'
 import { isLLMConfigured } from '../lib/llm'
 import { formatTime } from '../lib/metadata'
+import { rectFromElement } from '../lib/rect'
 import { useAIModalStore } from '../stores/aiModalStore'
 import { useLibraryStore } from '../stores/libraryStore'
 import { type PlaybackContext, usePlaybackSessionStore } from '../stores/playbackSessionStore'
@@ -51,6 +53,7 @@ export default function TrackRow({
 
   const [showActions, setShowActions] = useState(false)
   const [showPlaylistDialog, setShowPlaylistDialog] = useState(false)
+  const [originRect, setOriginRect] = useState<ReturnType<typeof rectFromElement>>(null)
 
   const isActive = currentTrack?.id === track.id
   const artworkUrl = useTrackArtworkUrl(track)
@@ -69,11 +72,11 @@ export default function TrackRow({
       ? [
           {
             label: 'Make a setlist from this',
-            onClick: () => openAIModal('setlist-seed', track),
+            onClick: () => openAIModal('setlist-seed', track, undefined, originRect),
           } satisfies TrackAction,
           {
             label: 'AI playlist from this track',
-            onClick: () => openAIModal('playlist-from-track', track),
+            onClick: () => openAIModal('playlist-from-track', track, undefined, originRect),
           } satisfies TrackAction,
         ]
       : []),
@@ -237,7 +240,10 @@ export default function TrackRow({
           {!selecting ? (
             <button
               type="button"
-              onClick={() => setShowActions(true)}
+              onClick={(event) => {
+                setOriginRect(rectFromElement(event.currentTarget))
+                setShowActions(true)
+              }}
               className="rounded-full p-2 text-[#8c8d96] transition-colors hover:bg-black/4 hover:text-[#111116]"
               aria-label={`More actions for ${track.title}`}
             >
@@ -247,57 +253,57 @@ export default function TrackRow({
         </div>
       </article>
 
-      {showActions ? (
-        <>
-          <button
-            type="button"
-            className="fixed inset-0 z-40 bg-black/35"
-            onClick={() => setShowActions(false)}
-            aria-label="Close track actions"
-          />
-          <div className="fixed inset-x-4 bottom-4 z-50 rounded-[24px] border border-black/8 bg-white p-3 shadow-[0_20px_40px_rgba(17,17,22,0.16)]">
-            <div className="mb-2 flex items-center justify-between px-2 py-1">
-              <div>
-                <p className="text-sm font-semibold text-[#111116]">{track.title}</p>
-                <p className="text-xs text-[#7a7b86]">{track.artist}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowActions(false)}
-                className="rounded-full p-2 text-[#8c8d96] transition-colors hover:bg-black/4 hover:text-[#111116]"
-              >
-                <MoreVertical size={16} />
-              </button>
-            </div>
-
-            <div className="space-y-1">
-              {actions.map((action) => (
-                <button
-                  key={action.label}
-                  type="button"
-                  disabled={action.disabled}
-                  onClick={() => {
-                    action.onClick()
-                    setShowActions(false)
-                  }}
-                  className={`flex w-full items-center gap-2 rounded-2xl px-4 py-3 text-left text-sm transition-colors disabled:opacity-40 ${
-                    action.destructive
-                      ? 'text-[#c4394d] hover:bg-[#fff4f6]'
-                      : 'text-[#111116] hover:bg-[#f8f8f9]'
-                  }`}
-                >
-                  {action.label === 'Add to current queue' ? <ListPlus size={15} className="text-accent" /> : null}
-                  <span>{action.label}</span>
-                </button>
-              ))}
-            </div>
+      <MorphSurface
+        open={showActions}
+        onClose={() => setShowActions(false)}
+        title={track.title}
+        description={track.artist}
+        originRect={originRect}
+        variant="dark"
+        size="sm"
+        align="bottom"
+      >
+        <div className="mb-3 flex items-center gap-3 rounded-[20px] border border-white/8 bg-white/4 px-3 py-3">
+          <div className="h-12 w-12 overflow-hidden rounded-[14px] bg-white/8">
+            {artworkUrl ? (
+              <img src={artworkUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-lg text-white/44">♪</div>
+            )}
           </div>
-        </>
-      ) : null}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-white">{track.title}</p>
+            <p className="truncate text-xs text-white/48">{track.artist}</p>
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          {actions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              disabled={action.disabled}
+              onClick={() => {
+                action.onClick()
+                setShowActions(false)
+              }}
+              className={`flex w-full items-center gap-3 rounded-[18px] px-4 py-3 text-left text-sm transition-colors disabled:opacity-40 ${
+                action.destructive
+                  ? 'text-[#ffab9b] hover:bg-[#3a1714]'
+                  : 'text-white hover:bg-white/6'
+              }`}
+            >
+              {action.label === 'Add to current queue' ? <ListPlus size={15} className="text-orange-300" /> : null}
+              <span>{action.label}</span>
+            </button>
+          ))}
+        </div>
+      </MorphSurface>
 
       <AddToPlaylistDialog
         open={showPlaylistDialog}
         track={track}
+        originRect={originRect}
         onClose={() => setShowPlaylistDialog(false)}
       />
     </>

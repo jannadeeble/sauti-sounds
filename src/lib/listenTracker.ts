@@ -1,4 +1,5 @@
 import { db } from '../db'
+import { pushAppStateSnapshot } from './appStateSync'
 import type { ListenContext, ListenEvent, Track } from '../types'
 
 const MAX_EVENTS = 5000
@@ -23,6 +24,7 @@ function makeId(trackId: string, startedAt: number): string {
 
 async function commitEvent(event: ListenEvent): Promise<void> {
   await db.listenEvents.put(event)
+  await pushAppStateSnapshot()
   schedulePrune()
 }
 
@@ -38,7 +40,10 @@ function schedulePrune(): void {
       .orderBy('startedAt')
       .limit(total - MAX_EVENTS)
       .primaryKeys()
-    if (excess.length) await db.listenEvents.bulkDelete(excess)
+    if (excess.length) {
+      await db.listenEvents.bulkDelete(excess)
+      await pushAppStateSnapshot()
+    }
   }, 5_000)
 }
 

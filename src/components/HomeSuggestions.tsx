@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Disc3, RefreshCw, Sparkles } from 'lucide-react'
+import {
+  getPersistentUiState,
+  hydrateAppStateFromBackend,
+  pushAppStateSnapshot,
+  setPersistentUiState,
+} from '../lib/appStateSync'
 import { isLLMConfigured } from '../lib/llm'
 import { maybeRunHomeFeed, regenerateMix } from '../lib/homeOrchestrator'
 import { generateMoodPlaylist } from '../lib/mixGenerator'
@@ -10,6 +16,7 @@ import { useTasteStore } from '../stores/tasteStore'
 import { useTidalStore } from '../stores/tidalStore'
 import { useTrackArtworkUrl } from '../lib/artwork'
 import type { Mix, MixKind, Track } from '../types'
+import MorphSurface from './MorphSurface'
 
 const KIND_ORDER: MixKind[] = [
   'playlist-echo',
@@ -31,7 +38,6 @@ const KIND_META: Record<MixKind, { label: string; subtitle: string }> = {
 }
 
 const SWAP_LIMIT_PER_DAY = 3
-const SWAP_KEY = 'sauti.mixSwap.log'
 
 interface HomeSuggestionsProps {
   onPlayTracks: (tracks: Track[]) => void
@@ -94,14 +100,14 @@ export default function HomeSuggestions({ onPlayTracks }: HomeSuggestionsProps) 
   }, [running])
 
   const handleSwap = useCallback(async (mix: Mix) => {
-    if (!canSwap()) {
+    if (!await canSwap()) {
       alert('Swap limit reached for today (3/day). Try again tomorrow.')
       return
     }
     setSwapping(mix.id)
     try {
       await regenerateMix(mix)
-      recordSwap()
+      await recordSwap()
     } finally {
       setSwapping(null)
     }
@@ -267,31 +273,21 @@ async function handleMood(
   }
 }
 
-function canSwap(): boolean {
-  if (typeof window === 'undefined') return true
-  try {
-    const raw = window.localStorage.getItem(SWAP_KEY)
-    if (!raw) return true
-    const arr = JSON.parse(raw) as number[]
-    const cutoff = Date.now() - 1000 * 60 * 60 * 24
-    return arr.filter(ts => ts > cutoff).length < SWAP_LIMIT_PER_DAY
-  } catch {
-    return true
-  }
+async function canSwap(): Promise<boolean> {
+  await hydrateAppStateFromBackend()
+  const arr = getPersistentUiState().mixSwapLog ?? []
+  const cutoff = Date.now() - 1000 * 60 * 60 * 24
+  return arr.filter(ts => ts > cutoff).length < SWAP_LIMIT_PER_DAY
 }
 
-function recordSwap(): void {
-  if (typeof window === 'undefined') return
-  try {
-    const raw = window.localStorage.getItem(SWAP_KEY)
-    const arr = raw ? (JSON.parse(raw) as number[]) : []
-    const cutoff = Date.now() - 1000 * 60 * 60 * 24
-    const pruned = arr.filter(ts => ts > cutoff)
-    pruned.push(Date.now())
-    window.localStorage.setItem(SWAP_KEY, JSON.stringify(pruned))
-  } catch {
-    // ignore
-  }
+async function recordSwap(): Promise<void> {
+  await hydrateAppStateFromBackend()
+  const arr = getPersistentUiState().mixSwapLog ?? []
+  const cutoff = Date.now() - 1000 * 60 * 60 * 24
+  const pruned = arr.filter(ts => ts > cutoff)
+  pruned.push(Date.now())
+  setPersistentUiState({ mixSwapLog: pruned })
+  await pushAppStateSnapshot()
 }
 
 function ColdStartPanel({ title, body }: { title: string; body: string }) {
@@ -373,18 +369,24 @@ function MoodPromptModal({
   const [prompt, setPrompt] = useState('')
   const [count, setCount] = useState(15)
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/30 p-4 sm:items-center">
-      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-lg">
-        <h3 className="text-lg font-semibold text-[#111116]">Build a mood playlist</h3>
-        <p className="mt-1 text-sm text-[#686973]">Describe the moment — "slow Sunday brunch", "peak-time warehouse" — and Sauti will try to build it.</p>
+    <MorphSurface
+      open
+      onClose={onClose}
+      title="Build a mood playlist"
+      description='Describe the moment. "slow Sunday brunch", "peak-time warehouse", "rain in Dakar".'
+      variant="light"
+      size="md"
+      align="center"
+    >
+      <div className="space-y-4">
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           rows={3}
-          className="mt-3 w-full rounded-xl border border-black/8 bg-[#fafafb] px-3 py-2 text-sm text-[#111116] outline-none focus:border-black/20"
+          className="w-full rounded-xl border border-black/8 bg-[#fafafb] px-3 py-2 text-sm text-[#111116] outline-none focus:border-black/20"
           placeholder="A rainy Tuesday in Dakar…"
         />
-        <div className="mt-3 flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <label className="text-xs text-[#7a7b86]">Tracks</label>
           <input
             type="number"
@@ -395,7 +397,7 @@ function MoodPromptModal({
             className="w-20 rounded-xl border border-black/8 bg-[#fafafb] px-2 py-1 text-sm text-[#111116] outline-none focus:border-black/20"
           />
         </div>
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="flex justify-end gap-2">
           <button type="button" onClick={onClose} className="rounded-full border border-black/8 px-3 py-1.5 text-sm text-[#555661]">Cancel</button>
           <button
             type="button"
@@ -407,7 +409,7 @@ function MoodPromptModal({
           </button>
         </div>
       </div>
-    </div>
+    </MorphSurface>
   )
 }
 

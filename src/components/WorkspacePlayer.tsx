@@ -1,33 +1,170 @@
-import { useEffect, useMemo, useRef } from 'react'
-import AudioPlayer, { type InterfacePlacement, useAudioPlayer } from 'react-modern-audio-player'
-import { ListMusic } from 'lucide-react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ListMusic, Pause, Play, SkipBack, SkipForward, Volume2, VolumeX } from 'lucide-react'
 import { useTrackArtworkUrl } from '../lib/artwork'
 import { maybeFillAutoRadio } from '../lib/autoRadio'
 import { resolveTrackContext } from '../lib/listenContextRegistry'
 import { flushActiveListen, reportPlayerTick } from '../lib/listenTracker'
-import { useResolvedPlayerTracks } from '../lib/playerTracks'
+import { formatTime } from '../lib/metadata'
+import { useResolvedPlayerTracks, type ResolvedPlayerTrack } from '../lib/playerTracks'
+import { rectFromElement } from '../lib/rect'
 import { useHistoryStore } from '../stores/historyStore'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
 import type { Track } from '../types'
 
-function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
-  const {
-    currentIndex,
-    isPlaying,
-    currentTime,
-    duration,
-    next,
-    prev,
-    togglePlay,
-    playList,
-  } = useAudioPlayer()
+function PlayerIconButton({
+  label,
+  onClick,
+  children,
+  large = false,
+}: {
+  label: string
+  onClick: () => void
+  children: ReactNode
+  large?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className={`workspace-player__icon-button${large ? ' workspace-player__icon-button--large' : ''}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function PlayerRuntime({
+  playableTracks,
+  playlist,
+  startIndex,
+}: {
+  playableTracks: Track[]
+  playlist: ResolvedPlayerTrack[]
+  startIndex: number
+}) {
   const setPlayerOpen = usePlaybackSessionStore((state) => state.setPlayerOpen)
   const syncPlayerState = usePlaybackSessionStore((state) => state.syncPlayerState)
   const recordPlay = useHistoryStore((state) => state.recordPlay)
-  const lastRecordedTrackId = useRef<string | null>(null)
 
-  const currentTrack = tracks[currentIndex] ?? null
+  const initialTrackId = playlist[startIndex]?.trackId ?? playlist[0]?.trackId ?? null
+
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const lastLoadedTrackIdRef = useRef<string | null>(null)
+  const lastRecordedTrackIdRef = useRef<string | null>(null)
+  const pendingPlayRef = useRef(false)
+
+  const [activeTrackId, setActiveTrackId] = useState<string | null>(initialTrackId)
+  const [isPlaying, setIsPlaying] = useState(true)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [muted, setMuted] = useState(false)
+
+  const currentIndex = useMemo(() => {
+    if (!playlist.length) return 0
+    if (!activeTrackId) return Math.max(0, Math.min(startIndex, playlist.length - 1))
+
+    const index = playlist.findIndex((track) => track.trackId === activeTrackId)
+    if (index >= 0) return index
+
+    return Math.max(0, Math.min(startIndex, playlist.length - 1))
+  }, [activeTrackId, playlist, startIndex])
+
+  const currentTrack = playableTracks[currentIndex] ?? null
+  const resolvedTrack = playlist[currentIndex] ?? null
   const artworkUrl = useTrackArtworkUrl(currentTrack ?? {})
+  const progressRatio = duration > 0 ? Math.min(currentTime / duration, 1) : 0
+
+  const volumeIcon = muted
+    ? <VolumeX size={18} strokeWidth={2.05} />
+    : <Volume2 size={18} strokeWidth={2.05} />
+
+  const handlePrevious = useCallback(() => {
+    const audio = audioRef.current
+
+    if (audio && audio.currentTime > 5) {
+      audio.currentTime = 0
+      setCurrentTime(0)
+      return
+    }
+
+    const previousTrack = playlist[Math.max(0, currentIndex - 1)]
+    if (previousTrack) {
+      setActiveTrackId(previousTrack.trackId)
+      setIsPlaying(true)
+    }
+  }, [currentIndex, playlist])
+
+  const handleNext = useCallback(() => {
+    const nextTrack = playlist[Math.min(playlist.length - 1, currentIndex + 1)]
+    if (nextTrack && nextTrack.trackId !== activeTrackId) {
+      setActiveTrackId(nextTrack.trackId)
+      setIsPlaying(true)
+    }
+  }, [activeTrackId, currentIndex, playlist])
+
+  const handleSeek = useCallback((nextTime: number) => {
+    const audio = audioRef.current
+    if (!audio || !isFinite(nextTime)) return
+
+    audio.currentTime = nextTime
+    setCurrentTime(nextTime)
+  }, [])
+
+  const attemptPlayback = useCallback(() => {
+    const audio = audioRef.current
+    if (!audio) return
+
+    pendingPlayRef.current = true
+
+    void audio.play().then(() => {
+      pendingPlayRef.current = false
+    }).catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return
+      }
+
+      pendingPlayRef.current = false
+      setIsPlaying(false)
+    })
+  }, [])
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio || !resolvedTrack) return
+    if (lastLoadedTrackIdRef.current === resolvedTrack.trackId && audio.src === resolvedTrack.src) return
+
+    lastLoadedTrackIdRef.current = resolvedTrack.trackId
+    pendingPlayRef.current = isPlaying
+    audio.src = resolvedTrack.src
+    audio.load()
+  }, [isPlaying, resolvedTrack])
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+
+    audio.volume = 1
+    audio.muted = muted
+  }, [muted])
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio || !resolvedTrack) return
+
+    if (isPlaying) {
+      if (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+        attemptPlayback()
+      } else {
+        pendingPlayRef.current = true
+      }
+      return
+    }
+
+    pendingPlayRef.current = false
+    audio.pause()
+  }, [attemptPlayback, isPlaying, resolvedTrack])
 
   useEffect(() => {
     syncPlayerState({
@@ -41,8 +178,9 @@ function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
 
   useEffect(() => {
     if (!currentTrack || !isPlaying) return
-    if (lastRecordedTrackId.current === currentTrack.id) return
-    lastRecordedTrackId.current = currentTrack.id
+    if (lastRecordedTrackIdRef.current === currentTrack.id) return
+
+    lastRecordedTrackIdRef.current = currentTrack.id
     void recordPlay(currentTrack)
   }, [currentTrack, isPlaying, recordPlay])
 
@@ -56,7 +194,7 @@ function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
       },
       resolveTrackContext,
     )
-  }, [currentTrack, isPlaying, currentTime, duration])
+  }, [currentTrack, currentTime, duration, isPlaying])
 
   useEffect(() => {
     return () => {
@@ -64,15 +202,14 @@ function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
     }
   }, [])
 
-  // Auto-radio: when the last queued track is past 80% playback, request a fresh
-  // batch and append it. The autoRadio module handles cooldown and dedup.
   useEffect(() => {
     if (!currentTrack) return
-    if (currentIndex !== tracks.length - 1) return
+    if (currentIndex !== playableTracks.length - 1) return
     if (duration <= 0) return
     if (currentTime / duration < 0.8) return
+
     void maybeFillAutoRadio(currentTrack)
-  }, [currentTrack, currentIndex, currentTime, duration, tracks.length])
+  }, [currentIndex, currentTime, currentTrack, duration, playableTracks.length])
 
   useEffect(() => {
     if (!('mediaSession' in navigator)) return
@@ -91,10 +228,10 @@ function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
     }
 
     const actions: Array<['play' | 'pause' | 'previoustrack' | 'nexttrack', () => void]> = [
-      ['play', () => togglePlay()],
-      ['pause', () => togglePlay()],
-      ['previoustrack', () => prev()],
-      ['nexttrack', () => next()],
+      ['play', () => setIsPlaying(true)],
+      ['pause', () => setIsPlaying(false)],
+      ['previoustrack', handlePrevious],
+      ['nexttrack', handleNext],
     ]
 
     for (const [action, handler] of actions) {
@@ -113,22 +250,131 @@ function PlayerSessionChip({ tracks }: { tracks: Track[] }) {
           playbackRate: 1,
         })
       } catch {
-        // Older Android builds can reject position state updates.
+        // Some platforms reject position state updates.
       }
     }
-  }, [artworkUrl, currentTime, currentTrack, duration, isPlaying, next, prev, togglePlay])
+  }, [artworkUrl, currentTime, currentTrack, duration, handleNext, handlePrevious, isPlaying])
+
+  if (!resolvedTrack || !currentTrack) return null
 
   return (
-    <div className="workspace-player-chip">
-      <button
-        type="button"
-        className="workspace-player-chip__toggle"
-        onClick={() => setPlayerOpen(true)}
-        aria-label={`Open queue (${playList.length} tracks)`}
-        title="Open queue"
-      >
-        <ListMusic size={18} />
-      </button>
+    <div className="workspace-player pointer-events-auto mx-auto max-w-[980px]">
+      <audio
+        ref={audioRef}
+        preload="metadata"
+        onLoadStart={() => {
+          setCurrentTime(0)
+          setDuration(0)
+        }}
+        onCanPlay={() => {
+          if (pendingPlayRef.current || isPlaying) {
+            attemptPlayback()
+          }
+        }}
+        onLoadedMetadata={(event) => setDuration(event.currentTarget.duration || 0)}
+        onDurationChange={(event) => setDuration(event.currentTarget.duration || 0)}
+        onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+        onPlay={() => {
+          pendingPlayRef.current = false
+          setIsPlaying(true)
+        }}
+        onPause={() => {
+          if (pendingPlayRef.current) return
+          setIsPlaying(false)
+        }}
+        onEnded={() => {
+          const nextTrack = playlist[currentIndex + 1]
+          if (nextTrack) {
+            setActiveTrackId(nextTrack.trackId)
+            setIsPlaying(true)
+            return
+          }
+
+          setIsPlaying(false)
+        }}
+      />
+
+      <div className="workspace-player__card">
+        <div className="workspace-player__header">
+          <div className="workspace-player__identity">
+            <div className="workspace-player__artwork">
+              {artworkUrl ? (
+                <img src={artworkUrl} alt="" className="workspace-player__artwork-image" />
+              ) : (
+                <div className="workspace-player__artwork-fallback">♪</div>
+              )}
+            </div>
+
+            <div className="workspace-player__copy">
+              <p className="workspace-player__title">{currentTrack.title}</p>
+              <p className="workspace-player__artist">{currentTrack.artist}</p>
+            </div>
+          </div>
+
+        </div>
+
+        <div className="workspace-player__transport">
+          <div className="workspace-player__transport-side workspace-player__transport-side--left">
+            <PlayerIconButton
+              label={muted ? 'Unmute playback' : 'Mute playback'}
+              onClick={() => setMuted((current) => !current)}
+            >
+              {volumeIcon}
+            </PlayerIconButton>
+          </div>
+
+          <div className="workspace-player__transport-center">
+            <PlayerIconButton label="Previous track" onClick={handlePrevious}>
+              <SkipBack size={18} strokeWidth={2.05} />
+            </PlayerIconButton>
+            <PlayerIconButton
+              label={isPlaying ? 'Pause' : 'Play'}
+              onClick={() => setIsPlaying((current) => !current)}
+              large
+            >
+              {isPlaying ? <Pause size={20} strokeWidth={2.1} /> : <Play size={20} strokeWidth={2.1} />}
+            </PlayerIconButton>
+            <PlayerIconButton label="Next track" onClick={handleNext}>
+              <SkipForward size={18} strokeWidth={2.05} />
+            </PlayerIconButton>
+          </div>
+
+          <div className="workspace-player__transport-side workspace-player__transport-side--right">
+            <PlayerIconButton
+              label={`Open queue (${playlist.length} tracks)`}
+              onClick={() => {
+                const active = document.activeElement instanceof Element ? document.activeElement : null
+                setPlayerOpen(true, rectFromElement(active))
+              }}
+            >
+              <ListMusic size={18} strokeWidth={2.05} />
+            </PlayerIconButton>
+          </div>
+        </div>
+
+        <div className="workspace-player__progress">
+          <span className="workspace-player__time">{formatTime(currentTime)}</span>
+          <label className="workspace-player__seekbar">
+            <span className="workspace-player__seekbar-track" aria-hidden="true">
+              <span
+                className="workspace-player__seekbar-fill"
+                style={{ transform: `scaleX(${progressRatio})` }}
+              />
+            </span>
+            <input
+              className="workspace-player__seekbar-input"
+              type="range"
+              min="0"
+              max={duration || 0}
+              step="0.1"
+              value={Math.min(currentTime, duration || 0)}
+              onChange={(event) => handleSeek(Number(event.target.value))}
+              aria-label="Seek playback"
+            />
+          </label>
+          <span className="workspace-player__time">{formatTime(duration)}</span>
+        </div>
+      </div>
     </div>
   )
 }
@@ -137,55 +383,19 @@ export default function WorkspacePlayer() {
   const tracks = usePlaybackSessionStore((state) => state.tracks)
   const sessionId = usePlaybackSessionStore((state) => state.sessionId)
   const startIndex = usePlaybackSessionStore((state) => state.startIndex)
+  const requestedTrackId = usePlaybackSessionStore((state) => state.requestedTrackId)
   const setErrorMessage = usePlaybackSessionStore((state) => state.setErrorMessage)
 
-  const { playableTracks, playlist, currentPlayId, errors, loading } = useResolvedPlayerTracks(
+  const { playableTracks, playlist, currentIndex: resolvedStartIndex, errors, loading } = useResolvedPlayerTracks(
     tracks,
     sessionId,
     startIndex,
+    requestedTrackId,
   )
 
   useEffect(() => {
     setErrorMessage(errors[0] || null)
   }, [errors, setErrorMessage])
-
-  const placement = useMemo(
-    () =>
-      ({
-        player: 'static',
-        playList: 'top',
-        interface: {
-          customComponentsArea: {
-            sessionMeta: 'row1-10',
-          },
-        } as InterfacePlacement<11>,
-      }) as const,
-    [],
-  )
-
-  const activeUI = useMemo(
-    () => ({
-      artwork: true,
-      playButton: true,
-      prevNnext: true,
-      volume: true,
-      repeatType: true,
-      trackTime: true,
-      trackInfo: true,
-      progress: 'bar' as const,
-      playList: false as const,
-    }),
-    [],
-  )
-
-  const audioInitialState = useMemo(
-    () => ({
-      curPlayId: currentPlayId,
-      isPlaying: true,
-      volume: 1,
-    }),
-    [currentPlayId],
-  )
 
   if (tracks.length === 0) return null
 
@@ -199,27 +409,16 @@ export default function WorkspacePlayer() {
     )
   }
 
-  if (playlist.length === 0) {
-    return null
-  }
+  if (playlist.length === 0) return null
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-2 z-30 px-4">
-      <div className="pointer-events-auto mx-auto max-w-[980px] overflow-hidden rounded-[36px] border border-black/10 bg-[#ebebed]/90 shadow-[0_4px_32px_rgba(17,17,22,0.12)] backdrop-blur-xl backdrop-saturate-150">
-        <AudioPlayer<11>
-          key={sessionId}
-          playList={playlist}
-          colorScheme="light"
-          rootContainerProps={{ className: 'workspace-player workspace-player--floating workspace-player--glass deezer-player' }}
-          placement={placement}
-          activeUI={activeUI}
-          audioInitialState={audioInitialState}
-        >
-          <AudioPlayer.CustomComponent id="sessionMeta">
-            <PlayerSessionChip tracks={playableTracks} />
-          </AudioPlayer.CustomComponent>
-        </AudioPlayer>
-      </div>
+      <PlayerRuntime
+        key={sessionId}
+        playableTracks={playableTracks}
+        playlist={playlist}
+        startIndex={resolvedStartIndex}
+      />
     </div>
   )
 }

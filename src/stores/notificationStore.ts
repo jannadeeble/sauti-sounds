@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { db } from '../db'
+import { hydrateAppStateFromBackend, pushAppStateSnapshot } from '../lib/appStateSync'
 import type { AppNotification, NotificationKind } from '../types'
 
 interface NotificationInput {
@@ -26,6 +27,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   notifications: [],
 
   loadNotifications: async () => {
+    await hydrateAppStateFromBackend()
     const notifications = await readAll()
     set({ notifications })
   },
@@ -40,6 +42,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       createdAt: now,
     }
     await db.notifications.put(notification)
+    await pushAppStateSnapshot()
     set({ notifications: [notification, ...get().notifications] })
     return notification
   },
@@ -49,6 +52,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     if (!existing || existing.readAt) return
     const updated = { ...existing, readAt: Date.now() }
     await db.notifications.put(updated)
+    await pushAppStateSnapshot()
     set({
       notifications: get().notifications.map(n => n.id === id ? updated : n),
     })
@@ -60,6 +64,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     if (unread.length === 0) return
     const updated = unread.map(n => ({ ...n, readAt: now }))
     await db.notifications.bulkPut(updated)
+    await pushAppStateSnapshot()
     set({
       notifications: get().notifications.map(n => n.readAt ? n : { ...n, readAt: now }),
     })
@@ -67,11 +72,13 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   remove: async (id) => {
     await db.notifications.delete(id)
+    await pushAppStateSnapshot()
     set({ notifications: get().notifications.filter(n => n.id !== id) })
   },
 
   clearAll: async () => {
     await db.notifications.clear()
+    await pushAppStateSnapshot()
     set({ notifications: [] })
   },
 }))

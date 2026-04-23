@@ -1,7 +1,6 @@
-import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import {
   ChevronRight,
-  Disc3,
   Play,
   Plus,
   Radio,
@@ -13,19 +12,25 @@ import {
 } from 'lucide-react'
 import AIModalHost from './AIModalHost'
 import BatchActionsBar from './BatchActionsBar'
-import PlaylistFooterPanel from './PlaylistFooterPanel'
-import PlaylistDoctorPanel from './PlaylistDoctorPanel'
 import BottomSheet from './BottomSheet'
 import HomeSuggestions from './HomeSuggestions'
 import ImportPanel, { type ImportDoneResult } from './ImportPanel'
-import PlaylistGeneratorPanel from './PlaylistGeneratorPanel'
 import NotificationBell from './NotificationBell'
-import PlaylistTree from './PlaylistTree'
+import PlaylistGeneratorPanel from './PlaylistGeneratorPanel'
 import QueueSheet from './QueueSheet'
 import SettingsPanel from './SettingsPanel'
 import TrackRow, { type TrackAction } from './TrackRow'
 import WorkspacePlayer from './WorkspacePlayer'
+import {
+  getPersistentUiState,
+  hydrateAppStateFromBackend,
+  pushAppStateSnapshot,
+  setPersistentUiState,
+} from '../lib/appStateSync'
 import { useTrackArtworkUrl } from '../lib/artwork'
+import { rectFromElement, type RectLike } from '../lib/rect'
+import { searchTidal } from '../lib/tidal'
+import { runTagJob } from '../lib/tagJob'
 import { useHistoryStore } from '../stores/historyStore'
 import { useLibraryStore } from '../stores/libraryStore'
 import { useMixStore } from '../stores/mixStore'
@@ -33,86 +38,42 @@ import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
 import { usePlaylistStore } from '../stores/playlistStore'
 import { useSelectionStore } from '../stores/selectionStore'
 import { useTasteStore } from '../stores/tasteStore'
-import { searchTidal } from '../lib/tidal'
-import { runTagJob } from '../lib/tagJob'
-import { usePlaylistGeneratorStore } from '../stores/playlistGeneratorStore'
 import { useTidalStore } from '../stores/tidalStore'
-import type { Playlist, PlaylistFolder, Track } from '../types'
+import type { Playlist, Track } from '../types'
 
 type WorkspaceTab = 'home' | 'library'
-type LibraryFilter = 'all' | 'tidal' | 'local' | 'playlists' | 'artists'
+type LibraryFilter = 'tracks' | 'playlists' | 'artists'
 type LibrarySort = 'recent' | 'title' | 'artist'
 
-const EMPTY_ARTWORK = { artworkBlob: undefined, artworkUrl: undefined }
-const panelClass = 'rounded-[28px] border border-black/8 bg-white shadow-[0_1px_0_rgba(17,17,22,0.03)]'
-const mutedPanelClass = 'rounded-[22px] border border-black/6 bg-[#f8f8f9]'
+type ModalState =
+  | { kind: 'search'; originRect: RectLike | null }
+  | { kind: 'upload'; originRect: RectLike | null }
+  | { kind: 'settings'; originRect: RectLike | null }
+  | { kind: 'generator'; originRect: RectLike | null }
+  | { kind: 'artist'; originRect: RectLike | null; artist: string }
+  | { kind: 'playlist'; originRect: RectLike | null; playlistKind: 'app' | 'tidal'; playlistId: string }
+
+const WORKSPACE_TAB_VALUES: readonly WorkspaceTab[] = ['home', 'library']
+const LIBRARY_FILTER_VALUES: readonly LibraryFilter[] = ['tracks', 'playlists', 'artists']
 
 const LIBRARY_FILTERS: { value: LibraryFilter; label: string }[] = [
   { value: 'playlists', label: 'Playlists' },
   { value: 'artists', label: 'Artists' },
-  { value: 'all', label: 'Tracks' },
+  { value: 'tracks', label: 'Tracks' },
 ]
 
-const ACTIVE_TAB_STORAGE_KEY = 'sauti.activeTab'
-const LIBRARY_FILTER_STORAGE_KEY = 'sauti.libraryFilter'
-const WORKSPACE_TAB_VALUES: readonly WorkspaceTab[] = ['home', 'library']
-const LIBRARY_FILTER_VALUES: readonly LibraryFilter[] = ['all', 'playlists', 'artists']
-
-function readStoredValue<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
-  if (typeof window === 'undefined') return fallback
-  try {
-    const raw = window.localStorage.getItem(key)
-    if (raw && (allowed as readonly string[]).includes(raw)) {
-      return raw as T
-    }
-  } catch {
-    // ignore storage failures (private mode, quota, etc.)
-  }
-  return fallback
-}
-
-function writeStoredValue(key: string, value: string) {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(key, value)
-  } catch {
-    // ignore
-  }
-}
-
-interface HeroAction {
-  label: string
-  icon: ReactNode
-  onClick: () => void
-  accent?: boolean
-  disabled?: boolean
-}
-
-function formatPlaylistCount(playlist: Playlist) {
-  return playlist.trackCount ?? playlist.items.length
-}
-
 export default function WorkspaceShell() {
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>(() =>
-    readStoredValue(ACTIVE_TAB_STORAGE_KEY, WORKSPACE_TAB_VALUES, 'home'),
-  )
-  const [showImport, setShowImport] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
-  const [showSearch, setShowSearch] = useState(false)
-  const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>(() =>
-    readStoredValue(LIBRARY_FILTER_STORAGE_KEY, LIBRARY_FILTER_VALUES, 'all'),
-  )
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('home')
+  const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('tracks')
   const [librarySort, setLibrarySort] = useState<LibrarySort>('recent')
-  const [selectedArtist, setSelectedArtist] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [tidalResults, setTidalResults] = useState<Track[]>([])
   const [tidalLoading, setTidalLoading] = useState(false)
   const [tidalSearched, setTidalSearched] = useState(false)
   const [importNotice, setImportNotice] = useState<string | null>(null)
   const [highlightedImportIds, setHighlightedImportIds] = useState<string[]>([])
-  const mainContentRef = useRef<HTMLElement | null>(null)
-  const tabButtonRefs = useRef<Record<WorkspaceTab, HTMLButtonElement | null>>({ home: null, library: null })
-  const [tabHighlight, setTabHighlight] = useState({ left: 0, width: 0, opacity: 0 })
+  const [modal, setModal] = useState<ModalState | null>(null)
+  const [prefsReady, setPrefsReady] = useState(false)
 
   const tracks = useLibraryStore((state) => state.tracks)
   const libraryLoading = useLibraryStore((state) => state.loading)
@@ -124,7 +85,6 @@ export default function WorkspaceShell() {
 
   const {
     appPlaylists,
-    appPlaylistFolders,
     tidalPlaylists,
     tidalPlaylistDetails,
     loadPlaylists,
@@ -132,48 +92,26 @@ export default function WorkspaceShell() {
     createAppPlaylist,
     createProviderPlaylist,
     deleteAppPlaylist,
-    loading: playlistsLoading,
+    renameAppPlaylist,
     moveAppPlaylistItem,
     removeTrackFromPlaylist,
-    renameAppPlaylist,
   } = usePlaylistStore()
 
   const tidalConnected = useTidalStore((state) => state.tidalConnected)
-
   const selectedPlaylist = usePlaybackSessionStore((state) => state.selectedPlaylist)
-  const selectPlaylist = usePlaybackSessionStore((state) => state.selectPlaylist)
   const playPlaylist = usePlaybackSessionStore((state) => state.playPlaylist)
   const playTracks = usePlaybackSessionStore((state) => state.playTracks)
   const errorMessage = usePlaybackSessionStore((state) => state.errorMessage)
   const playerOpen = usePlaybackSessionStore((state) => state.playerOpen)
   const setPlayerOpen = usePlaybackSessionStore((state) => state.setPlayerOpen)
-  const playerQueueCount = usePlaybackSessionStore((state) => state.tracks.length)
 
   const loadHistory = useHistoryStore((state) => state.loadHistory)
   const historyEntries = useHistoryStore((state) => state.entries)
-
   const loadMixes = useMixStore((state) => state.load)
   const loadTasteProfile = useTasteStore((state) => state.load)
 
   const selecting = useSelectionStore((state) => state.selecting)
   const exitSelection = useSelectionStore((state) => state.exit)
-
-  useLayoutEffect(() => {
-    const updateTabHighlight = () => {
-      const activeButton = tabButtonRefs.current[activeTab]
-      if (!activeButton) return
-
-      setTabHighlight({
-        left: activeButton.offsetLeft,
-        width: activeButton.offsetWidth,
-        opacity: 1,
-      })
-    }
-
-    updateTabHighlight()
-    window.addEventListener('resize', updateTabHighlight)
-    return () => window.removeEventListener('resize', updateTabHighlight)
-  }, [activeTab])
 
   useEffect(() => {
     void loadTracks()
@@ -181,119 +119,71 @@ export default function WorkspaceShell() {
     void loadHistory()
     void loadMixes()
     void loadTasteProfile()
-  }, [loadPlaylists, loadTracks, loadHistory, loadMixes, loadTasteProfile])
+  }, [loadHistory, loadMixes, loadPlaylists, loadTasteProfile, loadTracks])
 
   const trackCount = tracks.length
-  const lastTagKick = useRef(0)
   useEffect(() => {
     if (!trackCount) return
-    // Debounce: once library loads (or grows), fire the tagger in the
-    // background. The job itself coalesces so repeated calls are cheap.
-    if (Date.now() - lastTagKick.current < 2000) return
-    lastTagKick.current = Date.now()
     void runTagJob()
-
-    // Catch-up: if a bunch of tracks are already tagged but we never built a
-    // taste profile (older install, migration, etc.), kick a rebuild now.
-    const tasteState = useTasteStore.getState()
-    const tagged = tracks.filter((t) => !!t.tags).length
-    if (!tasteState.profile && !tasteState.rebuilding && tagged >= 20) {
-      void tasteState.rebuild(tracks)
-    }
-  }, [trackCount, tracks])
+  }, [trackCount])
 
   useEffect(() => {
-    writeStoredValue(ACTIVE_TAB_STORAGE_KEY, activeTab)
-  }, [activeTab])
+    void hydrateAppStateFromBackend()
+      .then(() => {
+        const persisted = getPersistentUiState()
+        if (persisted.activeTab && WORKSPACE_TAB_VALUES.includes(persisted.activeTab)) {
+          setActiveTab(persisted.activeTab)
+        }
+        if (persisted.libraryFilter && LIBRARY_FILTER_VALUES.includes(persisted.libraryFilter)) {
+          setLibraryFilter(persisted.libraryFilter)
+        }
+      })
+      .finally(() => {
+        setPrefsReady(true)
+      })
+  }, [])
 
   useEffect(() => {
-    writeStoredValue(LIBRARY_FILTER_STORAGE_KEY, libraryFilter)
-  }, [libraryFilter])
+    if (!prefsReady) return
+    setPersistentUiState({ activeTab })
+    void pushAppStateSnapshot()
+  }, [activeTab, prefsReady])
 
   useEffect(() => {
-    if (selectedPlaylist?.kind === 'tidal' && !tidalPlaylistDetails[selectedPlaylist.id]) {
-      void loadTidalPlaylistDetail(selectedPlaylist.id)
-    }
-  }, [loadTidalPlaylistDetail, selectedPlaylist, tidalPlaylistDetails])
+    if (!prefsReady) return
+    setPersistentUiState({ libraryFilter })
+    void pushAppStateSnapshot()
+  }, [libraryFilter, prefsReady])
 
   useEffect(() => {
     if (activeTab !== 'library' && selecting) {
       exitSelection()
     }
-  }, [activeTab, selecting, exitSelection])
+  }, [activeTab, exitSelection, selecting])
+
+  useEffect(() => {
+    const playlistModal = modal?.kind === 'playlist' ? modal : null
+    if (playlistModal?.playlistKind === 'tidal' && !tidalPlaylistDetails[playlistModal.playlistId]) {
+      void loadTidalPlaylistDetail(playlistModal.playlistId)
+    }
+  }, [loadTidalPlaylistDetail, modal, tidalPlaylistDetails])
 
   useEffect(() => {
     if (!importNotice && highlightedImportIds.length === 0) return
-
     const timeoutId = window.setTimeout(() => {
       setImportNotice(null)
       setHighlightedImportIds([])
     }, 4200)
-
     return () => window.clearTimeout(timeoutId)
   }, [highlightedImportIds, importNotice])
 
-  const trackFilter = (track: Track) => {
-    if (libraryFilter === 'local' || libraryFilter === 'tidal') {
-      return track.source === libraryFilter
-    }
-    return true
-  }
-
   const libraryTrackIds = useMemo(() => new Set(tracks.map((track) => track.id)), [tracks])
-
-  const sortedTracks = useMemo(() => {
-    const filtered = tracks.filter(trackFilter)
-    const next = [...filtered]
-    if (librarySort === 'title') {
-      next.sort((left, right) => left.title.localeCompare(right.title))
-    } else if (librarySort === 'artist') {
-      next.sort((left, right) => left.artist.localeCompare(right.artist))
-    } else {
-      next.sort((left, right) => (right.addedAt || 0) - (left.addedAt || 0))
-    }
-
-    return next
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [libraryFilter, librarySort, tracks])
-
-  const localSearchResults = useMemo(() => {
-    if (!query.trim()) return []
-    const needle = query.toLowerCase()
-    return tracks.filter((track) =>
-      [track.title, track.artist, track.album, track.genre]
-        .filter(Boolean)
-        .some((value) => value!.toLowerCase().includes(needle)),
-    )
-  }, [query, tracks])
-
-  const selectedAppPlaylist = selectedPlaylist?.kind === 'app'
-    ? appPlaylists.find((playlist) => playlist.id === selectedPlaylist.id)
-    : undefined
 
   const trackById = useMemo(() => new Map(tracks.map((track) => [track.id, track])), [tracks])
   const providerTrackById = useMemo(
     () => new Map(tracks.filter((track) => track.providerTrackId).map((track) => [track.providerTrackId!, track])),
     [tracks],
   )
-
-  const appPlaylistTracks = useMemo(() => {
-    if (!selectedAppPlaylist) return []
-
-    return selectedAppPlaylist.items
-      .map((item, index) => {
-        const track = item.source === 'local'
-          ? trackById.get(item.trackId)
-          : providerTrackById.get(item.providerTrackId)
-
-        return track ? { item, track, index } : null
-      })
-      .filter((value): value is { item: Playlist['items'][number]; track: Track; index: number } => value !== null)
-  }, [providerTrackById, selectedAppPlaylist, trackById])
-
-  const selectedTidalDetail = selectedPlaylist?.kind === 'tidal'
-    ? tidalPlaylistDetails[selectedPlaylist.id]
-    : undefined
 
   const artistGroups = useMemo(() => {
     const groups = new Map<string, Track[]>()
@@ -306,11 +196,6 @@ export default function WorkspaceShell() {
       .map(([artist, list]) => ({ artist, tracks: list }))
       .sort((a, b) => a.artist.localeCompare(b.artist))
   }, [tracks])
-
-  const selectedArtistTracks = useMemo(() => {
-    if (!selectedArtist) return []
-    return tracks.filter((track) => (track.artist || 'Unknown artist') === selectedArtist)
-  }, [tracks, selectedArtist])
 
   const recentTracks = useMemo(() => {
     if (historyEntries.length > 0) {
@@ -344,14 +229,85 @@ export default function WorkspaceShell() {
       .slice(0, 8)
   }, [historyEntries, tracks])
 
-  const desktopPlaylistLinks = appPlaylists.slice(0, 6)
+  const sortedTracks = useMemo(() => {
+    const next = [...tracks]
+    if (librarySort === 'title') {
+      next.sort((left, right) => left.title.localeCompare(right.title))
+    } else if (librarySort === 'artist') {
+      next.sort((left, right) => left.artist.localeCompare(right.artist))
+    } else {
+      next.sort((left, right) => (right.addedAt || 0) - (left.addedAt || 0))
+    }
+    return next
+  }, [librarySort, tracks])
+
+  const localSearchResults = useMemo(() => {
+    if (!query.trim()) return []
+    const needle = query.toLowerCase()
+    return tracks.filter((track) =>
+      [track.title, track.artist, track.album, track.genre]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(needle)),
+    )
+  }, [query, tracks])
+
+  const playlistRows = useMemo(() => {
+    const app = appPlaylists.map((playlist) => ({
+      ...playlist,
+      label: playlist.origin === 'generated' ? 'Generated' : playlist.origin === 'imported' ? 'Imported' : 'Playlist',
+      trackCount: playlist.trackCount ?? playlist.items.length,
+      sourceKind: 'app' as const,
+    }))
+    const tidal = tidalPlaylists
+      .filter((playlist) => Boolean(playlist.providerPlaylistId))
+      .map((playlist) => ({
+        ...playlist,
+        id: playlist.providerPlaylistId!,
+        label: 'TIDAL',
+        trackCount: playlist.trackCount ?? playlist.items.length,
+        sourceKind: 'tidal' as const,
+      }))
+    return [...app, ...tidal].sort((left, right) => right.updatedAt - left.updatedAt)
+  }, [appPlaylists, tidalPlaylists])
+
+  const artistModal = modal?.kind === 'artist' ? modal : null
+  const artistModalTracks = useMemo(() => {
+    if (!artistModal) return []
+    return tracks.filter((track) => (track.artist || 'Unknown artist') === artistModal.artist)
+  }, [artistModal, tracks])
+
+  const playlistModal = modal?.kind === 'playlist' ? modal : null
+  const selectedAppPlaylist = playlistModal?.playlistKind === 'app'
+    ? appPlaylists.find((playlist) => playlist.id === playlistModal.playlistId)
+    : undefined
+  const appPlaylistTracks = useMemo(() => {
+    if (!selectedAppPlaylist) return []
+    return selectedAppPlaylist.items
+      .map((item, index) => {
+        const track = item.source === 'local'
+          ? trackById.get(item.trackId)
+          : providerTrackById.get(item.providerTrackId)
+
+        return track ? { item, track, index } : null
+      })
+      .filter((value): value is { item: Playlist['items'][number]; track: Track; index: number } => value !== null)
+  }, [providerTrackById, selectedAppPlaylist, trackById])
+  const selectedTidalDetail = playlistModal?.playlistKind === 'tidal'
+    ? tidalPlaylistDetails[playlistModal.playlistId]
+    : undefined
+
+  function openModal(kind: ModalState['kind'], originRect: RectLike | null, payload?: Partial<ModalState>) {
+    setModal({ kind, originRect, ...(payload ?? {}) } as ModalState)
+  }
+
+  function closeModal() {
+    setModal(null)
+  }
 
   async function handleTidalSearch() {
     if (!query.trim() || !tidalConnected) return
-
     setTidalLoading(true)
     setTidalSearched(true)
-
     try {
       const results = await searchTidal(query)
       setTidalResults(results.tracks)
@@ -369,17 +325,13 @@ export default function WorkspaceShell() {
 
     if (kind === 'app') {
       const playlist = await createAppPlaylist(name.trim())
-      selectPlaylist({ kind: 'app', id: playlist.id })
-      setActiveTab('library')
-      setLibraryFilter('playlists')
+      openModal('playlist', null, { playlistKind: 'app', playlistId: playlist.id })
       return
     }
 
     const playlist = await createProviderPlaylist(name.trim())
     if (playlist.providerPlaylistId) {
-      selectPlaylist({ kind: 'tidal', id: playlist.providerPlaylistId })
-      setActiveTab('library')
-      setLibraryFilter('playlists')
+      openModal('playlist', null, { playlistKind: 'tidal', playlistId: playlist.providerPlaylistId })
     }
   }
 
@@ -388,24 +340,12 @@ export default function WorkspaceShell() {
     playPlaylist(kind, playlistId, playlistTracks, 0)
   }
 
-  function openSearch() {
-    setShowSearch(true)
-    setTidalSearched(false)
-  }
-
-  function closeSearch() {
-    setShowSearch(false)
-  }
-
   function finalizeImport(result?: ImportDoneResult) {
     const importedTracks = result?.importedTracks ?? []
-
-    setShowImport(false)
+    closeModal()
     setActiveTab('library')
-    selectPlaylist(undefined)
-    setLibraryFilter('all')
+    setLibraryFilter('tracks')
     setLibrarySort('recent')
-    setSelectedArtist(null)
 
     if (importedTracks.length > 0) {
       playTracks(importedTracks, 'library', 0)
@@ -419,23 +359,17 @@ export default function WorkspaceShell() {
 
     void loadTracks()
     void loadPlaylists()
-
-    window.requestAnimationFrame(() => {
-      mainContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
-    })
   }
 
   async function handleQuickImport() {
     if (!('showOpenFilePicker' in window)) {
-      setShowImport(true)
+      openModal('upload', null)
       return
     }
 
     const result = await importFiles()
     if (result.dedupeUncertain.length > 0) {
-      // The ImportPanel picks up pendingLocalSwaps from the store on mount
-      // and routes straight into the dedupe-review step.
-      setShowImport(true)
+      openModal('upload', null)
       return
     }
     if (result.tracks.length > 0) {
@@ -444,145 +378,67 @@ export default function WorkspaceShell() {
   }
 
   return (
-    <div className="workspace-shell">
-      <div className="mx-auto flex h-full max-w-[1560px] flex-col lg:grid lg:grid-cols-[220px_minmax(0,1fr)]">
-        <aside className="hidden min-h-0 flex-col border-r border-black/8 bg-[#fbfbfc] lg:flex">
-          <section className="mt-8 px-6">
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-[#8b8c95]">Playlists</p>
-              <span className="text-xs text-[#8b8c95]">{appPlaylists.length}</span>
-            </div>
-            <div className="space-y-1.5">
-              {desktopPlaylistLinks.length === 0 ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('library')
-                    setLibraryFilter('playlists')
-                    void handleCreatePlaylist('app')
-                  }}
-                  className="flex w-full items-center justify-between rounded-2xl border border-dashed border-black/10 px-4 py-3 text-left text-sm text-[#686973] transition-colors hover:border-black/16 hover:bg-white"
-                >
-                  <span>Create your first playlist</span>
-                  <Plus size={14} />
-                </button>
-              ) : (
-                desktopPlaylistLinks.map((playlist) => (
-                  <button
-                    key={playlist.id}
-                    type="button"
-                    onClick={() => {
-                      setActiveTab('library')
-                      setLibraryFilter('playlists')
-                      selectPlaylist({ kind: 'app', id: playlist.id })
-                    }}
-                    className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left transition-colors ${
-                      selectedPlaylist?.kind === 'app' && selectedPlaylist.id === playlist.id
-                        ? 'bg-[#fce5e8] text-[#111116]'
-                        : 'text-[#686973] hover:bg-white'
-                    }`}
-                  >
-                    <span className="truncate text-sm">{playlist.name}</span>
-                    <span className="text-xs">{formatPlaylistCount(playlist)}</span>
-                  </button>
-                ))
-              )}
-            </div>
-          </section>
-
-          <div className="mt-auto grid gap-2 p-4">
-            <SidebarUtilityButton
-              label={importing && importProgress ? `Uploading ${importProgress.current}/${importProgress.total}` : 'Upload'}
-              icon={<Upload size={16} />}
-              onClick={() => setShowImport(true)}
-            />
-            <SidebarUtilityButton
-              label="Settings"
-              icon={<Settings size={16} />}
-              onClick={() => setShowSettings(true)}
-            />
-          </div>
-        </aside>
-
-        <div className="min-h-0 flex-1 relative">
-          <header className="absolute inset-x-0 top-0 z-10 px-4 pt-3 pb-3 lg:px-8 lg:pt-4 lg:pb-4">
-            <div className="flex items-center justify-between gap-3 rounded-[36px] border border-black/10 bg-[#ebebed]/90 px-5 py-3 shadow-[0_4px_32px_rgba(17,17,22,0.12)] backdrop-blur-xl backdrop-saturate-150">
-              <div className="relative inline-flex items-center rounded-full border border-white/45 bg-white/55 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_12px_28px_rgba(17,17,22,0.08)] backdrop-blur-xl backdrop-saturate-150">
-                <div
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-y-1 left-0 rounded-full border border-black/8 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(244,244,246,0.9))] shadow-[0_8px_18px_rgba(17,17,22,0.08),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-md transition-[width,transform,opacity] duration-300 ease-out"
-                  style={{
-                    width: `${tabHighlight.width}px`,
-                    transform: `translateX(${tabHighlight.left}px)`,
-                    opacity: tabHighlight.opacity,
-                  }}
-                />
-                <button
-                  type="button"
-                  aria-pressed={activeTab === 'home'}
-                  onClick={() => { setActiveTab('home'); selectPlaylist(undefined) }}
-                  ref={(node) => { tabButtonRefs.current.home = node }}
-                  className={`relative z-10 rounded-full px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/10 focus-visible:ring-offset-2 focus-visible:ring-offset-[#ebebed] ${
-                    activeTab === 'home' ? 'text-[#111116]' : 'text-[#555661] hover:text-[#111116]'
-                  }`}
-                >
-                  Home
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={activeTab === 'library'}
-                  onClick={() => { setActiveTab('library'); selectPlaylist(undefined) }}
-                  ref={(node) => { tabButtonRefs.current.library = node }}
-                  className={`relative z-10 rounded-full px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/10 focus-visible:ring-offset-2 focus-visible:ring-offset-[#ebebed] ${
-                    activeTab === 'library' ? 'text-[#111116]' : 'text-[#555661] hover:text-[#111116]'
-                  }`}
-                >
-                  Library
-                </button>
-              </div>
-              <div className="flex items-center gap-2">
-                <TopbarActionButton label="Upload" icon={<Upload size={16} />} onClick={() => setShowImport(true)} />
-                <NotificationBell />
-                <TopbarActionButton label="Settings" icon={<Settings size={16} />} onClick={() => setShowSettings(true)} />
+    <div className="workspace-shell min-h-screen">
+      <div className="min-h-screen">
+        <div className="mx-auto flex min-h-screen max-w-[1460px] flex-col px-4 pb-[12rem] pt-4 sm:px-6 lg:px-8">
+          <header className="sticky top-4 z-20">
+            <div className="sauti-glass-panel rounded-[32px] px-3 py-3 sm:px-4">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/6 p-1">
+                  <TabButton active={activeTab === 'home'} onClick={() => setActiveTab('home')}>Home</TabButton>
+                  <TabButton active={activeTab === 'library'} onClick={() => setActiveTab('library')}>Library</TabButton>
+                </div>
+                <div className="hidden min-w-0 flex-1 pl-2 text-left lg:block">
+                  <p className="text-[11px] uppercase tracking-[0.28em] text-white/34">Sauti Sounds</p>
+                  <p className="mt-1 text-sm text-white/56">
+                    {activeTab === 'home'
+                      ? 'Recently played, suggestions, and your current taste graph.'
+                      : 'Tracks, artists, playlists, and synced collections.'}
+                  </p>
+                </div>
+                <div className="ml-auto flex items-center gap-2">
+                  <TopIconButton
+                    label="Search"
+                    icon={<Search size={15} />}
+                    onClick={(event) => openModal('search', rectFromElement(event.currentTarget))}
+                  />
+                  <TopIconButton
+                    label={importing && importProgress ? `Uploading ${importProgress.current}/${importProgress.total}` : 'Upload'}
+                    icon={<Upload size={15} />}
+                    onClick={(event) => openModal('upload', rectFromElement(event.currentTarget))}
+                  />
+                  <NotificationBell />
+                  <TopIconButton
+                    label="Settings"
+                    icon={<Settings size={15} />}
+                    onClick={(event) => openModal('settings', rectFromElement(event.currentTarget))}
+                  />
+                </div>
               </div>
             </div>
           </header>
 
-          <main
-            ref={mainContentRef}
-            className={`absolute inset-0 overflow-y-auto px-4 pb-[12rem] lg:px-8 ${
-              activeTab === 'library' ? 'pt-[94px] lg:pt-[108px]' : 'pt-[80px] lg:pt-[92px]'
-            }`}
-          >
+          <main className="flex-1 pt-8">
             <div className="space-y-8">
-              {errorMessage ? (
-                <div className="rounded-[22px] border border-[#f4c6cc] bg-[#fff4f6] px-5 py-4 text-sm text-[#8d3140]">
-                  {errorMessage}
-                </div>
-              ) : null}
+              {errorMessage ? <Banner>{errorMessage}</Banner> : null}
+              {importNotice ? <Banner>{importNotice}</Banner> : null}
 
-              {importNotice ? (
-                <div className="rounded-[22px] border border-[#f4c6cc] bg-[#fff4f6] px-5 py-4 text-sm text-[#8d3140]">
-                  {importNotice}
-                </div>
-              ) : null}
-
-              {importing && importProgress && !showImport ? (
-                <div className="rounded-[22px] border border-black/8 bg-[#f8f8f9] px-5 py-4">
-                  <div className="flex items-center justify-between gap-3">
+              {importing && importProgress && modal?.kind !== 'upload' ? (
+                <div className="rounded-[24px] border border-black/8 bg-white px-5 py-4 shadow-[0_1px_0_rgba(17,17,22,0.03)]">
+                  <div className="flex items-center justify-between gap-4">
                     <div>
-                      <p className="text-sm font-semibold text-[#111116]">Uploading to your library</p>
+                      <p className="text-sm font-medium text-[#111116]">Uploading music…</p>
                       <p className="mt-1 text-xs text-[#7a7b86]">
-                        Caching audio and artwork so the new tracks can play immediately.
+                        {importProgress.currentFile ? `Processing ${importProgress.currentFile}` : 'Preparing files'}
                       </p>
                     </div>
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#111116] shadow-[0_0_0_1px_rgba(17,17,22,0.06)]">
+                    <span className="text-xs text-[#8c8d96]">
                       {importProgress.current}/{importProgress.total}
                     </span>
                   </div>
-                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#efeff2]">
                     <div
-                      className="h-full rounded-full bg-accent transition-[width] duration-300"
+                      className="h-full rounded-full bg-[linear-gradient(90deg,#ef5466,#f36f7e)] transition-[width] duration-300"
                       style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
                     />
                   </div>
@@ -590,322 +446,357 @@ export default function WorkspaceShell() {
               ) : null}
 
               {activeTab === 'home' ? (
-                <HomeView
-                  recentTracks={recentTracks}
-                  onPlayTrack={(track, list) => playTracks(list, 'library', list.indexOf(track))}
-                  onPlayTracks={(list) => playTracks(list, 'library', 0)}
-                  onImport={() => void handleQuickImport()}
-                  onOpenLibrary={() => setActiveTab('library')}
-                />
+                <div className="space-y-8">
+                  <SectionHeader
+                    title="Recently played"
+                    subtitle="Jump straight back in"
+                    action={(
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('library')}
+                        className="text-sm font-medium text-accent transition-colors hover:text-accent-dark"
+                      >
+                        Open library
+                      </button>
+                    )}
+                  />
+
+                  {recentTracks.length === 0 ? (
+                    <EmptyState
+                      title="No plays yet"
+                      description="Upload music or connect TIDAL to start filling this surface."
+                      action={(
+                        <ActionButton accent icon={<Upload size={15} />} onClick={() => void handleQuickImport()}>
+                          Upload music
+                        </ActionButton>
+                      )}
+                    />
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
+                      {recentTracks.map((track) => (
+                        <RecentTrackCard
+                          key={track.id}
+                          track={track}
+                          onClick={() => playTracks(recentTracks, 'library', recentTracks.findIndex((item) => item.id === track.id))}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap gap-2">
+                    <ActionButton
+                      accent
+                      icon={<Sparkles size={15} />}
+                      onClick={(event) => openModal('generator', rectFromElement(event.currentTarget))}
+                    >
+                      Generate playlist
+                    </ActionButton>
+                    <ActionButton icon={<Upload size={15} />} onClick={() => void handleQuickImport()}>
+                      Quick import
+                    </ActionButton>
+                  </div>
+
+                  <HomeSuggestions onPlayTracks={(list) => playTracks(list, 'library', 0)} />
+                </div>
               ) : null}
 
               {activeTab === 'library' ? (
-                <section className="space-y-5 px-1 pt-3 sm:px-2">
+                <div className="space-y-6">
+                  <SectionHeader
+                    title="Library"
+                    subtitle={`${tracks.length} tracks · ${artistGroups.length} artists · ${playlistRows.length} playlists`}
+                    action={(
+                      <div className="flex flex-wrap gap-2">
+                        <ActionButton
+                          accent
+                          icon={<Sparkles size={15} />}
+                          onClick={(event) => openModal('generator', rectFromElement(event.currentTarget))}
+                        >
+                          Generate playlist
+                        </ActionButton>
+                        <ActionButton icon={<Plus size={15} />} onClick={() => void handleCreatePlaylist('app')}>
+                          New playlist
+                        </ActionButton>
+                      </div>
+                    )}
+                  />
+
                   <div className="flex flex-wrap items-center gap-3">
                     <div className="flex flex-wrap gap-2">
                       {LIBRARY_FILTERS.map((filter) => (
-                        <FilterPill
+                        <button
                           key={filter.value}
-                          active={libraryFilter === filter.value}
-                          onClick={() => {
-                            setLibraryFilter(filter.value)
-                            setSelectedArtist(null)
-                            if (filter.value !== 'playlists') selectPlaylist(undefined)
-                          }}
+                          type="button"
+                          data-active={libraryFilter === filter.value}
+                          onClick={() => setLibraryFilter(filter.value)}
+                          className="sauti-filter-pill"
                         >
                           {filter.label}
-                        </FilterPill>
+                        </button>
                       ))}
                     </div>
 
-                    {libraryFilter === 'all' ? (
-                      <div className="ml-auto flex items-center gap-2">
-                        <label className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-[#f8f8f9] px-3 py-2 text-sm text-[#686973]">
-                          <SlidersHorizontal size={14} />
-                          <select
-                            value={librarySort}
-                            onChange={(event) => setLibrarySort(event.target.value as LibrarySort)}
-                            className="bg-transparent outline-none"
-                          >
-                            <option value="recent">Recent</option>
-                            <option value="title">Title</option>
-                            <option value="artist">Artist</option>
-                          </select>
-                        </label>
-                      </div>
+                    {libraryFilter === 'tracks' ? (
+                      <label className="ml-auto inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-3 py-2 text-sm text-[#555661]">
+                        <SlidersHorizontal size={14} />
+                        <select
+                          value={librarySort}
+                          onChange={(event) => setLibrarySort(event.target.value as LibrarySort)}
+                          className="bg-transparent text-[#111116] outline-none"
+                        >
+                          <option value="recent">Recent</option>
+                          <option value="title">Title</option>
+                          <option value="artist">Artist</option>
+                        </select>
+                      </label>
                     ) : null}
                   </div>
 
-                  {libraryFilter === 'playlists' ? (
-                    selectedPlaylist ? (
-                      <PlaylistDetailView
-                        selectedPlaylist={selectedPlaylist}
-                        appPlaylists={appPlaylists}
-                        tidalPlaylists={tidalPlaylists}
-                        appPlaylistTracks={appPlaylistTracks}
-                        tidalDetail={selectedTidalDetail}
-                        onBack={() => selectPlaylist(undefined)}
-                        onPlayAppPlaylist={(playlistId, playlistTracks) => handlePlaylistPlayback('app', playlistId, playlistTracks)}
-                        onPlayTidalPlaylist={(playlistId, playlistTracks) => handlePlaylistPlayback('tidal', playlistId, playlistTracks)}
-                        onRenameAppPlaylist={(playlistId, currentName, currentDescription) => void renamePlaylist(playlistId, currentName, currentDescription, renameAppPlaylist)}
-                        onDeleteAppPlaylist={async (playlistId) => {
-                          if (!window.confirm('Delete this playlist?')) return
-                          await deleteAppPlaylist(playlistId)
-                          selectPlaylist(undefined)
-                        }}
-                        onMoveItem={(playlistId, fromIndex, toIndex) => void moveAppPlaylistItem(playlistId, fromIndex, toIndex)}
-                        onRemoveItem={(playlist, item, index) => void removeTrackFromPlaylist(playlist, item, index)}
+                  {libraryFilter === 'tracks' ? (
+                    libraryLoading && sortedTracks.length === 0 ? (
+                      <EmptyState
+                        title="Loading your library..."
+                        description="Reading tracks from the local cache before the list appears."
                       />
-                    ) : playlistsLoading && appPlaylists.length === 0 && tidalPlaylists.length === 0 ? (
-                      <EmptyPanel
-                        title="Loading playlists..."
-                        description="Fetching app playlists and any connected TIDAL collections."
+                    ) : sortedTracks.length === 0 ? (
+                      <EmptyState
+                        title="Your library is empty"
+                        description="Upload local files or connect TIDAL in Settings to fill the library."
+                        action={(
+                          <ActionButton accent icon={<Upload size={15} />} onClick={() => void handleQuickImport()}>
+                            Upload music
+                          </ActionButton>
+                        )}
                       />
                     ) : (
-                      <PlaylistCollectionsView
-                        appPlaylists={appPlaylists}
-                        appPlaylistFolders={appPlaylistFolders}
-                        tidalPlaylists={tidalPlaylists}
-                        onCreateAppPlaylist={() => void handleCreatePlaylist('app')}
-                        onOpen={(kind, id) => selectPlaylist({ kind, id })}
-                        onOpenGeneratedPlaylist={(playlistId) => {
-                          selectPlaylist({ kind: 'app', id: playlistId })
-                        }}
-                      />
-                    )
-                  ) : libraryFilter === 'artists' ? (
-                    selectedArtist ? (
-                      <SurfacePanel title={selectedArtist} meta={`${selectedArtistTracks.length} tracks`}>
-                        <div className="divide-y divide-black/6">
-                          {selectedArtistTracks.map((track, index) => (
+                      <SurfaceCard title="Tracks" meta={`${sortedTracks.length} tracks`}>
+                        <div className="divide-y divide-white/8">
+                          {sortedTracks.map((track, index) => (
                             <TrackRow
                               key={track.id}
                               track={track}
-                              tracks={selectedArtistTracks}
+                              tracks={sortedTracks}
                               playContext="library"
                               index={index}
+                              highlighted={highlightedImportIds.includes(track.id)}
                             />
                           ))}
                         </div>
-                      </SurfacePanel>
-                    ) : artistGroups.length === 0 ? (
-                      <EmptyPanel
+                      </SurfaceCard>
+                    )
+                  ) : null}
+
+                  {libraryFilter === 'artists' ? (
+                    artistGroups.length === 0 ? (
+                      <EmptyState
                         title="No artists yet"
                         description="Upload tracks or connect TIDAL to group your library by artist."
                       />
                     ) : (
-                      <ArtistsGrid groups={artistGroups} onSelect={setSelectedArtist} />
-                    )
-                  ) : libraryLoading && sortedTracks.length === 0 ? (
-                    <EmptyPanel
-                      title="Loading your library..."
-                      description="Reading tracks from the local cache before the list appears."
-                    />
-                  ) : sortedTracks.length === 0 ? (
-                    <EmptyPanel
-                      title="Your library is empty"
-                      description="Upload local files or connect TIDAL in Settings to fill the library."
-                      action={{
-                        label: 'Upload music',
-                        icon: <Upload size={15} />,
-                        onClick: () => void handleQuickImport(),
-                      }}
-                    />
-                  ) : (
-                    <SurfacePanel
-                      title={librarySort === 'recent' ? 'Recently added' : librarySort === 'title' ? 'A-Z' : 'Artists'}
-                      meta={`${sortedTracks.length} tracks`}
-                    >
-                      <div className="divide-y divide-black/6">
-                        {sortedTracks.map((track, index) => (
-                          <TrackRow
-                            key={track.id}
-                            track={track}
-                            tracks={sortedTracks}
-                            playContext="library"
-                            index={index}
-                            highlighted={highlightedImportIds.includes(track.id)}
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                        {artistGroups.map((group) => (
+                          <ArtistCard
+                            key={group.artist}
+                            artist={group.artist}
+                            tracks={group.tracks}
+                            onClick={(event) => openModal('artist', rectFromElement(event.currentTarget), { artist: group.artist })}
                           />
                         ))}
                       </div>
-                    </SurfacePanel>
-                  )}
-                </section>
+                    )
+                  ) : null}
+
+                  {libraryFilter === 'playlists' ? (
+                    playlistRows.length === 0 ? (
+                      <EmptyState
+                        title="No playlists yet"
+                        description="Create a playlist, generate one from a prompt, or connect TIDAL to pull in synced collections."
+                        action={(
+                          <ActionButton accent icon={<Plus size={15} />} onClick={() => void handleCreatePlaylist('app')}>
+                            New playlist
+                          </ActionButton>
+                        )}
+                      />
+                    ) : (
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                        {playlistRows.map((playlist) => (
+                          <PlaylistCard
+                            key={`${playlist.sourceKind}-${playlist.id}`}
+                            playlist={playlist}
+                            active={Boolean(selectedPlaylist?.kind === playlist.sourceKind && selectedPlaylist.id === playlist.id)}
+                            onOpen={(event) => openModal('playlist', rectFromElement(event.currentTarget), {
+                              playlistKind: playlist.sourceKind,
+                              playlistId: playlist.id,
+                            })}
+                            onPlay={() => {
+                              if (playlist.sourceKind === 'app') {
+                                const current = appPlaylists.find((candidate) => candidate.id === playlist.id)
+                                if (!current) return
+                                const playlistTracks = current.items
+                                  .map((item) => item.source === 'local'
+                                    ? trackById.get(item.trackId)
+                                    : providerTrackById.get(item.providerTrackId))
+                                  .filter((track): track is Track => !!track)
+                                handlePlaylistPlayback('app', playlist.id, playlistTracks)
+                                return
+                              }
+                              const detail = tidalPlaylistDetails[playlist.id]
+                              if (detail) handlePlaylistPlayback('tidal', playlist.id, detail.tracks)
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )
+                  ) : null}
+                </div>
               ) : null}
             </div>
           </main>
         </div>
+
+        <WorkspacePlayer />
+
+        <BottomSheet
+          open={modal?.kind === 'search'}
+          title="Search"
+          description="Local results appear instantly. Extend to TIDAL on demand."
+          onClose={closeModal}
+          variant="light"
+          originRect={modal?.kind === 'search' ? modal.originRect : null}
+          size="full"
+          maxHeightClassName="max-h-[94vh]"
+        >
+          <SearchPanel
+            query={query}
+            setQuery={(value) => {
+              setQuery(value)
+              setTidalSearched(false)
+            }}
+            localResults={localSearchResults}
+            tidalResults={tidalResults}
+            tidalConnected={tidalConnected}
+            tidalLoading={tidalLoading}
+            tidalSearched={tidalSearched}
+            onTidalSearch={() => void handleTidalSearch()}
+            libraryTrackIds={libraryTrackIds}
+            onAddTidalTrack={(track) => void cacheTidalTracks([track])}
+          />
+        </BottomSheet>
+
+        <BottomSheet
+          open={modal?.kind === 'upload'}
+          title="Upload music"
+          description="Bring local files or Spotify exports into the prototype."
+          onClose={closeModal}
+          variant="light"
+          originRect={modal?.kind === 'upload' ? modal.originRect : null}
+          size="xl"
+        >
+          <ImportPanel onDone={finalizeImport} />
+        </BottomSheet>
+
+        <BottomSheet
+          open={modal?.kind === 'settings'}
+          title="Settings"
+          description="Account, TIDAL, and AI configuration for this workspace."
+          onClose={closeModal}
+          variant="dark"
+          originRect={modal?.kind === 'settings' ? modal.originRect : null}
+          size="lg"
+          maxHeightClassName="max-h-[88vh]"
+        >
+          <SettingsPanel />
+        </BottomSheet>
+
+        <BottomSheet
+          open={modal?.kind === 'generator'}
+          title="Playlist generator"
+          description="Turn a prompt into a saved playlist."
+          onClose={closeModal}
+          variant="dark"
+          originRect={modal?.kind === 'generator' ? modal.originRect : null}
+          size="lg"
+          maxHeightClassName="max-h-[88vh]"
+        >
+          <PlaylistGeneratorPanel />
+        </BottomSheet>
+
+        <BottomSheet
+          open={Boolean(artistModal)}
+          title={artistModal?.artist ?? 'Artist'}
+          description={artistModal ? `${artistModalTracks.length} tracks` : undefined}
+          onClose={closeModal}
+          variant="dark"
+          originRect={artistModal?.originRect}
+          size="lg"
+          maxHeightClassName="max-h-[88vh]"
+        >
+          <div className="divide-y divide-white/8 rounded-[24px] border border-white/8 bg-white/4">
+            {artistModalTracks.map((track, index) => (
+              <TrackRow
+                key={track.id}
+                track={track}
+                tracks={artistModalTracks}
+                playContext="library"
+                index={index}
+              />
+            ))}
+          </div>
+        </BottomSheet>
+
+        <BottomSheet
+          open={Boolean(playlistModal)}
+          title={selectedAppPlaylist?.name || selectedTidalDetail?.playlist.name || playlistRows.find((item) => item.id === playlistModal?.playlistId)?.name || 'Playlist'}
+          description={playlistModal?.playlistKind === 'app' ? 'App playlist' : 'TIDAL playlist'}
+          onClose={closeModal}
+          variant="dark"
+          originRect={playlistModal?.originRect}
+          size="xl"
+          maxHeightClassName="max-h-[92vh]"
+        >
+          {playlistModal ? (
+            <PlaylistDetailModal
+              playlistModal={playlistModal}
+              appPlaylist={selectedAppPlaylist}
+              appPlaylistTracks={appPlaylistTracks}
+              tidalDetail={selectedTidalDetail}
+              onPlayPlaylist={handlePlaylistPlayback}
+              onRenameAppPlaylist={(playlistId, currentName, currentDescription) => void renamePlaylist(playlistId, currentName, currentDescription, renameAppPlaylist)}
+              onDeleteAppPlaylist={async (playlistId) => {
+                if (!window.confirm('Delete this playlist?')) return
+                await deleteAppPlaylist(playlistId)
+                closeModal()
+              }}
+              onMoveItem={(playlistId, fromIndex, toIndex) => void moveAppPlaylistItem(playlistId, fromIndex, toIndex)}
+              onRemoveItem={(playlist, item, index) => void removeTrackFromPlaylist(playlist, item, index)}
+            />
+          ) : null}
+        </BottomSheet>
+
+        <QueueSheet open={playerOpen} onClose={() => setPlayerOpen(false)} />
+
+        <BatchActionsBar />
+        <AIModalHost />
       </div>
-
-
-      <WorkspacePlayer />
-      <FloatingSearchButton
-        hidden={showSearch}
-        playerVisible={playerQueueCount > 0}
-        onClick={openSearch}
-      />
-
-      <BottomSheet
-        open={showSearch}
-        title="Search"
-        description="Local results appear instantly, TIDAL matches on demand."
-        onClose={closeSearch}
-        maxHeightClassName="max-h-[90vh]"
-      >
-        <SearchPanel
-          query={query}
-          setQuery={(value) => {
-            setQuery(value)
-            setTidalSearched(false)
-          }}
-          localResults={localSearchResults}
-          tidalResults={tidalResults}
-          tidalConnected={tidalConnected}
-          tidalLoading={tidalLoading}
-          tidalSearched={tidalSearched}
-          onTidalSearch={() => void handleTidalSearch()}
-          libraryTrackIds={libraryTrackIds}
-          onAddTidalTrack={(track) => void cacheTidalTracks([track])}
-        />
-      </BottomSheet>
-
-      <BottomSheet
-        open={showImport}
-        title="Upload music"
-        description="Bring local files or Spotify exports into the prototype."
-        onClose={() => setShowImport(false)}
-      >
-        <ImportPanel onDone={finalizeImport} />
-      </BottomSheet>
-
-      <BottomSheet
-        open={showSettings}
-        title="Settings"
-        description="Account, TIDAL, and AI configuration for this prototype."
-        onClose={() => setShowSettings(false)}
-        maxHeightClassName="max-h-[88vh]"
-      >
-        <SettingsPanel />
-      </BottomSheet>
-
-      <QueueSheet open={playerOpen} onClose={() => setPlayerOpen(false)} />
-
-      <BatchActionsBar />
-
-      <AIModalHost />
     </div>
   )
 }
 
-function SidebarUtilityButton({
-  label,
-  icon,
-  onClick,
-  accent = false,
-}: {
-  label: string
-  icon: ReactNode
-  onClick: () => void
-  accent?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex items-center justify-between gap-2 rounded-2xl px-4 py-3 text-sm transition-colors ${
-        accent
-          ? 'bg-[#ef5466] text-white hover:bg-[#e0364a]'
-          : 'border border-black/8 bg-white text-[#111116] hover:bg-[#f8f8f9]'
-      }`}
-    >
-      <span className="inline-flex items-center gap-2 truncate">
-        {icon}
-        <span className="truncate">{label}</span>
-      </span>
-      <ChevronRight size={14} className={accent ? 'opacity-80' : 'text-[#7a7b86]'} />
-    </button>
-  )
-}
-
-function TopbarActionButton({
-  label,
-  icon,
-  onClick,
-  accent = false,
-}: {
-  label: string
-  icon: ReactNode
-  onClick: () => void
-  accent?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className={`inline-flex h-10 w-10 items-center justify-center rounded-full border transition-colors sm:h-11 sm:w-11 ${
-        accent
-          ? 'border-transparent bg-[#ef5466] text-white hover:bg-[#e0364a]'
-          : 'border-black/8 bg-white text-[#111116] hover:border-black/12 hover:bg-[#f8f8f9]'
-      }`}
-    >
-      {icon}
-    </button>
-  )
-}
-
-function FloatingSearchButton({
-  hidden = false,
-  playerVisible,
-  onClick,
-}: {
-  hidden?: boolean
-  playerVisible: boolean
-  onClick: () => void
-}) {
-  if (hidden) return null
-
-  return (
-    <button
-      type="button"
-      aria-label="Search"
-      title="Search"
-      onClick={onClick}
-      className={`fixed right-4 z-40 inline-flex items-center gap-3 rounded-[1.75rem] border border-white/45 bg-white/70 px-5 py-4 text-[#111116] shadow-[0_18px_44px_rgba(17,17,22,0.16),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-xl backdrop-saturate-150 transition-[bottom,transform,box-shadow] duration-300 hover:-translate-y-0.5 hover:shadow-[0_22px_48px_rgba(17,17,22,0.18),inset_0_1px_0_rgba(255,255,255,0.78)] sm:right-6 ${
-        playerVisible
-          ? 'bottom-[calc(env(safe-area-inset-bottom)+8rem)] sm:bottom-32'
-          : 'bottom-[calc(env(safe-area-inset-bottom)+1rem)] sm:bottom-6'
-      }`}
-    >
-      <span className="flex h-12 w-12 items-center justify-center rounded-full border border-black/8 bg-[linear-gradient(135deg,rgba(255,255,255,0.95),rgba(244,244,246,0.88))] shadow-[0_8px_18px_rgba(17,17,22,0.08)]">
-        <Search size={20} />
-      </span>
-      <span className="min-w-0 text-left">
-        <span className="block text-sm font-semibold leading-none">Search</span>
-        <span className="mt-1 block text-xs text-[#686973]">Tracks, artists, playlists</span>
-      </span>
-    </button>
-  )
-}
-
-function FilterPill({
+function TabButton({
   active,
-  onClick,
   children,
+  onClick,
 }: {
   active: boolean
-  onClick: () => void
   children: ReactNode
+  onClick: () => void
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-        active
-          ? 'border-transparent bg-[#ef5466] text-white hover:bg-[#e0364a]'
-          : 'border-black/8 bg-white text-[#555661] hover:border-black/16 hover:text-[#111116]'
+      className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+        active ? 'bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]' : 'text-white/56 hover:text-white'
       }`}
     >
       {children}
@@ -913,25 +804,57 @@ function FilterPill({
   )
 }
 
-function ActionPill({ label, icon, onClick, accent = false, disabled = false }: HeroAction) {
+function TopIconButton({
+  label,
+  icon,
+  onClick,
+}: {
+  label: string
+  icon: ReactNode
+  onClick: (event: React.MouseEvent<HTMLButtonElement>) => void
+}) {
   return (
     <button
       type="button"
+      aria-label={label}
+      title={label}
       onClick={onClick}
-      disabled={disabled}
-      className={`inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-medium transition-colors disabled:opacity-40 ${
-        accent
-          ? 'bg-[#ef5466] text-white hover:bg-[#e0364a]'
-          : 'border border-black/8 bg-white text-[#111116] hover:bg-[#f8f8f9]'
-      }`}
+      className="sauti-glass-button"
     >
       {icon}
-      <span>{label}</span>
     </button>
   )
 }
 
-function SurfacePanel({
+function SectionHeader({
+  title,
+  subtitle,
+  action,
+}: {
+  title: string
+  subtitle: string
+  action?: ReactNode
+}) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <h2 className="deezer-display text-[2rem] leading-none text-[#111116]">{title}</h2>
+        <p className="mt-2 text-sm text-[#7a7b86]">{subtitle}</p>
+      </div>
+      {action}
+    </div>
+  )
+}
+
+function Banner({ children }: { children: ReactNode }) {
+  return (
+    <div className="rounded-[22px] border border-[#f4c6cc] bg-[#fff4f6] px-5 py-4 text-sm text-[#8d3140]">
+      {children}
+    </div>
+  )
+}
+
+function SurfaceCard({
   title,
   meta,
   children,
@@ -941,162 +864,57 @@ function SurfacePanel({
   children: ReactNode
 }) {
   return (
-    <section className={panelClass}>
-      <div className="flex items-center justify-between px-5 pb-3 pt-5 sm:px-6">
-        <div>
-          <h2 className="deezer-display text-[1.7rem] leading-none text-[#111116]">{title}</h2>
-          {meta ? <p className="mt-1 text-sm text-[#7a7b86]">{meta}</p> : null}
-        </div>
+    <section className="space-y-3">
+      <div>
+        <h3 className="deezer-display text-[1.6rem] leading-none text-[#111116]">{title}</h3>
+        {meta ? <p className="mt-2 text-sm text-[#7a7b86]">{meta}</p> : null}
       </div>
-      <div>{children}</div>
+      <div className="overflow-hidden rounded-[24px] border border-black/8 bg-white shadow-[0_1px_0_rgba(17,17,22,0.03)]">{children}</div>
     </section>
   )
 }
 
-function EmptyPanel({
+function EmptyState({
   title,
   description,
   action,
 }: {
   title: string
   description: string
-  action?: { label: string; icon: ReactNode; onClick: () => void }
+  action?: ReactNode
 }) {
   return (
-    <section className={`${panelClass} px-6 py-14 text-center sm:px-10`}>
-      <h2 className="deezer-display text-[2rem] leading-none text-[#111116]">{title}</h2>
-      <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-[#686973]">{description}</p>
-      {action ? (
-        <div className="mt-6">
-          <ActionPill label={action.label} icon={action.icon} onClick={action.onClick} accent />
-        </div>
-      ) : null}
-    </section>
-  )
-}
-
-function HomeView({
-  recentTracks,
-  onPlayTrack,
-  onPlayTracks,
-  onImport,
-  onOpenLibrary,
-}: {
-  recentTracks: Track[]
-  onPlayTrack: (track: Track, list: Track[]) => void
-  onPlayTracks: (list: Track[]) => void
-  onImport: () => void
-  onOpenLibrary: () => void
-}) {
-  return (
-    <div className="space-y-8">
-      <section className={`${panelClass} px-5 py-5 sm:px-6`}>
-        <div className="flex items-end justify-between pb-4">
-          <div>
-            <h2 className="deezer-display text-[1.7rem] leading-none text-[#111116]">Recently played</h2>
-            <p className="mt-1 text-sm text-[#7a7b86]">Jump straight back in</p>
-          </div>
-          <button
-            type="button"
-            onClick={onOpenLibrary}
-            className="text-sm font-medium text-[#ef5466] hover:text-[#e0364a]"
-          >
-            Open library
-          </button>
-        </div>
-
-        {recentTracks.length === 0 ? (
-          <div className={`${mutedPanelClass} px-4 py-6 text-center text-sm text-[#686973]`}>
-            <p>No plays yet. Upload music or search TIDAL to start filling this space.</p>
-            <div className="mt-4 flex justify-center">
-              <ActionPill label="Upload music" icon={<Upload size={15} />} onClick={onImport} accent />
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-4 gap-2">
-            {recentTracks.map((track) => (
-              <SpeedDialTile key={track.id} track={track} onClick={() => onPlayTrack(track, recentTracks)} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className={`${panelClass} px-5 py-5 sm:px-6`}>
-        <HomeSuggestions onPlayTracks={onPlayTracks} />
-      </section>
+    <div className="rounded-[28px] border border-black/8 bg-white px-6 py-12 text-center shadow-[0_1px_0_rgba(17,17,22,0.03)]">
+      <h3 className="deezer-display text-[1.9rem] leading-none text-[#111116]">{title}</h3>
+      <p className="mx-auto mt-3 max-w-[42rem] text-sm leading-6 text-[#686973]">{description}</p>
+      {action ? <div className="mt-6 flex justify-center">{action}</div> : null}
     </div>
   )
 }
 
-function SpeedDialTile({ track, onClick }: { track: Track; onClick: () => void }) {
-  const artworkUrl = useTrackArtworkUrl(track)
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group flex flex-col gap-1.5 rounded-2xl p-1.5 text-left transition-colors hover:bg-[#fafafb]"
-    >
-      <div className="aspect-square w-full overflow-hidden rounded-2xl bg-[#111116]">
-        {artworkUrl ? (
-          <img src={artworkUrl} alt="" className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]" />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,#32323d,#121216)] text-white/70">
-            <Disc3 size={24} />
-          </div>
-        )}
-      </div>
-      <div className="min-w-0 px-0.5">
-        <p className="truncate text-xs font-medium text-[#111116]">{track.title}</p>
-        <p className="truncate text-[10px] text-[#7a7b86]">{track.artist}</p>
-      </div>
-    </button>
-  )
-}
-
-function ArtistsGrid({
-  groups,
-  onSelect,
-}: {
-  groups: { artist: string; tracks: Track[] }[]
-  onSelect: (artist: string) => void
-}) {
-  return (
-    <div className="grid grid-cols-4 gap-2">
-      {groups.map((group) => (
-        <ArtistTile key={group.artist} group={group} onClick={() => onSelect(group.artist)} />
-      ))}
-    </div>
-  )
-}
-
-function ArtistTile({
-  group,
+function ActionButton({
+  children,
+  icon,
   onClick,
+  accent = false,
 }: {
-  group: { artist: string; tracks: Track[] }
-  onClick: () => void
+  children: ReactNode
+  icon: ReactNode
+  onClick: (event: React.MouseEvent<HTMLButtonElement>) => void | Promise<void>
+  accent?: boolean
 }) {
-  const artworkTrack = group.tracks[0]
-  const artworkUrl = useTrackArtworkUrl(artworkTrack ?? EMPTY_ARTWORK)
   return (
     <button
       type="button"
       onClick={onClick}
-      className="group flex flex-col gap-1.5 rounded-2xl p-1.5 text-left transition-colors hover:bg-[#fafafb]"
+      className={`inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition-colors ${
+        accent
+          ? 'bg-accent text-white hover:bg-accent-dark'
+          : 'border border-black/8 bg-white text-[#555661] hover:border-black/14 hover:text-[#111116]'
+      }`}
     >
-      <div className="aspect-square w-full overflow-hidden rounded-2xl bg-[#111116]">
-        {artworkUrl ? (
-          <img src={artworkUrl} alt="" className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]" />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,#32323d,#121216)] text-white/70">
-            <Disc3 size={24} />
-          </div>
-        )}
-      </div>
-      <div className="min-w-0 px-0.5 text-center">
-        <p className="truncate text-xs font-medium text-[#111116]">{group.artist}</p>
-        <p className="truncate text-[10px] text-[#7a7b86]">{group.tracks.length} tracks</p>
-      </div>
+      {icon}
+      {children}
     </button>
   )
 }
@@ -1127,7 +945,7 @@ function SearchPanel({
   return (
     <div className="space-y-5 pb-2">
       <label className="deezer-search-shell">
-        <Search size={18} className="shrink-0 text-[#8b8c95]" />
+        <Search size={18} className="shrink-0 text-white/36" />
         <input
           type="text"
           value={query}
@@ -1141,14 +959,14 @@ function SearchPanel({
       </label>
 
       {!query.trim() ? (
-        <div className={`${mutedPanelClass} px-4 py-5 text-sm text-[#686973]`}>
+        <div className="rounded-[22px] border border-black/8 bg-[#f8f8f9] px-4 py-5 text-sm text-[#7a7b86]">
           Start typing to search your library. Press enter to extend the search to TIDAL.
         </div>
       ) : null}
 
       {query.trim() && localResults.length > 0 ? (
-        <SurfacePanel title="Library results" meta={`${localResults.length} matches`}>
-          <div className="divide-y divide-black/6">
+        <SurfaceCard title="Library results" meta={`${localResults.length} matches`}>
+          <div className="divide-y divide-white/8">
             {localResults.map((track, index) => (
               <TrackRow
                 key={track.id}
@@ -1159,7 +977,7 @@ function SearchPanel({
               />
             ))}
           </div>
-        </SurfacePanel>
+        </SurfaceCard>
       ) : null}
 
       {query.trim() && tidalConnected ? (
@@ -1168,7 +986,7 @@ function SearchPanel({
             <button
               type="button"
               onClick={onTidalSearch}
-              className="inline-flex items-center gap-2 rounded-full border border-[#f6c8cf] bg-[#fff4f6] px-4 py-2 text-sm text-[#b03a4d] transition-colors hover:bg-[#ffecef]"
+              className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-4 py-2 text-sm text-accent transition-colors hover:bg-[#fafafb]"
             >
               <Radio size={15} />
               Search TIDAL for "{query}"
@@ -1176,12 +994,12 @@ function SearchPanel({
           ) : null}
 
           {tidalLoading ? (
-            <div className={`${mutedPanelClass} px-4 py-4 text-sm text-[#686973]`}>Searching TIDAL...</div>
+            <div className="rounded-[22px] border border-black/8 bg-[#f8f8f9] px-4 py-4 text-sm text-[#7a7b86]">Searching TIDAL...</div>
           ) : null}
 
           {tidalSearched && tidalResults.length > 0 ? (
-            <SurfacePanel title="TIDAL results" meta={`${tidalResults.length} matches`}>
-              <div className="divide-y divide-black/6">
+            <SurfaceCard title="TIDAL results" meta={`${tidalResults.length} matches`}>
+              <div className="divide-y divide-white/8">
                 {tidalResults.map((track, index) => {
                   const inLibrary = libraryTrackIds.has(track.id)
                   return (
@@ -1196,13 +1014,13 @@ function SearchPanel({
                   )
                 })}
               </div>
-            </SurfacePanel>
+            </SurfaceCard>
           ) : null}
         </div>
       ) : null}
 
       {query.trim() && !localResults.length && (!tidalSearched || !tidalResults.length) && !tidalLoading ? (
-        <div className={`${mutedPanelClass} px-4 py-5 text-sm text-[#686973]`}>
+        <div className="rounded-[22px] border border-black/8 bg-[#f8f8f9] px-4 py-5 text-sm text-[#7a7b86]">
           No matches yet. {tidalConnected ? 'Try another term or run the TIDAL search.' : 'Connect TIDAL to widen the catalog.'}
         </div>
       ) : null}
@@ -1210,238 +1028,157 @@ function SearchPanel({
   )
 }
 
-function PlaylistCollectionsView({
-  appPlaylists,
-  appPlaylistFolders,
-  tidalPlaylists,
-  onCreateAppPlaylist,
-  onOpen,
-  onOpenGeneratedPlaylist,
-}: {
-  appPlaylists: Playlist[]
-  appPlaylistFolders: PlaylistFolder[]
-  tidalPlaylists: Playlist[]
-  onCreateAppPlaylist: () => void
-  onOpen: (kind: 'app' | 'tidal', id: string) => void
-  onOpenGeneratedPlaylist: (playlistId: string) => void
-}) {
-  const tidalRowKeyPrefix = 'tidal:'
-  const [showGenerator, setShowGenerator] = useState(false)
-  const generatorStatus = usePlaylistGeneratorStore((state) => state.status)
-  const requestGeneratorCompletionNotification = usePlaylistGeneratorStore((state) => state.requestCompletionNotification)
-  const generatedPlaylists = appPlaylists.filter((playlist) => playlist.origin === 'generated')
-  const libraryAppPlaylists = appPlaylists.filter((playlist) => playlist.origin !== 'generated')
-
-  // Project playable TIDAL entries into the shared Playlist shape. Use a prefixed
-  // id so we can round-trip back to onOpen('tidal', providerPlaylistId) without
-  // colliding with app playlist IDs in the unified list.
-  const tidalAsRows = tidalPlaylists
-    .filter((p) => Boolean(p.providerPlaylistId))
-    .map((p) => ({
-      ...p,
-      id: `${tidalRowKeyPrefix}${p.providerPlaylistId!}`,
-      folderId: undefined,
-    }))
-
-  const libraryPlaylists = [...libraryAppPlaylists, ...tidalAsRows]
-  const total = generatedPlaylists.length + libraryPlaylists.length
-
-  const handleOpen = (id: string) => {
-    if (id.startsWith(tidalRowKeyPrefix)) {
-      onOpen('tidal', id.slice(tidalRowKeyPrefix.length))
-    } else {
-      onOpen('app', id)
-    }
-  }
-
-  const toggleGenerator = () => {
-    if (showGenerator && generatorStatus === 'running') {
-      requestGeneratorCompletionNotification()
-    }
-    setShowGenerator((current) => !current)
-  }
-
+function RecentTrackCard({ track, onClick }: { track: Track; onClick: () => void }) {
+  const artworkUrl = useTrackArtworkUrl(track)
   return (
-    <div className="space-y-4">
-      <section className={panelClass}>
-        <div className="flex flex-wrap items-center justify-between gap-3 px-5 pb-4 pt-5 sm:px-6">
-          <div>
-            <h2 className="deezer-display text-[1.7rem] leading-none text-[#111116]">Playlists</h2>
-            <p className="mt-1 text-sm text-[#7a7b86]">
-              Build your own, generate new ones from prompts, or open synced collections.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <ActionPill
-              label={showGenerator ? 'Hide generator' : 'Generate playlist'}
-              icon={<Sparkles size={15} />}
-              onClick={toggleGenerator}
-              accent
-            />
-            <ActionPill
-              label="New playlist"
-              icon={<Plus size={15} />}
-              onClick={onCreateAppPlaylist}
-            />
-          </div>
+    <button type="button" onClick={onClick} className="group flex flex-col gap-2 text-left">
+      <div className="overflow-hidden rounded-[20px] border border-black/8 bg-white">
+        <div className="aspect-square w-full">
+          {artworkUrl ? (
+            <img src={artworkUrl} alt="" className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]" />
+          ) : (
+            <GradientArtwork seed={track.title} className="h-full w-full" />
+          )}
         </div>
-
-        {showGenerator ? (
-          <div className="border-t border-black/6 px-5 py-5 sm:px-6">
-            <PlaylistGeneratorPanel
-              variant="inline"
-              onOpenPlaylist={onOpenGeneratedPlaylist}
-            />
-          </div>
-        ) : null}
-      </section>
-
-      {total === 0 ? (
-        <section className={panelClass}>
-          <div className="px-5 pb-6 pt-5 sm:px-6">
-            <div className={`${mutedPanelClass} px-4 py-5 text-sm text-[#686973]`}>
-              No playlists yet. Add one above to get started, or connect TIDAL in Settings to sync your collections.
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      {generatedPlaylists.length > 0 ? (
-        <SurfacePanel
-          title="Generated playlists"
-          meta={`${generatedPlaylists.length} ready from prompts and AI mixes`}
-        >
-          <div className="py-2">
-            <PlaylistTree
-              folders={[]}
-              playlists={generatedPlaylists}
-              onOpen={handleOpen}
-            />
-          </div>
-        </SurfacePanel>
-      ) : null}
-
-      {libraryPlaylists.length > 0 ? (
-        <SurfacePanel
-          title="Playlist library"
-          meta={`${libraryPlaylists.length} manual, imported, and synced collections`}
-        >
-          <div className="py-2">
-            <PlaylistTree
-              folders={appPlaylistFolders}
-              playlists={libraryPlaylists}
-              onOpen={handleOpen}
-            />
-          </div>
-        </SurfacePanel>
-      ) : null}
-    </div>
+      </div>
+      <div className="min-w-0 px-1">
+        <p className="truncate text-sm font-medium text-[#111116]">{track.title}</p>
+        <p className="truncate text-xs text-[#7a7b86]">{track.artist}</p>
+      </div>
+    </button>
   )
 }
 
-function PlaylistDetailView({
-  selectedPlaylist,
-  appPlaylists,
-  tidalPlaylists,
+function ArtistCard({
+  artist,
+  tracks,
+  onClick,
+}: {
+  artist: string
+  tracks: Track[]
+  onClick: (event: React.MouseEvent<HTMLButtonElement>) => void
+}) {
+  const artworkUrl = useTrackArtworkUrl(tracks[0] ?? {})
+  return (
+    <button type="button" onClick={onClick} className="group rounded-[22px] border border-black/8 bg-white p-3 text-left transition-colors hover:bg-[#fafafb]">
+      <div className="overflow-hidden rounded-[18px]">
+        <div className="aspect-square w-full">
+          {artworkUrl ? (
+            <img src={artworkUrl} alt="" className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]" />
+          ) : (
+            <GradientArtwork seed={artist} className="h-full w-full" />
+          )}
+        </div>
+      </div>
+      <div className="mt-3">
+        <p className="truncate text-sm font-medium text-[#111116]">{artist}</p>
+        <p className="truncate text-xs text-[#7a7b86]">{tracks.length} tracks</p>
+      </div>
+    </button>
+  )
+}
+
+function PlaylistCard({
+  playlist,
+  active,
+  onOpen,
+  onPlay,
+}: {
+  playlist: Playlist & { label: string; trackCount: number; sourceKind: 'app' | 'tidal' }
+  active: boolean
+  onOpen: (event: React.MouseEvent<HTMLButtonElement>) => void
+  onPlay: () => void
+}) {
+  return (
+    <article className={`rounded-[24px] border p-4 transition-colors ${active ? 'border-accent/22 bg-accent/5' : 'border-black/8 bg-white hover:bg-[#fafafb]'}`}>
+      <div className="grid grid-cols-2 gap-1 overflow-hidden rounded-[18px] bg-[#f3f3f6]">
+        <GradientArtwork seed={`${playlist.name}-a`} className="aspect-square" />
+        <GradientArtwork seed={`${playlist.name}-b`} className="aspect-square" />
+        <GradientArtwork seed={`${playlist.name}-c`} className="aspect-square" />
+        <GradientArtwork seed={`${playlist.name}-d`} className="aspect-square" />
+      </div>
+      <div className="mt-4 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-[#111116]">{playlist.name}</p>
+          <p className="mt-1 text-xs text-[#7a7b86]">
+            {playlist.trackCount} tracks · {playlist.label}
+          </p>
+        </div>
+        <button type="button" onClick={onPlay} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/8 bg-[#f8f8f9] text-[#555661] transition-colors hover:text-[#111116]">
+          <Play size={14} />
+        </button>
+      </div>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="mt-4 inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-3 py-2 text-sm text-[#555661] transition-colors hover:border-black/14 hover:text-[#111116]"
+      >
+        Open collection
+        <ChevronRight size={14} />
+      </button>
+    </article>
+  )
+}
+
+function PlaylistDetailModal({
+  playlistModal,
+  appPlaylist,
   appPlaylistTracks,
   tidalDetail,
-  onBack,
-  onPlayAppPlaylist,
-  onPlayTidalPlaylist,
+  onPlayPlaylist,
   onRenameAppPlaylist,
   onDeleteAppPlaylist,
   onMoveItem,
   onRemoveItem,
 }: {
-  selectedPlaylist: { kind: 'app' | 'tidal'; id: string }
-  appPlaylists: Playlist[]
-  tidalPlaylists: Playlist[]
+  playlistModal: Extract<ModalState, { kind: 'playlist' }>
+  appPlaylist?: Playlist
   appPlaylistTracks: Array<{ item: Playlist['items'][number]; track: Track; index: number }>
   tidalDetail?: { playlist: Playlist; tracks: Track[] }
-  onBack: () => void
-  onPlayAppPlaylist: (playlistId: string, tracks: Track[]) => void
-  onPlayTidalPlaylist: (playlistId: string, tracks: Track[]) => void
+  onPlayPlaylist: (kind: 'app' | 'tidal', playlistId: string, tracks: Track[]) => void
   onRenameAppPlaylist: (playlistId: string, currentName: string, currentDescription?: string) => void
   onDeleteAppPlaylist: (playlistId: string) => void
   onMoveItem: (playlistId: string, fromIndex: number, toIndex: number) => void
   onRemoveItem: (playlist: Playlist, item: Playlist['items'][number], index: number) => void
 }) {
-  const playlist = selectedPlaylist.kind === 'app'
-    ? appPlaylists.find((item) => item.id === selectedPlaylist.id)
-    : tidalDetail?.playlist || tidalPlaylists.find((item) => item.providerPlaylistId === selectedPlaylist.id)
+  const tracks = playlistModal.playlistKind === 'app' ? appPlaylistTracks.map((entry) => entry.track) : tidalDetail?.tracks || []
 
-  if (!playlist) {
-    return (
-      <EmptyPanel
-        title="Playlist not found"
-        description="The selected playlist could not be resolved from the local or synced collection."
-      />
-    )
+  if (playlistModal.playlistKind === 'app' && !appPlaylist) {
+    return <div className="rounded-[24px] border border-white/8 bg-white/4 px-4 py-4 text-sm text-white/46">Playlist not found.</div>
   }
 
-  const tracks = selectedPlaylist.kind === 'app'
-    ? appPlaylistTracks.map((entry) => entry.track)
-    : tidalDetail?.tracks || []
+  if (playlistModal.playlistKind === 'tidal' && !tidalDetail) {
+    return <div className="rounded-[24px] border border-white/8 bg-white/4 px-4 py-4 text-sm text-white/46">Loading TIDAL playlist…</div>
+  }
+
+  const playlist = playlistModal.playlistKind === 'app' ? appPlaylist! : tidalDetail!.playlist
 
   return (
-    <div className="space-y-5 px-1 pt-1 sm:px-2">
-      <section className={`${panelClass} px-5 py-5 sm:px-6`}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={onBack}
-            className="deezer-tab-link text-sm font-medium"
-            data-active="false"
-          >
-            Back to playlists
-          </button>
+    <div className="space-y-5">
+      <div className="flex flex-wrap gap-2">
+        <ActionButton accent icon={<Play size={15} />} onClick={() => onPlayPlaylist(playlistModal.playlistKind, playlist.id, tracks)}>
+          Play all
+        </ActionButton>
+        {playlistModal.playlistKind === 'app' ? (
+          <>
+            <ActionButton icon={<Settings size={15} />} onClick={() => onRenameAppPlaylist(playlist.id, playlist.name, playlist.description)}>
+              Rename
+            </ActionButton>
+            <ActionButton icon={<Settings size={15} />} onClick={() => onDeleteAppPlaylist(playlist.id)}>
+              Delete
+            </ActionButton>
+          </>
+        ) : null}
+      </div>
 
-          <div className="flex flex-wrap gap-2">
-            <ActionPill
-              label="Play all"
-              icon={<Play size={15} />}
-              onClick={() => {
-                if (selectedPlaylist.kind === 'app') onPlayAppPlaylist(playlist.id, tracks)
-                else onPlayTidalPlaylist(selectedPlaylist.id, tracks)
-              }}
-              accent
-              disabled={tracks.length === 0}
-            />
-            {selectedPlaylist.kind === 'app' ? (
-              <>
-                <ActionPill
-                  label="Rename"
-                  icon={<Settings size={15} />}
-                  onClick={() => onRenameAppPlaylist(playlist.id, playlist.name, playlist.description)}
-                />
-                <ActionPill
-                  label="Delete"
-                  icon={<Settings size={15} />}
-                  onClick={() => onDeleteAppPlaylist(playlist.id)}
-                />
-              </>
-            ) : null}
-          </div>
+      {tracks.length === 0 ? (
+        <div className="rounded-[24px] border border-white/8 bg-white/4 px-4 py-5 text-sm text-white/46">
+          This playlist is empty.
         </div>
-      </section>
-
-      {selectedPlaylist.kind === 'app' && appPlaylistTracks.length >= 3 ? (
-        <PlaylistDoctorPanel
-          playlist={playlist}
-          playlistTracks={appPlaylistTracks.map((entry) => entry.track)}
-        />
-      ) : null}
-
-      {selectedPlaylist.kind === 'app' ? (
-        appPlaylistTracks.length === 0 ? (
-          <EmptyPanel
-            title="This playlist is empty"
-            description="Add tracks from the library or search results to start building the mix."
-          />
-        ) : (
-          <SurfacePanel title="Tracks" meta={`${appPlaylistTracks.length} queued`}>
-            <div className="divide-y divide-black/6">
-              {appPlaylistTracks.map(({ item, track, index }) => {
+      ) : (
+        <div className="divide-y divide-white/8 rounded-[24px] border border-white/8 bg-white/4">
+          {playlistModal.playlistKind === 'app'
+            ? appPlaylistTracks.map(({ item, track, index }) => {
                 const extraActions: TrackAction[] = [
                   {
                     label: 'Remove from playlist',
@@ -1474,36 +1211,44 @@ function PlaylistDetailView({
                     extraActions={extraActions}
                   />
                 )
-              })}
-            </div>
-          </SurfacePanel>
-        )
-      ) : tidalDetail ? (
-        <SurfacePanel title="Tracks" meta={`${tidalDetail.tracks.length} queued`}>
-          <div className="divide-y divide-black/6">
-            {tidalDetail.tracks.map((track, index) => (
-              <TrackRow
-                key={`${track.id}-${index}`}
-                track={track}
-                tracks={tidalDetail.tracks}
-                playContext="tidal-playlist"
-                index={index}
-              />
-            ))}
-          </div>
-        </SurfacePanel>
-      ) : (
-        <EmptyPanel
-          title="Loading TIDAL playlist..."
-          description="Waiting for the synced playlist details to arrive from the backend."
-        />
+              })
+            : tidalDetail!.tracks.map((track, index) => (
+                <TrackRow
+                  key={`${track.id}-${index}`}
+                  track={track}
+                  tracks={tidalDetail!.tracks}
+                  playContext="tidal-playlist"
+                  index={index}
+                />
+              ))}
+        </div>
       )}
-
-      {tracks.length >= 3 ? (
-        <PlaylistFooterPanel playlist={playlist} playlistTracks={tracks} />
-      ) : null}
     </div>
   )
+}
+
+function GradientArtwork({ seed, className = '' }: { seed: string; className?: string }) {
+  return (
+    <div
+      className={className}
+      style={{
+        background: gradientForSeed(seed),
+      }}
+    />
+  )
+}
+
+function gradientForSeed(seed: string) {
+  const gradients = [
+    'linear-gradient(135deg, #f3b27a, #c97a3c 60%, #3a1f10)',
+    'linear-gradient(135deg, #ef5466, #8d3140 70%, #1a0a0e)',
+    'linear-gradient(135deg, #22d3ee, #0e7490 70%, #05343f)',
+    'linear-gradient(135deg, #1e2230, #0a0c12)',
+    'linear-gradient(135deg, #f97316, #c2410c 55%, #2f1205)',
+    'linear-gradient(135deg, #f8fafc, #94a3b8 58%, #0f172a)',
+  ]
+  const index = seed.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0) % gradients.length
+  return gradients[index]
 }
 
 async function renamePlaylist(

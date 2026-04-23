@@ -30,6 +30,41 @@ class User(Base):
     created_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
+class LibraryTrack(Base):
+    __tablename__ = "library_tracks"
+
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class LibraryPlaylist(Base):
+    __tablename__ = "library_playlists"
+
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class LibraryPlaylistFolder(Base):
+    __tablename__ = "library_playlist_folders"
+
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class UserAppStateSnapshot(Base):
+    __tablename__ = "user_app_state_snapshots"
+
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
 connect_args = (
     {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
 )

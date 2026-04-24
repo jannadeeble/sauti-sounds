@@ -104,7 +104,7 @@ img {
 }
 
 .workspace-search-fab[data-player-visible="true"] {
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 228px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 148px);
 }
 
 .workspace-search-fab__button {
@@ -112,23 +112,28 @@ img {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  min-width: 56px;
-  min-height: 56px;
-  padding: 0 20px;
+  min-width: 54px;
+  min-height: 54px;
+  padding: 0 18px;
   border-radius: 999px;
-  border: 1px solid var(--sauti-glass-border);
-  background: var(--sauti-glass-gradient), var(--sauti-glass-bg);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(180deg, rgba(30, 34, 46, 0.78), rgba(14, 16, 24, 0.74)),
+    rgba(10, 12, 18, 0.72);
   color: var(--sauti-glass-fg);
   box-shadow:
     0 24px 56px rgba(0, 0, 0, 0.34),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(24px) saturate(150%);
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
 .workspace-search-fab__button:hover {
   transform: translateY(-1px);
-  border-color: var(--sauti-glass-border-strong);
+  border-color: rgba(255, 255, 255, 0.16);
+  background:
+    linear-gradient(180deg, rgba(34, 39, 52, 0.84), rgba(18, 20, 30, 0.8)),
+    rgba(14, 16, 24, 0.76);
   box-shadow:
     0 28px 60px rgba(0, 0, 0, 0.38),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);

@@ -118,7 +118,7 @@ export default function MorphSurface({
   )
 
   const panelStyle = useMemo<CSSProperties>(() => {
-    const horizontalPadding = size === 'full' ? 24 : 16
+    const horizontalPadding = size === 'full' ? (desktop ? 24 : 8) : 16
     const width = Math.min(surfaceWidth(size), viewportWidth - horizontalPadding * 2)
     const originX = center?.x ?? viewportWidth / 2
     const originY = center?.y ?? (targetAlign === 'center' ? viewportHeight / 2 : viewportHeight - 48)
@@ -144,7 +144,8 @@ export default function MorphSurface({
         top: horizontalPadding,
         width: `calc(100vw - ${horizontalPadding * 2}px)`,
         maxWidth: `calc(100vw - ${horizontalPadding * 2}px)`,
-        maxHeight: `calc(100vh - ${horizontalPadding * 2}px)`,
+        height: `calc(100dvh - ${horizontalPadding * 2}px)`,
+        maxHeight: `calc(100dvh - ${horizontalPadding * 2}px)`,
         transform: visible ? 'translateY(0) scale(1)' : 'translateY(12px) scale(0.985)',
       }
     }

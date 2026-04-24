@@ -139,8 +139,10 @@ function PlayerRuntime({
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const lastLoadedTrackIdRef = useRef<string | null>(null)
+  const lastLoadedSrcRef = useRef<string | null>(null)
   const lastRecordedTrackIdRef = useRef<string | null>(null)
   const pendingPlayRef = useRef(false)
+  const isPlayingRef = useRef(true)
 
   const [activeTrackId, setActiveTrackId] = useState<string | null>(initialTrackId)
   const [isPlaying, setIsPlaying] = useState(true)
@@ -263,15 +265,20 @@ function PlayerRuntime({
   }, [])
 
   useEffect(() => {
+    isPlayingRef.current = isPlaying
+  }, [isPlaying])
+
+  useEffect(() => {
     const audio = audioRef.current
     if (!audio || !resolvedTrack) return
-    if (lastLoadedTrackIdRef.current === resolvedTrack.trackId && audio.src === resolvedTrack.src) return
+    if (lastLoadedTrackIdRef.current === resolvedTrack.trackId && lastLoadedSrcRef.current === resolvedTrack.src) return
 
     lastLoadedTrackIdRef.current = resolvedTrack.trackId
-    pendingPlayRef.current = isPlaying
+    lastLoadedSrcRef.current = resolvedTrack.src
+    pendingPlayRef.current = isPlayingRef.current
     audio.src = resolvedTrack.src
     audio.load()
-  }, [isPlaying, resolvedTrack])
+  }, [resolvedTrack])
 
   useEffect(() => {
     if (!resolvedTrack?.src || !currentTrack || currentTrack.waveformData?.length) return

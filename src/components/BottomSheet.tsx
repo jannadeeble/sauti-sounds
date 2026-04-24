@@ -20,11 +20,20 @@ export default function BottomSheet({
   description,
   onClose,
   children,
-  maxHeightClassName = 'max-h-[82vh]',
-  variant = 'light',
+  maxHeightClassName = '',
+  variant = 'dark',
   originRect,
   size = 'lg',
 }: BottomSheetProps) {
+  const contentWidthClassName = size === 'xl' || size === 'full'
+    ? 'max-w-[980px]'
+    : size === 'md'
+      ? 'max-w-[640px]'
+      : size === 'sm'
+        ? 'max-w-[520px]'
+        : 'max-w-[760px]'
+  const bodyClassName = maxHeightClassName ? `${maxHeightClassName} !pt-4` : '!pt-4'
+
   return (
     <MorphSurface
       open={open}
@@ -33,11 +42,11 @@ export default function BottomSheet({
       description={description}
       originRect={originRect}
       variant={variant}
-      size={size}
+      size="full"
       align="bottom"
-      bodyClassName={`${maxHeightClassName} !pt-4`}
+      bodyClassName={bodyClassName}
     >
-      <div className="mx-auto w-full max-w-[720px]">{children}</div>
+      <div className={`mx-auto w-full ${contentWidthClassName}`}>{children}</div>
     </MorphSurface>
   )
 }

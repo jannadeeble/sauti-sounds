@@ -384,8 +384,8 @@ export default function WorkspaceShell() {
     <div className="workspace-shell min-h-[100dvh]">
       <div className="min-h-[100dvh]">
         <div className="mx-auto flex min-h-[100dvh] max-w-[1460px] flex-col px-2 pb-[calc(12rem+env(safe-area-inset-bottom))] pt-2 sm:px-6 sm:pt-4 lg:px-8">
-          <header className="sticky top-2 z-20 sm:top-4">
-            <div className="sauti-glass-panel rounded-[28px] px-2 py-2 sm:rounded-[32px] sm:px-4 sm:py-3">
+          <header className="pointer-events-none fixed inset-x-0 top-2 z-30 px-2 sm:top-4 sm:px-6 lg:px-8">
+            <div className="sauti-glass-panel pointer-events-auto mx-auto max-w-[1460px] rounded-[36px] px-2 py-2 sm:rounded-[40px] sm:px-4 sm:py-3">
               <div className="flex items-center gap-2 sm:gap-3">
                 <div className="flex shrink-0 items-center gap-1 rounded-full border border-white/10 bg-white/6 p-1">
                   <TabButton active={activeTab === 'home'} onClick={() => setActiveTab('home')}>Home</TabButton>
@@ -418,8 +418,8 @@ export default function WorkspaceShell() {
             </div>
           </header>
 
-          <main className="flex-1 pt-5 sm:pt-8">
-            <div className="space-y-8">
+          <main className="flex-1 pt-[88px] sm:pt-[108px]">
+            <div className="mx-auto w-full max-w-[1180px] space-y-8 px-1 sm:px-3 lg:px-6">
               {errorMessage ? <Banner>{errorMessage}</Banner> : null}
               {importNotice ? <Banner>{importNotice}</Banner> : null}
 

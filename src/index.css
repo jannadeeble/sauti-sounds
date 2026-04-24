@@ -665,17 +665,33 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .sauti-modal-surface {
-  border-radius: 30px;
-  border: 1px solid var(--sauti-border);
-  background: var(--sauti-sheet);
+  --sauti-panel: rgba(255, 255, 255, 0.08);
+  --sauti-panel-hover: rgba(255, 255, 255, 0.12);
+  --sauti-panel-muted: rgba(255, 255, 255, 0.06);
+  --sauti-sheet: rgba(10, 12, 18, 0.72);
+  --sauti-border: rgba(255, 255, 255, 0.10);
+  --sauti-border-strong: rgba(255, 255, 255, 0.18);
+  --sauti-border-soft: rgba(255, 255, 255, 0.07);
+  --sauti-divider: rgba(255, 255, 255, 0.08);
+  --sauti-text: #ffffff;
+  --sauti-text-secondary: rgba(255, 255, 255, 0.8);
+  --sauti-text-muted: rgba(255, 255, 255, 0.62);
+  --sauti-text-hint: rgba(255, 255, 255, 0.42);
+  --sauti-accent-soft: rgba(239, 84, 102, 0.16);
+  --sauti-accent-ghost: rgba(239, 84, 102, 0.12);
+  --sauti-accent-text: #ff8d9a;
+  border-radius: 34px;
+  border: 1px solid var(--sauti-glass-border);
+  background: var(--sauti-glass-gradient), var(--sauti-glass-bg);
   box-shadow:
-    0 16px 48px rgba(17, 17, 22, 0.14),
-    0 1px 0 rgba(17, 17, 22, 0.04);
+    0 24px 56px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(24px) saturate(150%);
 }
 
 .sauti-modal-overlay {
-  background: rgba(17, 17, 22, 0.18);
-  backdrop-filter: blur(12px);
+  background: rgba(8, 10, 14, 0.28);
+  backdrop-filter: blur(16px);
 }
 
 .sauti-modal-title {
@@ -692,15 +708,19 @@ input[type="range"]::-moz-range-thumb {
   width: 40px;
   height: 40px;
   border-radius: 999px;
-  border: 1px solid var(--sauti-border);
-  background: var(--sauti-panel-muted);
+  border: 1px solid var(--sauti-glass-border);
+  background: var(--sauti-glass-button-surface);
   color: var(--sauti-text-secondary);
+  box-shadow:
+    0 14px 28px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(18px) saturate(140%);
   transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
 .sauti-modal-icon-button:hover {
-  border-color: var(--sauti-border-strong);
-  background: var(--sauti-panel-hover);
+  border-color: var(--sauti-glass-border-strong);
+  background: var(--sauti-glass-button-surface-hover);
   color: var(--sauti-text);
 }
 
@@ -708,7 +728,10 @@ input[type="range"]::-moz-range-thumb {
   border: 1px solid var(--sauti-border);
   border-radius: 24px;
   background: var(--sauti-panel);
-  box-shadow: 0 6px 18px rgba(17, 17, 22, 0.06);
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px) saturate(140%);
 }
 
 .sauti-modal-card-muted {
@@ -799,6 +822,32 @@ input[type="range"]::-moz-range-thumb {
 
 .sauti-modal-action-row-danger:hover {
   background: var(--sauti-accent-soft);
+}
+
+.sauti-modal-surface [class*="border-black/"],
+.sauti-modal-surface [class*="divide-black/"] > * {
+  border-color: var(--sauti-border) !important;
+}
+
+.sauti-modal-surface [class*="bg-white"],
+.sauti-modal-surface [class*="bg-[#f8f8f9]"],
+.sauti-modal-surface [class*="bg-[#fafafb]"],
+.sauti-modal-surface [class*="bg-[#f3f3f6]"],
+.sauti-modal-surface [class*="bg-[#f1f1f4]"] {
+  background-color: var(--sauti-panel) !important;
+}
+
+.sauti-modal-surface [class*="text-[#111116]"] {
+  color: var(--sauti-text) !important;
+}
+
+.sauti-modal-surface [class*="text-[#555661]"],
+.sauti-modal-surface [class*="text-[#686973]"],
+.sauti-modal-surface [class*="text-[#7a7b86]"],
+.sauti-modal-surface [class*="text-[#8b8c95]"],
+.sauti-modal-surface [class*="text-[#8c8d96]"],
+.sauti-modal-surface [class*="text-[#9ea0aa]"] {
+  color: var(--sauti-text-muted) !important;
 }
 
 .sauti-track-shell {

@@ -102,6 +102,7 @@ export default function WorkspaceShell() {
   const playPlaylist = usePlaybackSessionStore((state) => state.playPlaylist)
   const playTracks = usePlaybackSessionStore((state) => state.playTracks)
   const errorMessage = usePlaybackSessionStore((state) => state.errorMessage)
+  const queuedTracks = usePlaybackSessionStore((state) => state.tracks)
   const playerOpen = usePlaybackSessionStore((state) => state.playerOpen)
   const setPlayerOpen = usePlaybackSessionStore((state) => state.setPlayerOpen)
 
@@ -377,14 +378,16 @@ export default function WorkspaceShell() {
     }
   }
 
+  const playerVisible = queuedTracks.length > 0
+
   return (
-    <div className="workspace-shell min-h-screen">
-      <div className="min-h-screen">
-        <div className="mx-auto flex min-h-screen max-w-[1460px] flex-col px-4 pb-[12rem] pt-4 sm:px-6 lg:px-8">
-          <header className="sticky top-4 z-20">
-            <div className="sauti-glass-panel rounded-[32px] px-3 py-3 sm:px-4">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/6 p-1">
+    <div className="workspace-shell min-h-[100dvh]">
+      <div className="min-h-[100dvh]">
+        <div className="mx-auto flex min-h-[100dvh] max-w-[1460px] flex-col px-2 pb-[calc(12rem+env(safe-area-inset-bottom))] pt-2 sm:px-6 sm:pt-4 lg:px-8">
+          <header className="sticky top-2 z-20 sm:top-4">
+            <div className="sauti-glass-panel rounded-[24px] px-2 py-2 sm:rounded-[32px] sm:px-4 sm:py-3">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="flex shrink-0 items-center gap-1 rounded-full border border-white/10 bg-white/6 p-1">
                   <TabButton active={activeTab === 'home'} onClick={() => setActiveTab('home')}>Home</TabButton>
                   <TabButton active={activeTab === 'library'} onClick={() => setActiveTab('library')}>Library</TabButton>
                 </div>
@@ -396,18 +399,15 @@ export default function WorkspaceShell() {
                       : 'Tracks, artists, playlists, and synced collections.'}
                   </p>
                 </div>
-                <div className="ml-auto flex items-center gap-2">
-                  <TopIconButton
-                    label="Search"
-                    icon={<Search size={15} />}
-                    onClick={(event) => openModal('search', rectFromElement(event.currentTarget))}
-                  />
+                <div className="ml-auto flex shrink-0 items-center justify-end gap-2">
                   <TopIconButton
                     label={importing && importProgress ? `Uploading ${importProgress.current}/${importProgress.total}` : 'Upload'}
                     icon={<Upload size={15} />}
                     onClick={(event) => openModal('upload', rectFromElement(event.currentTarget))}
                   />
-                  <NotificationBell />
+                  <div className="hidden sm:block">
+                    <NotificationBell />
+                  </div>
                   <TopIconButton
                     label="Settings"
                     icon={<Settings size={15} />}
@@ -418,7 +418,7 @@ export default function WorkspaceShell() {
             </div>
           </header>
 
-          <main className="flex-1 pt-8">
+          <main className="flex-1 pt-5 sm:pt-8">
             <div className="space-y-8">
               {errorMessage ? <Banner>{errorMessage}</Banner> : null}
               {importNotice ? <Banner>{importNotice}</Banner> : null}
@@ -654,6 +654,19 @@ export default function WorkspaceShell() {
           </main>
         </div>
 
+        <div className="workspace-search-fab" data-player-visible={playerVisible ? 'true' : 'false'}>
+          <button
+            type="button"
+            aria-label="Search"
+            title="Search"
+            onClick={(event) => openModal('search', rectFromElement(event.currentTarget))}
+            className="workspace-search-fab__button"
+          >
+            <Search size={18} />
+            <span className="workspace-search-fab__label">Search</span>
+          </button>
+        </div>
+
         <WorkspacePlayer />
 
         <BottomSheet
@@ -795,7 +808,7 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+      className={`rounded-full px-3 py-2 text-sm font-medium transition-colors sm:px-4 ${
         active ? 'bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]' : 'text-white/56 hover:text-white'
       }`}
     >

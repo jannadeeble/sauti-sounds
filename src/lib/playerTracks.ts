@@ -125,10 +125,13 @@ export function useResolvedPlayerTracks(
       const preferredIndex = pickPreferredIndex(tracks, startIndex, preferredTrackId)
       const preferredTrack = tracks[preferredIndex]
 
-      setState((current) => ({
-        ...current,
+      setState({
+        currentIndex: 0,
+        errors: [],
         loading: true,
-      }))
+        playableTracks: [],
+        playlist: [],
+      })
 
       let preferredResolved: ResolvedPlayerTrack | null = null
       try {

@@ -44,6 +44,7 @@ from .security import (
 from .r2_storage import (
     delete_object,
     generate_key,
+    get_object_stream,
     get_presigned_url,
     is_configured as r2_is_configured,
     upload_fileobj,
@@ -637,6 +638,45 @@ def storage_get_url(key: str, request: Request) -> dict:
             detail="Object not found or R2 not configured",
         )
     return {"key": key, "url": url}
+
+
+@app.get("/api/storage/{key:path}/stream")
+def storage_stream(key: str, request: Request) -> StreamingResponse:
+    auth_required(request)
+    if not r2_is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="R2 storage is not configured",
+        )
+
+    try:
+        obj = get_object_stream(key)
+    except Exception:
+        obj = None
+
+    if obj is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Object not found or R2 not configured",
+        )
+
+    body = obj["Body"]
+
+    def content() -> Iterator[bytes]:
+        try:
+            for chunk in iter(lambda: body.read(64 * 1024), b""):
+                if chunk:
+                    yield chunk
+        finally:
+            body.close()
+
+    headers: dict[str, str] = {}
+    if obj.get("ContentLength"):
+        headers["Content-Length"] = str(obj["ContentLength"])
+    if obj.get("ContentType"):
+        headers["Content-Type"] = str(obj["ContentType"])
+
+    return StreamingResponse(content(), headers=headers)
 
 
 @app.delete("/api/storage/{key:path}")

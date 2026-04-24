@@ -1,15 +1,97 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ListMusic, Pause, Play, SkipBack, SkipForward, Volume2, VolumeX } from 'lucide-react'
+import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Heart, ListMusic, MoreVertical, Pause, Play, Radio, SkipBack, SkipForward } from 'lucide-react'
+import AddToPlaylistDialog from './AddToPlaylistDialog'
+import MorphSurface from './MorphSurface'
 import { useTrackArtworkUrl } from '../lib/artwork'
+import { toApiUrl } from '../lib/api'
 import { maybeFillAutoRadio } from '../lib/autoRadio'
+import { isLLMConfigured } from '../lib/llm'
 import { resolveTrackContext } from '../lib/listenContextRegistry'
 import { flushActiveListen, reportPlayerTick } from '../lib/listenTracker'
 import { formatTime } from '../lib/metadata'
 import { useResolvedPlayerTracks, type ResolvedPlayerTrack } from '../lib/playerTracks'
 import { rectFromElement } from '../lib/rect'
+import { useAIModalStore } from '../stores/aiModalStore'
 import { useHistoryStore } from '../stores/historyStore'
+import { useLibraryStore } from '../stores/libraryStore'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
+import { useTidalStore } from '../stores/tidalStore'
 import type { Track } from '../types'
+
+interface PlayerTrackAction {
+  label: string
+  icon?: ReactNode
+  onClick: () => void
+  destructive?: boolean
+}
+
+function buildWaveformBars(channelData: Float32Array, barCount: number): number[] {
+  const samplesPerBar = Math.max(1, Math.floor(channelData.length / barCount))
+  const bars: number[] = []
+  let max = 0
+
+  for (let index = 0; index < barCount; index++) {
+    const offset = index * samplesPerBar
+    let sum = 0
+    let peak = 0
+    let samples = 0
+
+    for (let sampleIndex = 0; sampleIndex < samplesPerBar && offset + sampleIndex < channelData.length; sampleIndex++) {
+      const value = Math.abs(channelData[offset + sampleIndex])
+      peak = Math.max(peak, value)
+      sum += value * value
+      samples++
+    }
+
+    const rms = samples > 0 ? Math.sqrt(sum / samples) : 0
+    const amplitude = (peak * 0.72) + (rms * 0.28)
+    bars.push(amplitude)
+    max = Math.max(max, amplitude)
+  }
+
+  return max > 0 ? bars.map((bar) => bar / max) : bars
+}
+
+async function decodeWaveformFromBuffer(arrayBuffer: ArrayBuffer, signal: AbortSignal): Promise<number[]> {
+  if (signal.aborted) return []
+
+  const AudioContextConstructor = window.AudioContext
+    ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!AudioContextConstructor) return []
+
+  const audioContext = new AudioContextConstructor()
+  try {
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
+    if (signal.aborted) return []
+    return buildWaveformBars(audioBuffer.getChannelData(0), 96)
+  } finally {
+    void audioContext.close()
+  }
+}
+
+async function decodeWaveformForTrack(track: Track, src: string, signal: AbortSignal): Promise<number[]> {
+  if (track.audioBlob) {
+    return decodeWaveformFromBuffer(await track.audioBlob.arrayBuffer(), signal)
+  }
+
+  if (track.fileHandle) {
+    const file = await track.fileHandle.getFile()
+    return decodeWaveformFromBuffer(await file.arrayBuffer(), signal)
+  }
+
+  if (track.r2Key) {
+    const response = await fetch(toApiUrl(`/api/storage/${track.r2Key}/stream`), {
+      credentials: 'include',
+      signal,
+    })
+    if (!response.ok) throw new Error('Stored waveform source could not be loaded')
+    return decodeWaveformFromBuffer(await response.arrayBuffer(), signal)
+  }
+
+  const response = await fetch(src, { signal })
+  if (!response.ok) throw new Error('Waveform source could not be loaded')
+  return decodeWaveformFromBuffer(await response.arrayBuffer(), signal)
+}
 
 function PlayerIconButton({
   label,
@@ -18,7 +100,7 @@ function PlayerIconButton({
   large = false,
 }: {
   label: string
-  onClick: () => void
+  onClick: (event: MouseEvent<HTMLButtonElement>) => void
   children: ReactNode
   large?: boolean
 }) {
@@ -47,6 +129,11 @@ function PlayerRuntime({
   const setPlayerOpen = usePlaybackSessionStore((state) => state.setPlayerOpen)
   const syncPlayerState = usePlaybackSessionStore((state) => state.syncPlayerState)
   const recordPlay = useHistoryStore((state) => state.recordPlay)
+  const libraryTracks = useLibraryStore((state) => state.tracks)
+  const toggleTidalFavorite = useLibraryStore((state) => state.toggleTidalFavorite)
+  const removeTrack = useLibraryStore((state) => state.removeTrack)
+  const tidalConnected = useTidalStore((state) => state.tidalConnected)
+  const openAIModal = useAIModalStore((state) => state.open)
 
   const initialTrackId = playlist[startIndex]?.trackId ?? playlist[0]?.trackId ?? null
 
@@ -59,7 +146,10 @@ function PlayerRuntime({
   const [isPlaying, setIsPlaying] = useState(true)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
-  const [muted, setMuted] = useState(false)
+  const [showActions, setShowActions] = useState(false)
+  const [showPlaylistDialog, setShowPlaylistDialog] = useState(false)
+  const [originRect, setOriginRect] = useState<ReturnType<typeof rectFromElement>>(null)
+  const [waveform, setWaveform] = useState<{ src: string; bars: number[] } | null>(null)
 
   const currentIndex = useMemo(() => {
     if (!playlist.length) return 0
@@ -75,10 +165,52 @@ function PlayerRuntime({
   const resolvedTrack = playlist[currentIndex] ?? null
   const artworkUrl = useTrackArtworkUrl(currentTrack ?? {})
   const progressRatio = duration > 0 ? Math.min(currentTime / duration, 1) : 0
-
-  const volumeIcon = muted
-    ? <VolumeX size={18} strokeWidth={2.05} />
-    : <Volume2 size={18} strokeWidth={2.05} />
+  const waveformBars = currentTrack?.waveformData?.length
+    ? currentTrack.waveformData
+    : waveform?.src === resolvedTrack?.src
+      ? waveform.bars
+      : []
+  const aiAvailable = isLLMConfigured()
+  const isInLibrary = currentTrack ? libraryTracks.some((candidate) => candidate.id === currentTrack.id) : false
+  const playerTrackActions: PlayerTrackAction[] = currentTrack
+    ? [
+        {
+          label: 'Add to playlist',
+          onClick: () => setShowPlaylistDialog(true),
+        },
+        ...(aiAvailable
+          ? [
+              {
+                label: 'Make a setlist from this',
+                onClick: () => openAIModal('setlist-seed', currentTrack, undefined, originRect),
+              },
+              {
+                label: 'AI playlist from this track',
+                onClick: () => openAIModal('playlist-from-track', currentTrack, undefined, originRect),
+              },
+            ] satisfies PlayerTrackAction[]
+          : []),
+        ...(currentTrack.source === 'tidal' && tidalConnected
+          ? [{
+              label: currentTrack.isFavorite ? 'Remove from TIDAL favorites' : 'Add to TIDAL favorites',
+              icon: currentTrack.isFavorite
+                ? <Heart size={15} className="fill-red-400 text-red-400" />
+                : <Radio size={15} className="text-cyan-600" />,
+              onClick: () => void toggleTidalFavorite(currentTrack),
+            } satisfies PlayerTrackAction]
+          : []),
+        ...(isInLibrary
+          ? [{
+              label: 'Remove from library',
+              destructive: true,
+              onClick: () => {
+                if (!window.confirm(`Remove "${currentTrack.title}" from your library?`)) return
+                void removeTrack(currentTrack.id)
+              },
+            } satisfies PlayerTrackAction]
+          : []),
+      ]
+    : []
 
   const handlePrevious = useCallback(() => {
     const audio = audioRef.current
@@ -142,12 +274,24 @@ function PlayerRuntime({
   }, [isPlaying, resolvedTrack])
 
   useEffect(() => {
-    const audio = audioRef.current
-    if (!audio) return
+    if (!resolvedTrack?.src || !currentTrack || currentTrack.waveformData?.length) return
 
-    audio.volume = 1
-    audio.muted = muted
-  }, [muted])
+    const controller = new AbortController()
+
+    void decodeWaveformForTrack(currentTrack, resolvedTrack.src, controller.signal)
+      .then((bars) => {
+        if (!controller.signal.aborted) {
+          setWaveform({ src: resolvedTrack.src, bars })
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setWaveform({ src: resolvedTrack.src, bars: [] })
+        }
+      })
+
+    return () => controller.abort()
+  }, [currentTrack, resolvedTrack?.src])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -278,8 +422,9 @@ function PlayerRuntime({
           pendingPlayRef.current = false
           setIsPlaying(true)
         }}
-        onPause={() => {
+        onPause={(event) => {
           if (pendingPlayRef.current) return
+          setCurrentTime(event.currentTarget.currentTime)
           setIsPlaying(false)
         }}
         onEnded={() => {
@@ -295,31 +440,16 @@ function PlayerRuntime({
       />
 
       <div className="workspace-player__card">
-        <div className="workspace-player__header">
-          <div className="workspace-player__identity">
-            <div className="workspace-player__artwork">
-              {artworkUrl ? (
-                <img src={artworkUrl} alt="" className="workspace-player__artwork-image" />
-              ) : (
-                <div className="workspace-player__artwork-fallback">♪</div>
-              )}
-            </div>
-
-            <div className="workspace-player__copy">
-              <p className="workspace-player__title">{currentTrack.title}</p>
-              <p className="workspace-player__artist">{currentTrack.artist}</p>
-            </div>
-          </div>
-
-        </div>
-
         <div className="workspace-player__transport">
           <div className="workspace-player__transport-side workspace-player__transport-side--left">
             <PlayerIconButton
-              label={muted ? 'Unmute playback' : 'Mute playback'}
-              onClick={() => setMuted((current) => !current)}
+              label={`Open queue (${playlist.length} tracks)`}
+              onClick={() => {
+                const active = document.activeElement instanceof Element ? document.activeElement : null
+                setPlayerOpen(true, rectFromElement(active))
+              }}
             >
-              {volumeIcon}
+              <ListMusic size={18} strokeWidth={2.05} />
             </PlayerIconButton>
           </div>
 
@@ -341,25 +471,38 @@ function PlayerRuntime({
 
           <div className="workspace-player__transport-side workspace-player__transport-side--right">
             <PlayerIconButton
-              label={`Open queue (${playlist.length} tracks)`}
-              onClick={() => {
-                const active = document.activeElement instanceof Element ? document.activeElement : null
-                setPlayerOpen(true, rectFromElement(active))
+              label={`More actions for ${currentTrack.title}`}
+              onClick={(event) => {
+                setOriginRect(rectFromElement(event.currentTarget))
+                setShowActions(true)
               }}
             >
-              <ListMusic size={18} strokeWidth={2.05} />
+              <MoreVertical size={18} strokeWidth={2.05} />
             </PlayerIconButton>
           </div>
         </div>
 
         <div className="workspace-player__progress">
-          <span className="workspace-player__time">{formatTime(currentTime)}</span>
           <label className="workspace-player__seekbar">
-            <span className="workspace-player__seekbar-track" aria-hidden="true">
-              <span
-                className="workspace-player__seekbar-fill"
-                style={{ transform: `scaleX(${progressRatio})` }}
-              />
+            <span className="workspace-player__waveform" aria-hidden="true">
+              {waveformBars.length > 0 ? (
+                <span className="workspace-player__waveform-bars">
+                  {waveformBars.map((height, index) => (
+                    <span
+                      key={index}
+                      className="workspace-player__waveform-bar"
+                      style={{
+                        height: `${Math.max(height * 100, 7)}%`,
+                        color: index / Math.max(waveformBars.length - 1, 1) <= progressRatio
+                          ? '#ef5466'
+                          : 'rgba(255, 255, 255, 0.2)',
+                      }}
+                    />
+                  ))}
+                </span>
+              ) : (
+                <span className="workspace-player__waveform-empty" />
+              )}
             </span>
             <input
               className="workspace-player__seekbar-input"
@@ -372,9 +515,66 @@ function PlayerRuntime({
               aria-label="Seek playback"
             />
           </label>
-          <span className="workspace-player__time">{formatTime(duration)}</span>
+          <div className="workspace-player__time-row">
+            <span className="workspace-player__time">{formatTime(currentTime)}</span>
+            <div className="workspace-player__meta-line">
+              <span className="workspace-player__title">{currentTrack.title}</span>
+              <span className="workspace-player__meta-separator">·</span>
+              <span className="workspace-player__artist">{currentTrack.artist}</span>
+            </div>
+            <span className="workspace-player__time">{formatTime(duration)}</span>
+          </div>
         </div>
       </div>
+
+      <MorphSurface
+        open={showActions}
+        onClose={() => setShowActions(false)}
+        title={currentTrack.title}
+        description={currentTrack.artist}
+        originRect={originRect}
+        variant="light"
+        size="sm"
+        align="bottom"
+      >
+        <div className="sauti-modal-card-muted mb-3 flex items-center gap-3 px-3 py-3">
+          <div className="h-12 w-12 overflow-hidden rounded-[14px] bg-white">
+            {artworkUrl ? (
+              <img src={artworkUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-lg text-[#9ea0aa]">♪</div>
+            )}
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-[#111116]">{currentTrack.title}</p>
+            <p className="truncate text-xs text-[#7a7b86]">{currentTrack.artist}</p>
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          {playerTrackActions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              onClick={() => {
+                action.onClick()
+                setShowActions(false)
+              }}
+              className={`sauti-modal-action-row text-sm ${action.destructive ? 'sauti-modal-action-row-danger' : ''}`}
+            >
+              {action.icon ?? null}
+              <span>{action.label}</span>
+            </button>
+          ))}
+        </div>
+      </MorphSurface>
+
+      <AddToPlaylistDialog
+        open={showPlaylistDialog}
+        track={currentTrack}
+        originRect={originRect}
+        onClose={() => setShowPlaylistDialog(false)}
+      />
     </div>
   )
 }
@@ -401,7 +601,7 @@ export default function WorkspacePlayer() {
 
   if (loading && playlist.length === 0) {
     return (
-      <div className="pointer-events-none fixed inset-x-0 bottom-[76px] z-30 px-4 lg:bottom-4">
+      <div className="pointer-events-none fixed inset-x-0 bottom-[76px] z-30 px-2 sm:px-4 lg:bottom-4">
         <div className="pointer-events-auto mx-auto max-w-[980px] rounded-2xl border border-white/10 bg-surface-900/95 px-5 py-4 shadow-[0_12px_40px_rgba(17,17,22,0.22)] backdrop-blur-2xl">
           <p className="text-sm text-gray-400">Preparing playback…</p>
         </div>
@@ -412,7 +612,7 @@ export default function WorkspacePlayer() {
   if (playlist.length === 0) return null
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-2 z-30 px-4">
+    <div className="pointer-events-none fixed inset-x-0 bottom-2 z-30 px-2 sm:px-4">
       <PlayerRuntime
         key={sessionId}
         playableTracks={playableTracks}

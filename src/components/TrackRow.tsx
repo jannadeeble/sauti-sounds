@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { type PointerEvent, type MouseEvent, useRef, useState } from 'react'
 import { Check, Heart, ListPlus, MoreVertical, Play, Plus, Radio } from 'lucide-react'
 import AddToPlaylistDialog from './AddToPlaylistDialog'
 import MorphSurface from './MorphSurface'
@@ -105,12 +105,26 @@ export default function TrackRow({
   const toggleSelection = useSelectionStore((state) => state.toggle)
   const isSelected = selectedIds.has(track.id)
   const longPressTimer = useRef<number | null>(null)
+  const lastPointerType = useRef<string | null>(null)
+  const longPressTriggered = useRef(false)
 
-  function handleRowClick() {
+  function handleRowClick(event?: MouseEvent<HTMLDivElement>) {
+    if (longPressTriggered.current) {
+      longPressTriggered.current = false
+      event?.preventDefault()
+      return
+    }
+
     if (selecting) {
       toggleSelection(track.id)
       return
     }
+
+    if (event && (lastPointerType.current === 'touch' || lastPointerType.current === 'pen')) {
+      handlePlay()
+      return
+    }
+
     enterSelection(track.id)
   }
 
@@ -122,9 +136,12 @@ export default function TrackRow({
     playTracks([track], playContext, 0)
   }
 
-  function handlePointerDown() {
-    if (selecting) return
+  function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
+    lastPointerType.current = event.pointerType
+    if (selecting || event.pointerType === 'mouse') return
+
     longPressTimer.current = window.setTimeout(() => {
+      longPressTriggered.current = true
       enterSelection(track.id)
       longPressTimer.current = null
     }, 450)
@@ -182,6 +199,11 @@ export default function TrackRow({
           onPointerUp={cancelLongPress}
           onPointerLeave={cancelLongPress}
           onPointerCancel={cancelLongPress}
+          onContextMenu={(event) => {
+            if (longPressTriggered.current) {
+              event.preventDefault()
+            }
+          }}
           className="group/row flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
         >
           <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-[#f1f1f4]">

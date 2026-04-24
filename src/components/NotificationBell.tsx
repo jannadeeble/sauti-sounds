@@ -22,7 +22,11 @@ function kindIcon(kind: NotificationKind) {
   }
 }
 
-export default function NotificationBell() {
+export default function NotificationBell({
+  buttonClassName = 'sauti-glass-button relative sm:h-11 sm:w-11',
+}: {
+  buttonClassName?: string
+} = {}) {
   const [open, setOpen] = useState(false)
   const [originRect, setOriginRect] = useState<ReturnType<typeof rectFromElement>>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -50,7 +54,7 @@ export default function NotificationBell() {
           setOriginRect(rectFromElement(event.currentTarget))
           setOpen(true)
         }}
-        className="sauti-glass-button relative sm:h-11 sm:w-11"
+        className={buttonClassName}
       >
         <Bell size={16} />
         {unreadCount > 0 ? (

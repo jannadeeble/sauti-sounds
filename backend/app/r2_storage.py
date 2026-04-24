@@ -94,6 +94,13 @@ def get_presigned_url(key: str, expires: int = 3600) -> str | None:
     )
 
 
+def get_object_stream(key: str):
+    client = _get_client()
+    if client is None:
+        return None
+    return client.get_object(Bucket=settings.r2_bucket_name, Key=key)
+
+
 def delete_object(key: str) -> None:
     client = _get_client()
     if client is None:

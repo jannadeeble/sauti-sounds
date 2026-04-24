@@ -32,6 +32,7 @@ export interface Track {
   bpm?: number
   key?: string
   energy?: number
+  waveformData?: number[]
   mood?: string
   tags?: TrackTags
   isFavorite?: boolean

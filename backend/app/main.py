@@ -6,6 +6,7 @@ from pathlib import Path
 import time
 import uuid
 
+import requests
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -28,6 +29,7 @@ from .schemas import (
     AuthLoginRequest,
     AuthRegisterRequest,
     LibrarySnapshotRequest,
+    LLMChatRequest,
     PlaylistAddItemsRequest,
     PlaylistCreateRequest,
 )
@@ -103,6 +105,235 @@ def playback_allowed(request: Request, track_id: str, token: str | None) -> None
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+def _provider_error_message(response: requests.Response) -> str:
+    text = response.text.strip()
+    try:
+        payload = response.json()
+    except ValueError:
+        return text or response.reason
+
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict):
+            message = error.get("message") or error.get("detail") or error.get("type")
+            if message:
+                return str(message)
+        if isinstance(error, str):
+            return error
+        detail = payload.get("detail") or payload.get("message")
+        if detail:
+            return str(detail)
+
+    return text or response.reason
+
+
+def _raise_provider_error(label: str, response: requests.Response) -> None:
+    message = _provider_error_message(response)
+    raise HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail=f"{label} API error: {response.status_code} {message}",
+    )
+
+
+def _merge_system_prompt(messages: list[dict], system_blocks: list[dict] | None) -> list[dict]:
+    if not system_blocks:
+        return messages
+
+    injected = "\n\n".join(
+        str(block.get("text", "")).strip()
+        for block in system_blocks
+        if str(block.get("text", "")).strip()
+    )
+    if not injected:
+        return messages
+
+    existing_system = next(
+        (
+            str(message.get("content", "")).strip()
+            for message in messages
+            if message.get("role") == "system"
+        ),
+        "",
+    )
+    merged_system = f"{injected}\n\n{existing_system}" if existing_system else injected
+    without_system = [message for message in messages if message.get("role") != "system"]
+    return [{"role": "system", "content": merged_system}, *without_system]
+
+
+def _openrouter_supports_reasoning(model_id: str) -> bool:
+    model = model_id.lower()
+    return (
+        "claude-sonnet-4" in model
+        or "claude-opus-4" in model
+        or "claude-haiku-4" in model
+        or model.startswith("openai/o1")
+        or model.startswith("openai/o3")
+        or model.startswith("openai/o4")
+        or "deepseek-r1" in model
+        or "gpt-5" in model
+        or "gemini-2.5" in model
+    )
+
+
+def _call_claude_llm(payload: LLMChatRequest) -> str:
+    system_from_messages = next(
+        (
+            str(message.get("content", ""))
+            for message in payload.messages
+            if message.get("role") == "system"
+        ),
+        "",
+    )
+    user_messages = [
+        {"role": message.get("role"), "content": message.get("content", "")}
+        for message in payload.messages
+        if message.get("role") != "system"
+    ]
+    max_tokens = payload.max_tokens
+    body: dict = {
+        "model": payload.model or "claude-sonnet-4-6",
+        "max_tokens": max_tokens,
+        "system": payload.system_blocks or system_from_messages,
+        "messages": user_messages,
+    }
+    if payload.thinking_budget and payload.thinking_budget > 0:
+        thinking_budget = min(payload.thinking_budget, max(max_tokens - 1024, 0))
+        if thinking_budget > 0:
+            body["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
+
+    response = requests.post(
+        "https://api.anthropic.com/v1/messages",
+        headers={
+            "Content-Type": "application/json",
+            "x-api-key": payload.api_key,
+            "anthropic-version": "2023-06-01",
+            "anthropic-beta": "prompt-caching-2024-07-31",
+        },
+        json=body,
+        timeout=90,
+    )
+    if not response.ok:
+        _raise_provider_error("Claude", response)
+
+    data = response.json()
+    return "\n".join(
+        block.get("text", "")
+        for block in data.get("content", [])
+        if block.get("type") == "text" and isinstance(block.get("text"), str)
+    )
+
+
+def _call_openai_llm(payload: LLMChatRequest) -> str:
+    response = requests.post(
+        "https://api.openai.com/v1/chat/completions",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {payload.api_key}",
+        },
+        json={
+            "model": payload.model or "gpt-4o",
+            "max_tokens": payload.max_tokens,
+            "messages": _merge_system_prompt(payload.messages, payload.system_blocks),
+        },
+        timeout=90,
+    )
+    if not response.ok:
+        _raise_provider_error("OpenAI", response)
+
+    data = response.json()
+    return data["choices"][0]["message"]["content"]
+
+
+def _call_openrouter_llm(payload: LLMChatRequest, request: Request) -> str:
+    model = payload.model or "anthropic/claude-sonnet-4.6"
+    body: dict = {
+        "model": model,
+        "max_tokens": payload.max_tokens,
+        "messages": _merge_system_prompt(payload.messages, payload.system_blocks),
+    }
+    if payload.use_route_enhancements and _openrouter_supports_reasoning(model):
+        body["reasoning"] = {"effort": "high"}
+
+    response = requests.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {payload.api_key}",
+            "HTTP-Referer": str(request.base_url).rstrip("/"),
+            "X-Title": "Sauti Sounds",
+        },
+        json=body,
+        timeout=90,
+    )
+    if not response.ok:
+        _raise_provider_error("OpenRouter", response)
+
+    data = response.json()
+    return data["choices"][0]["message"]["content"]
+
+
+def _call_gemini_llm(payload: LLMChatRequest) -> str:
+    model = payload.model or "gemini-2.0-flash"
+    messages = _merge_system_prompt(payload.messages, payload.system_blocks)
+    contents = [
+        {
+            "role": "model" if message.get("role") == "assistant" else "user",
+            "parts": [{"text": str(message.get("content", ""))}],
+        }
+        for message in messages
+        if message.get("role") != "system"
+    ]
+    system_message = next((message for message in messages if message.get("role") == "system"), None)
+    body: dict = {
+        "contents": contents,
+        "generationConfig": {"maxOutputTokens": payload.max_tokens},
+    }
+    if system_message:
+        body["systemInstruction"] = {"parts": [{"text": str(system_message.get("content", ""))}]}
+
+    response = requests.post(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+        params={"key": payload.api_key},
+        headers={"Content-Type": "application/json"},
+        json=body,
+        timeout=90,
+    )
+    if not response.ok:
+        _raise_provider_error("Gemini", response)
+
+    data = response.json()
+    candidates = data.get("candidates") or []
+    if not candidates:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Gemini API error: empty response",
+        )
+    return candidates[0]["content"]["parts"][0]["text"]
+
+
+@app.post("/api/llm/chat")
+def llm_chat(payload: LLMChatRequest, request: Request, _: None = Depends(auth_required)) -> dict[str, str]:
+    provider = payload.provider.lower()
+    try:
+        if provider == "claude":
+            text = _call_claude_llm(payload)
+        elif provider == "openai":
+            text = _call_openai_llm(payload)
+        elif provider == "openrouter":
+            text = _call_openrouter_llm(payload, request)
+        elif provider == "gemini":
+            text = _call_gemini_llm(payload)
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown provider: {payload.provider}")
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"{payload.provider} API network error: {exc}",
+        ) from exc
+
+    return {"text": text}
 
 
 def normalize_email(email: str) -> str:

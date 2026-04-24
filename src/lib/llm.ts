@@ -1,4 +1,5 @@
 import type { TasteProfile, Track, TrackTags } from '../types'
+import { apiPost } from './api'
 
 export type { TasteProfile, TrackTags } from '../types'
 
@@ -34,6 +35,10 @@ export function getLLMConfig(): LLMConfig | null {
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
+}
+
+interface LLMChatResponse {
+  text: string
 }
 
 export interface ClaudeSystemBlock {
@@ -94,51 +99,16 @@ async function callConfiguredProvider(
 }
 
 async function callClaude(messages: ChatMessage[], opts: ClaudeCallOptions = {}): Promise<string> {
-  const systemFromMessages = messages.find(m => m.role === 'system')?.content || ''
-  const userMessages = messages.filter(m => m.role !== 'system').map(m => ({
-    role: m.role,
-    content: m.content,
-  }))
-
-  const system: string | ClaudeSystemBlock[] = opts.systemBlocks?.length
-    ? opts.systemBlocks
-    : systemFromMessages
-
-  const body: Record<string, unknown> = {
+  const data = await apiPost<LLMChatResponse>('/api/llm/chat', {
+    provider: 'claude',
+    apiKey: config!.apiKey,
     model: opts.model || config!.model || MODEL_SONNET_46,
-    max_tokens: opts.maxTokens ?? 2048,
-    system,
-    messages: userMessages,
-  }
-
-  if (typeof opts.thinkingBudget === 'number' && opts.thinkingBudget > 0) {
-    body.thinking = { type: 'enabled', budget_tokens: opts.thinkingBudget }
-  }
-
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': config!.apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-beta': 'prompt-caching-2024-07-31',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify(body),
+    messages,
+    maxTokens: opts.maxTokens ?? 2048,
+    thinkingBudget: opts.thinkingBudget,
+    systemBlocks: opts.systemBlocks,
   })
-
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`Claude API error: ${res.status} ${err}`)
-  }
-
-  const data = await res.json()
-  // Skip thinking blocks; return concatenated text blocks.
-  const text = (data.content as Array<{ type: string; text?: string }>)
-    .filter(b => b.type === 'text' && typeof b.text === 'string')
-    .map(b => b.text!)
-    .join('\n')
-  return text
+  return data.text
 }
 
 /**
@@ -154,22 +124,14 @@ export async function callClaudeDirect(
 }
 
 async function callOpenAI(messages: ChatMessage[], maxTokens: number): Promise<string> {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config!.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config!.model || 'gpt-4o',
-      max_tokens: maxTokens,
-      messages,
-    }),
+  const data = await apiPost<LLMChatResponse>('/api/llm/chat', {
+    provider: 'openai',
+    apiKey: config!.apiKey,
+    model: config!.model || 'gpt-4o',
+    messages,
+    maxTokens,
   })
-
-  if (!res.ok) throw new Error(`OpenAI API error: ${res.status}`)
-  const data = await res.json()
-  return data.choices[0].message.content
+  return data.text
 }
 
 export interface OpenRouterModel {
@@ -284,41 +246,29 @@ async function callOpenRouterOnce(
   model: string,
   useRouteEnhancements: boolean,
 ): Promise<OpenRouterCallResult> {
-  const body: Record<string, unknown> = {
-    model,
-    max_tokens: maxTokens,
-    messages,
+  try {
+    const data = await apiPost<LLMChatResponse>('/api/llm/chat', {
+      provider: 'openrouter',
+      apiKey: config!.apiKey,
+      model,
+      messages,
+      maxTokens,
+      useRouteEnhancements: useRouteEnhancements && supportsReasoning(model),
+    })
+    return { ok: true, text: data.text }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown OpenRouter error'
+    return { ok: false, status: extractProviderStatus(message) ?? 0, error: message }
   }
-
-  if (useRouteEnhancements && supportsReasoning(model)) {
-    // "high" is the step below the new "max" effort level introduced for
-    // Claude 4.6 — gets heavy thinking on hard tasks without the open-ended
-    // token budget of "max".
-    body.reasoning = { effort: 'high' }
-  }
-
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config!.apiKey}`,
-      'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'https://sauti.app',
-      'X-Title': 'Sauti Sounds',
-    },
-    body: JSON.stringify(body),
-  })
-
-  if (!res.ok) {
-    const err = await res.text()
-    return { ok: false, status: res.status, error: err }
-  }
-
-  const data = await res.json()
-  return { ok: true, text: data.choices[0].message.content }
 }
 
 function isOpenRouterEndpointGuardrailError(error: string): boolean {
   return /no endpoints? found matching/i.test(error)
+}
+
+function extractProviderStatus(message: string): number | null {
+  const status = message.match(/\b(?:Claude|OpenAI|Gemini|OpenRouter) API error: (\d{3})/)?.[1]
+  return status ? Number(status) : null
 }
 
 function formatOpenRouterError(statusCode: number, error: string): string {
@@ -333,6 +283,9 @@ function formatOpenRouterError(statusCode: number, error: string): string {
   if (isOpenRouterEndpointGuardrailError(message)) {
     return `OpenRouter could not route the selected model under the current account/provider policy. In Settings, choose another OpenRouter model or update OpenRouter privacy/data settings. (${message})`
   }
+  if (/^OpenRouter API error:/i.test(message)) {
+    return message
+  }
 
   return `OpenRouter API error: ${statusCode} ${message}`
 }
@@ -341,34 +294,14 @@ async function callGemini(
   messages: ChatMessage[],
   maxTokens: number,
 ): Promise<string> {
-  const model = config!.model || 'gemini-2.0-flash'
-  const contents = messages
-    .filter(m => m.role !== 'system')
-    .map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }],
-    }))
-
-  const systemInstruction = messages.find(m => m.role === 'system')
-
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config!.apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents,
-        systemInstruction: systemInstruction
-          ? { parts: [{ text: systemInstruction.content }] }
-          : undefined,
-        generationConfig: { maxOutputTokens: maxTokens },
-      }),
-    }
-  )
-
-  if (!res.ok) throw new Error(`Gemini API error: ${res.status}`)
-  const data = await res.json()
-  return data.candidates[0].content.parts[0].text
+  const data = await apiPost<LLMChatResponse>('/api/llm/chat', {
+    provider: 'gemini',
+    apiKey: config!.apiKey,
+    model: config!.model || 'gemini-2.0-flash',
+    messages,
+    maxTokens,
+  })
+  return data.text
 }
 
 // ── Track Tagging ──

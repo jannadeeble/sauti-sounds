@@ -484,14 +484,22 @@ function recommendationErrorMessage(err: unknown): string {
   if (raw.includes('unreadable format')) return raw
 
   const status = raw.match(/\b(?:Claude|OpenAI|Gemini|OpenRouter) API error: (\d{3})/)?.[1]
+  const provider = raw.match(/\b(Claude|OpenAI|Gemini|OpenRouter) API error:/)?.[1] ?? 'AI provider'
+  const detail = raw
+    .replace(/\b(?:Claude|OpenAI|Gemini|OpenRouter) API error: \d{3}\s*/i, '')
+    .trim()
+
   if (status === '401' || status === '403') {
-    return 'The AI provider rejected the request. Check the API key and selected model in Settings.'
+    return `${provider} rejected the request. Check the API key and selected model in Settings.${detail ? ` (${detail})` : ''}`
   }
   if (status === '429') {
-    return 'The AI provider rate-limited the request. Wait a moment and try again.'
+    if (/quota|credit|billing|insufficient|exceeded your current quota/i.test(detail)) {
+      return `${provider} returned a quota or billing limit. Check that provider account's credits, quota, and selected model in Settings.${detail ? ` (${detail})` : ''}`
+    }
+    return `${provider} returned HTTP 429.${detail ? ` ${detail}` : ' This can be a rate limit, quota issue, or provider routing limit.'}`
   }
   if (status && Number(status) >= 500) {
-    return 'The AI provider is having trouble right now. Try again shortly.'
+    return `${provider} is having trouble right now. Try again shortly.${detail ? ` (${detail})` : ''}`
   }
   if (/failed to fetch|network/i.test(raw)) {
     return 'Sauti could not reach the AI provider. Check the network connection and try again.'

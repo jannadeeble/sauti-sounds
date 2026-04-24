@@ -8,6 +8,7 @@ export type LLMProvider = 'claude' | 'openai' | 'gemini' | 'openrouter'
 // generation; Haiku 4.5 (no thinking) for cheap adjudication and blurbs.
 export const MODEL_SONNET_46 = 'claude-sonnet-4-6'
 export const MODEL_HAIKU_45 = 'claude-haiku-4-5-20251001'
+export const OPENROUTER_DEFAULT_MODEL = 'anthropic/claude-sonnet-4.6'
 export const DEFAULT_THINKING_BUDGET = 16_000
 
 interface LLMConfig {
@@ -259,19 +260,43 @@ async function callOpenRouter(
 ): Promise<string> {
   // OpenRouter is OpenAI-compatible. The HTTP-Referer and X-Title headers are
   // optional attribution metadata shown on OpenRouter's leaderboard.
-  const model = config!.model || 'anthropic/claude-sonnet-4.6'
+  const model = config!.model || OPENROUTER_DEFAULT_MODEL
 
+  const first = await callOpenRouterOnce(messages, maxTokens, model, true)
+  if (first.ok) return first.text
+
+  if (isOpenRouterEndpointGuardrailError(first.error)) {
+    const retry = await callOpenRouterOnce(messages, maxTokens, model, false)
+    if (retry.ok) return retry.text
+    throw new Error(formatOpenRouterError(retry.status, retry.error))
+  }
+
+  throw new Error(formatOpenRouterError(first.status, first.error))
+}
+
+type OpenRouterCallResult =
+  | { ok: true; text: string }
+  | { ok: false; status: number; error: string }
+
+async function callOpenRouterOnce(
+  messages: ChatMessage[],
+  maxTokens: number,
+  model: string,
+  useRouteEnhancements: boolean,
+): Promise<OpenRouterCallResult> {
   const body: Record<string, unknown> = {
     model,
     max_tokens: maxTokens,
     messages,
-    // Web search plugin: augments the prompt with fresh results via Exa.
-    // `max_results: 3` keeps the cost at ~$0.012/call while still giving
-    // the model enough context to cite current releases, tour dates, etc.
-    plugins: [{ id: 'web', max_results: 3 }],
   }
 
-  if (supportsReasoning(model)) {
+  if (useRouteEnhancements) {
+    // Web search can improve freshness, but it also narrows OpenRouter's
+    // eligible endpoints. We retry without it if routing policy rejects the call.
+    body.plugins = [{ id: 'web', max_results: 3 }]
+  }
+
+  if (useRouteEnhancements && supportsReasoning(model)) {
     // "high" is the step below the new "max" effort level introduced for
     // Claude 4.6 — gets heavy thinking on hard tasks without the open-ended
     // token budget of "max".
@@ -291,11 +316,31 @@ async function callOpenRouter(
 
   if (!res.ok) {
     const err = await res.text()
-    throw new Error(`OpenRouter API error: ${res.status} ${err}`)
+    return { ok: false, status: res.status, error: err }
   }
 
   const data = await res.json()
-  return data.choices[0].message.content
+  return { ok: true, text: data.choices[0].message.content }
+}
+
+function isOpenRouterEndpointGuardrailError(error: string): boolean {
+  return /no endpoints? found matching/i.test(error)
+}
+
+function formatOpenRouterError(statusCode: number, error: string): string {
+  let message = error.trim()
+  try {
+    const parsed = JSON.parse(error) as { error?: { message?: string } }
+    message = parsed.error?.message || message
+  } catch {
+    // Keep raw body when OpenRouter returns plain text.
+  }
+
+  if (isOpenRouterEndpointGuardrailError(message)) {
+    return `OpenRouter could not route the selected model under the current account/provider policy. In Settings, choose another OpenRouter model or update OpenRouter privacy/data settings. (${message})`
+  }
+
+  return `OpenRouter API error: ${statusCode} ${message}`
 }
 
 async function callGemini(

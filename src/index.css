@@ -42,6 +42,7 @@ body,
 
 html,
 body {
+  background: var(--deezer-bg);
   overflow-x: hidden;
 }
 

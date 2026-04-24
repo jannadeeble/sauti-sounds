@@ -49,6 +49,11 @@ async function materializeMixTracks(mixTrackIds: string[]): Promise<Track[]> {
     const resolved = fetched
       .filter((result): result is PromiseFulfilledResult<Track> => result.status === 'fulfilled')
       .map((result) => result.value)
+    const rejectedCount = fetched.length - resolved.length
+
+    if (resolved.length === 0 && rejectedCount > 0) {
+      throw new Error('The playlist generated, but TIDAL track lookup failed. Check the backend/TIDAL connection and try again.')
+    }
 
     if (resolved.length > 0) {
       await cacheTidalTracks(resolved)
@@ -112,18 +117,20 @@ export const usePlaylistGeneratorStore = create<PlaylistGeneratorState>((set, ge
       }
 
       const library = useLibraryStore.getState().tracks
+      const cacheResolvedTracks = useLibraryStore.getState().cacheTidalTracks
       const tasteProfile = useTasteStore.getState().profile
       const mix = await generateMoodPlaylist(
         {
           library,
           tasteProfile: options.useTaste ? tasteProfile ?? null : null,
+          cacheResolvedTracks,
         },
         trimmed,
         { count: options.count },
       )
 
       if (!mix) {
-        throw new Error('No playlist could be generated from that prompt. Try being more specific.')
+        throw new Error('Sauti generated recommendations, but none could be matched to playable tracks. Try a different prompt, or check TIDAL if this keeps happening.')
       }
 
       await useMixStore.getState().upsert(mix)

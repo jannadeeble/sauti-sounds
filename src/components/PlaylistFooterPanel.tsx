@@ -18,6 +18,7 @@ interface Props {
 
 export default function PlaylistFooterPanel({ playlist, playlistTracks }: Props) {
   const library = useLibraryStore((s) => s.tracks)
+  const cacheTidalTracks = useLibraryStore((s) => s.cacheTidalTracks)
   const tasteProfile = useTasteStore((s) => s.profile)
   const mixes = useMixStore((s) => s.mixes)
   const upsert = useMixStore((s) => s.upsert)
@@ -60,7 +61,7 @@ export default function PlaylistFooterPanel({ playlist, playlistTracks }: Props)
     setError(null)
     try {
       const next = await generatePlaylistFooter(
-        { library, tasteProfile },
+        { library, tasteProfile, cacheResolvedTracks: cacheTidalTracks },
         playlist,
         playlistTracks,
         { count: VISIBLE + 3 },
@@ -80,8 +81,6 @@ export default function PlaylistFooterPanel({ playlist, playlistTracks }: Props)
     }
   }
 
-  if (!isLLMConfigured()) return null
-
   const trackById = useMemo(() => new Map(library.map((t) => [t.id, t])), [library])
   const tracks = useMemo(() => {
     if (!mix) return []
@@ -91,6 +90,8 @@ export default function PlaylistFooterPanel({ playlist, playlistTracks }: Props)
       .filter((t) => !dismissed.has(t.id))
       .slice(0, VISIBLE)
   }, [mix, trackById, dismissed])
+
+  if (!isLLMConfigured()) return null
 
   return (
     <section className="rounded-[24px] border border-black/8 bg-white p-5">

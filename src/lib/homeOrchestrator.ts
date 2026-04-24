@@ -59,6 +59,7 @@ async function runHomeFeed(opts: RunOptions): Promise<void> {
 
   const library = libraryState.tracks
   if (library.length < 20) return // cold start: handled elsewhere
+  const resolvedTracksToCache: Track[] = []
 
   // Stale prior fresh home-feed mixes before generating new ones.
   await mixStore.markStale([
@@ -73,6 +74,9 @@ async function runHomeFeed(opts: RunOptions): Promise<void> {
     library,
     tasteProfile: tasteState.profile,
     excludeLibraryIds: buildExcludeSet(library),
+    cacheResolvedTracks: async (tracks: Track[]) => {
+      resolvedTracksToCache.push(...tracks)
+    },
   }
 
   const phases = opts.phases ?? ['rediscovery', 'track-echo', 'playlist-echo', 'similar-artist', 'cultural-bridge']
@@ -117,6 +121,10 @@ async function runHomeFeed(opts: RunOptions): Promise<void> {
   }
 
   const results = await Promise.allSettled(jobs)
+  if (resolvedTracksToCache.length > 0) {
+    const byId = new Map(resolvedTracksToCache.map(track => [track.id, track]))
+    await libraryState.cacheTidalTracks([...byId.values()])
+  }
   for (const r of results) {
     if (r.status === 'fulfilled' && r.value) {
       await mixStore.upsert(r.value)
@@ -127,6 +135,7 @@ async function runHomeFeed(opts: RunOptions): Promise<void> {
 export async function regenerateMix(mix: Mix): Promise<Mix | null> {
   if (!isLLMConfigured()) return null
   const library = useLibraryStore.getState().tracks
+  const cacheTidalTracks = useLibraryStore.getState().cacheTidalTracks
   const tasteProfile = useTasteStore.getState().profile
   const playlists = usePlaylistStore.getState()
 
@@ -134,6 +143,7 @@ export async function regenerateMix(mix: Mix): Promise<Mix | null> {
     library,
     tasteProfile,
     excludeLibraryIds: buildExcludeSet(library),
+    cacheResolvedTracks: cacheTidalTracks,
   }
 
   let next: Mix | null = null

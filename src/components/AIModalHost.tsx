@@ -34,6 +34,7 @@ function SetlistModal({
   onClose: () => void
 }) {
   const library = useLibraryStore((s) => s.tracks)
+  const cacheTidalTracks = useLibraryStore((s) => s.cacheTidalTracks)
   const tasteProfile = useTasteStore((s) => s.profile)
   const createAppPlaylist = usePlaylistStore((s) => s.createAppPlaylist)
   const appendTracksToAppPlaylist = usePlaylistStore((s) => s.appendTracksToAppPlaylist)
@@ -69,7 +70,7 @@ function SetlistModal({
     setError(null)
     try {
       const next = await generateSetlistSeed(
-        { library, tasteProfile, excludeLibraryIds: new Set() },
+        { library, tasteProfile, excludeLibraryIds: new Set(), cacheResolvedTracks: cacheTidalTracks },
         seed,
         {
           count,

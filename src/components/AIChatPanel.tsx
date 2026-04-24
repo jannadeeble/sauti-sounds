@@ -132,6 +132,7 @@ export default function AIChatPanel({ onOpenPlaylist }: { onOpenPlaylist?: (play
           {
             library: libraryTracks,
             tasteProfile: useTaste ? tasteProfile ?? null : null,
+            cacheResolvedTracks: cacheTidalTracks,
           },
           message,
           { count: inferTrackCount(message) },
@@ -210,7 +211,7 @@ export default function AIChatPanel({ onOpenPlaylist }: { onOpenPlaylist?: (play
       setLoading(true)
       try {
         const mix = await generateSetlistSeed(
-          { library: libraryTracks, tasteProfile },
+          { library: libraryTracks, tasteProfile, cacheResolvedTracks: cacheTidalTracks },
           currentTrack,
           { count: 12, useProfile: useTaste },
         )

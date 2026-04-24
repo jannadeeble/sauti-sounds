@@ -9,6 +9,7 @@ interface GeneratorEnv {
   library: Track[]
   tasteProfile: TasteProfile | null
   excludeLibraryIds?: Set<string>
+  cacheResolvedTracks?: (tracks: Track[]) => Promise<void>
 }
 
 function mixId(kind: MixKind): string {
@@ -27,6 +28,14 @@ function libraryExcludeSet(library: Track[]): Set<string> {
     ids.add(t.id)
   }
   return ids
+}
+
+async function cacheResolvedTracks(
+  env: GeneratorEnv,
+  resolved: { track: Track }[],
+): Promise<void> {
+  if (!env.cacheResolvedTracks || !resolved.length) return
+  await env.cacheResolvedTracks(resolved.map(r => r.track))
 }
 
 // ── Rediscovery ── deterministic selection + LLM-only blurb
@@ -107,6 +116,7 @@ export async function generateTrackEcho(
     mixId: id,
   })
   if (!resolved.length) return null
+  await cacheResolvedTracks(env, resolved)
 
   const blurb = await safeBlurb('track-echo', {
     seed: { title: seedTrack.title, artist: seedTrack.artist },
@@ -160,6 +170,7 @@ export async function generatePlaylistEcho(
     mixId: id,
   })
   if (!resolved.length) return null
+  await cacheResolvedTracks(env, resolved)
 
   const blurb = await safeBlurb('playlist-echo', {
     playlistName: seedPlaylist.name,
@@ -208,6 +219,7 @@ export async function generateSimilarArtist(
     mixId: id,
   })
   if (!resolved.length) return null
+  await cacheResolvedTracks(env, resolved)
 
   const blurb = await safeBlurb('similar-artist', {
     from: seedArtist,
@@ -255,6 +267,7 @@ export async function generateCulturalBridge(
     mixId: id,
   })
   if (!resolved.length) return null
+  await cacheResolvedTracks(env, resolved)
 
   const blurb = await safeBlurb('cultural-bridge', {
     markers: env.tasteProfile.culturalMarkers,
@@ -296,18 +309,19 @@ export async function generateMoodPlaylist(
   if (!recs.length) return null
 
   const exclude = env.excludeLibraryIds ?? libraryExcludeSet(env.library)
-  const id = mixId('setlist-seed') // shares kind semantically
+  const id = mixId('mood-playlist')
   const { resolved, vetoed } = await resolveRecommendations(recs, {
     excludeIds: exclude,
     mixId: id,
   })
   if (!resolved.length) return null
+  await cacheResolvedTracks(env, resolved)
 
   const blurb = await safeBlurb('mood', { prompt, resolvedCount: resolved.length })
 
   return {
     id,
-    kind: 'setlist-seed',
+    kind: 'mood-playlist',
     seedRef: { type: 'mood', prompt },
     title: prompt.slice(0, 80),
     blurb,
@@ -346,6 +360,7 @@ export async function generateSetlistSeed(
     mixId: id,
   })
   if (!resolved.length) return null
+  await cacheResolvedTracks(env, resolved)
 
   const blurb = await safeBlurb('setlist-seed', {
     seed: { title: seedTrack.title, artist: seedTrack.artist },
@@ -400,6 +415,7 @@ export async function generatePlaylistFooter(
     mixId: id,
   })
   if (!resolved.length) return null
+  await cacheResolvedTracks(env, resolved)
 
   const blurb = await safeBlurb('playlist-footer', {
     playlistName: playlist.name,
@@ -444,6 +460,7 @@ export async function generateAutoRadioBatch(
     excludeIds: exclude,
     mixId: `auto-radio-${Date.now()}`,
   })
+  await cacheResolvedTracks(env, resolved)
   return resolved.map(r => r.track)
 }
 
@@ -458,8 +475,29 @@ async function safeRecs(
     return await getRecommendationsCached(context, instruction, { count })
   } catch (err) {
     console.error('Recommendation call failed', err)
-    return []
+    throw new Error(recommendationErrorMessage(err))
   }
+}
+
+function recommendationErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : 'Unknown recommendation error'
+  if (raw.includes('unreadable format')) return raw
+
+  const status = raw.match(/\b(?:Claude|OpenAI|Gemini|OpenRouter) API error: (\d{3})/)?.[1]
+  if (status === '401' || status === '403') {
+    return 'The AI provider rejected the request. Check the API key and selected model in Settings.'
+  }
+  if (status === '429') {
+    return 'The AI provider rate-limited the request. Wait a moment and try again.'
+  }
+  if (status && Number(status) >= 500) {
+    return 'The AI provider is having trouble right now. Try again shortly.'
+  }
+  if (/failed to fetch|network/i.test(raw)) {
+    return 'Sauti could not reach the AI provider. Check the network connection and try again.'
+  }
+
+  return `Recommendation generation failed: ${raw}`
 }
 
 async function safeBlurb(kind: string, payload: Record<string, unknown>): Promise<string> {

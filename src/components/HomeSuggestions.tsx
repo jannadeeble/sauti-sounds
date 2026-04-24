@@ -19,6 +19,8 @@ import type { Mix, MixKind, Track } from '../types'
 import MorphSurface from './MorphSurface'
 
 const KIND_ORDER: MixKind[] = [
+  'mood-playlist',
+  'setlist-seed',
   'playlist-echo',
   'track-echo',
   'similar-artist',
@@ -27,12 +29,13 @@ const KIND_ORDER: MixKind[] = [
 ]
 
 const KIND_META: Record<MixKind, { label: string; subtitle: string }> = {
+  'mood-playlist': { label: 'Prompt playlists', subtitle: 'Built from your mood prompts' },
   'playlist-echo': { label: 'Playlist Echo', subtitle: 'Inspired by your playlists' },
   'track-echo': { label: 'Track Echo', subtitle: 'In the lane of what you keep playing' },
   'similar-artist': { label: 'Artist bridges', subtitle: 'A step sideways' },
   'rediscovery': { label: 'Rediscover', subtitle: 'Back from your library' },
   'cultural-bridge': { label: 'Cultural bridges', subtitle: 'Across regions and lineages' },
-  'setlist-seed': { label: 'Setlist seeds', subtitle: '' },
+  'setlist-seed': { label: 'Track-built mixes', subtitle: 'Seeded from a specific track' },
   'playlist-footer': { label: '', subtitle: '' },
   'auto-radio-buffer': { label: '', subtitle: '' },
 }
@@ -46,6 +49,7 @@ interface HomeSuggestionsProps {
 export default function HomeSuggestions({ onPlayTracks }: HomeSuggestionsProps) {
   const mixes = useMixStore((s) => s.mixes)
   const library = useLibraryStore((s) => s.tracks)
+  const cacheTidalTracks = useLibraryStore((s) => s.cacheTidalTracks)
   const tasteProfile = useTasteStore((s) => s.profile)
   const tidalConnected = useTidalStore((s) => s.tidalConnected)
   const createAppPlaylist = usePlaylistStore((s) => s.createAppPlaylist)
@@ -53,6 +57,8 @@ export default function HomeSuggestions({ onPlayTracks }: HomeSuggestionsProps) 
   const dismissMix = useMixStore((s) => s.dismiss)
   const markSaved = useMixStore((s) => s.markSaved)
   const [running, setRunning] = useState(false)
+  const [moodError, setMoodError] = useState<string | null>(null)
+  const [moodRunning, setMoodRunning] = useState(false)
   const [swapping, setSwapping] = useState<string | null>(null)
   const [showMood, setShowMood] = useState(false)
 
@@ -220,6 +226,7 @@ export default function HomeSuggestions({ onPlayTracks }: HomeSuggestionsProps) 
               key={label}
               type="button"
               onClick={() => handleMoodChip(label)}
+              disabled={moodRunning}
               className="rounded-full border border-black/8 bg-white px-3 py-1.5 text-sm text-[#555661] hover:border-black/16 hover:text-[#111116]"
             >
               {label}
@@ -242,17 +249,32 @@ export default function HomeSuggestions({ onPlayTracks }: HomeSuggestionsProps) 
           onClose={() => setShowMood(false)}
           onSubmit={async (prompt, count) => {
             setShowMood(false)
-            await handleMood(prompt, count, library, tasteProfile)
-            await useMixStore.getState().load()
+            await runMoodPrompt(prompt, count)
           }}
         />
       ) : null}
+
+      {moodRunning ? <p className="text-sm text-[#7a7b86]">Building prompt playlist...</p> : null}
+      {moodError ? <p className="text-sm text-[var(--sauti-accent-text)]">{moodError}</p> : null}
     </section>
   )
 
   async function handleMoodChip(prompt: string) {
-    await handleMood(prompt, 15, library, tasteProfile)
-    await useMixStore.getState().load()
+    await runMoodPrompt(prompt, 15)
+  }
+
+  async function runMoodPrompt(prompt: string, count: number) {
+    if (moodRunning) return
+    setMoodRunning(true)
+    setMoodError(null)
+    try {
+      await handleMood(prompt, count, library, tasteProfile, cacheTidalTracks)
+      await useMixStore.getState().load()
+    } catch (err) {
+      setMoodError(err instanceof Error ? err.message : 'Prompt playlist failed.')
+    } finally {
+      setMoodRunning(false)
+    }
   }
 }
 
@@ -261,11 +283,13 @@ async function handleMood(
   count: number,
   library: Track[],
   tasteProfile: ReturnType<typeof useTasteStore.getState>['profile'],
+  cacheResolvedTracks: (tracks: Track[]) => Promise<void>,
 ): Promise<void> {
   if (!isLLMConfigured()) return
   const env = {
     library,
     tasteProfile: tasteProfile ?? null,
+    cacheResolvedTracks,
   }
   const mix = await generateMoodPlaylist(env, prompt, { count })
   if (mix) {

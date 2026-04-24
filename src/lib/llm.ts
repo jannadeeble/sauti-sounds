@@ -447,6 +447,23 @@ export interface Recommendation {
   reason: string
 }
 
+function parseRecommendationResponse(response: string): Recommendation[] {
+  const parsed = JSON.parse(response.replace(/```json?\n?|\n?```/g, ''))
+  if (!Array.isArray(parsed)) {
+    throw new Error('Recommendation response was not an array')
+  }
+  const recommendations = parsed.filter((item): item is Recommendation => (
+    item &&
+    typeof item.artist === 'string' &&
+    typeof item.title === 'string' &&
+    typeof item.reason === 'string'
+  ))
+  if (parsed.length > 0 && recommendations.length === 0) {
+    throw new Error('Recommendation response did not include usable artist/title pairs')
+  }
+  return recommendations
+}
+
 export async function getRecommendations(req: RecommendationRequest): Promise<Recommendation[]> {
   const count = req.count || 10
 
@@ -522,10 +539,10 @@ Consider energy flow, genre coherence, and mood journey. Start with a track that
   ])
 
   try {
-    return JSON.parse(response.replace(/```json?\n?|\n?```/g, ''))
-  } catch {
-    console.error('Failed to parse recommendations')
-    return []
+    return parseRecommendationResponse(response)
+  } catch (err) {
+    console.error('Failed to parse recommendations', err)
+    throw new Error('The AI provider returned recommendations in an unreadable format. Try again, or choose a different model if it keeps happening.')
   }
 }
 
@@ -603,10 +620,10 @@ Always respond with a valid JSON array of objects: [{"artist": "...", "title": "
   )
 
   try {
-    return JSON.parse(response.replace(/```json?\n?|\n?```/g, ''))
-  } catch {
-    console.error('Failed to parse cached recommendations')
-    return []
+    return parseRecommendationResponse(response)
+  } catch (err) {
+    console.error('Failed to parse cached recommendations', err)
+    throw new Error('The AI provider returned recommendations in an unreadable format. Try again, or choose a different model if it keeps happening.')
   }
 }
 

@@ -54,6 +54,7 @@ export async function resolveRecommendations(
   const vetoed: Recommendation[] = []
   const penalise = options.penaliseLiveRemixCover !== false
   const maxCandidates = options.maxCandidates ?? 5
+  let searchFailures = 0
 
   for (const rec of recs) {
     const wanted = { artist: rec.artist, title: rec.title }
@@ -95,6 +96,7 @@ export async function resolveRecommendations(
         }
       }
     } catch (err) {
+      searchFailures += 1
       console.error('Tidal resolver search failed', err)
     }
 
@@ -103,6 +105,10 @@ export async function resolveRecommendations(
     } else {
       vetoed.push(rec)
     }
+  }
+
+  if (searchFailures === recs.length && recs.length > 0) {
+    throw new Error('TIDAL search failed while resolving AI picks. Check the backend/TIDAL connection and try again.')
   }
 
   return { resolved, vetoed }

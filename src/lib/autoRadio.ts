@@ -33,7 +33,12 @@ export async function maybeFillAutoRadio(seedTrack: Track | null): Promise<void>
       exclude.add(t.id)
     }
     const next = await generateAutoRadioBatch(
-      { library, tasteProfile, excludeLibraryIds: exclude },
+      {
+        library,
+        tasteProfile,
+        excludeLibraryIds: exclude,
+        cacheResolvedTracks: useLibraryStore.getState().cacheTidalTracks,
+      },
       seedTrack,
       10,
     )

@@ -143,6 +143,7 @@ export interface TasteProfileRecord {
 }
 
 export type MixKind =
+  | 'mood-playlist'
   | 'playlist-echo'
   | 'track-echo'
   | 'similar-artist'

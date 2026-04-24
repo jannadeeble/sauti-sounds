@@ -12,6 +12,7 @@ interface KindRow {
 }
 
 const ALL_KINDS: KindRow['kind'][] = [
+  'mood-playlist',
   'playlist-echo',
   'track-echo',
   'similar-artist',

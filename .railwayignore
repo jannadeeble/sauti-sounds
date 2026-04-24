@@ -11,9 +11,6 @@ output
 .git
 __pycache__
 *.pyc
-*.png
-*.jpg
-*.jpeg
 backend/dev.db
 backend/.env
 .env

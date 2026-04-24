@@ -16,6 +16,8 @@ backend/dev.db
 .env
 .env.local
 *.png
+!public/brand/
+!public/brand/*.png
 *.jpg
 *.jpeg
 npm-debug.log*

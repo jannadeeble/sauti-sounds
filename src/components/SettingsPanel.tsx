@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bell, Brain, Eye, EyeOff, HardDrive, Info, KeyRound, LogOut, Radio, RefreshCw, Server, Trash2 } from 'lucide-react'
+import { Bell, Brain, Download, Eye, EyeOff, HardDrive, Info, KeyRound, LogOut, Radio, RefreshCw, Server, Trash2 } from 'lucide-react'
 import AIStatsPanel from './AIStatsPanel'
 import NotificationBell from './NotificationBell'
 import { clearPersistedLibrary } from '../lib/librarySync'
 import { listOpenRouterModels, type LLMProvider, type OpenRouterModel } from '../lib/llm'
+import { promptPwaInstall, subscribePwaInstall } from '../lib/pwaInstall'
 import { runTagJob } from '../lib/tagJob'
 import { useAuthStore } from '../stores/authStore'
 import { useLibraryStore } from '../stores/libraryStore'
@@ -40,6 +41,8 @@ export default function SettingsPanel() {
   const [llmKey, setLlmKey] = useState(settings.llmApiKey)
   const [llmModel, setLlmModel] = useState(settings.llmModel)
   const [savedFlash, setSavedFlash] = useState(false)
+  const [installPromptAvailable, setInstallPromptAvailable] = useState(false)
+  const [appInstalled, setAppInstalled] = useState(false)
 
   const [openRouterModels, setOpenRouterModels] = useState<OpenRouterModel[]>([])
   const [openRouterLoading, setOpenRouterLoading] = useState(false)
@@ -57,6 +60,13 @@ export default function SettingsPanel() {
       .catch((err) => setOpenRouterError(err instanceof Error ? err.message : 'Failed to load models'))
       .finally(() => setOpenRouterLoading(false))
   }, [llmProvider, openRouterModels.length, openRouterLoading])
+
+  useEffect(() => {
+    return subscribePwaInstall((state) => {
+      setInstallPromptAvailable(state.promptAvailable)
+      setAppInstalled(state.installed)
+    })
+  }, [])
 
   // Group models by provider prefix (e.g. "anthropic/claude-…" → "anthropic")
   // so the dropdown reads like a menu instead of a 300-row flat list.
@@ -110,6 +120,10 @@ export default function SettingsPanel() {
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Failed to sign out')
     }
+  }
+
+  async function handleInstallApp() {
+    await promptPwaInstall()
   }
 
   async function handleReanalyze() {
@@ -185,6 +199,30 @@ export default function SettingsPanel() {
             Sign out
           </button>
         </div>
+      </section>
+
+      <section className="rounded-[24px] border border-black/8 bg-white p-4">
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-[#686973]">
+          <Download size={16} />
+          Install app
+        </h3>
+        <div className="rounded-2xl bg-[#f8f8f9] px-4 py-4">
+          <p className="text-sm font-medium text-[#111116]">
+            {appInstalled ? 'Installed on this device' : installPromptAvailable ? 'Install Sauti on this device' : 'Install available from the browser'}
+          </p>
+          <p className="mt-1 text-xs text-[#7a7b86]">
+            {appInstalled ? 'Sauti opens in its own app window.' : 'Keeps the player available from your home screen.'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void handleInstallApp()}
+          disabled={!installPromptAvailable || appInstalled}
+          className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-black/8 bg-[#f8f8f9] px-4 py-3 text-sm font-medium text-[#111116] transition-colors hover:bg-[#f1f1f4] disabled:opacity-40"
+        >
+          <Download size={16} />
+          {appInstalled ? 'Installed' : 'Install Sauti'}
+        </button>
       </section>
 
       <section className="rounded-[24px] border border-black/8 bg-white p-4 sm:hidden">

@@ -290,12 +290,6 @@ async function callOpenRouterOnce(
     messages,
   }
 
-  if (useRouteEnhancements) {
-    // Web search can improve freshness, but it also narrows OpenRouter's
-    // eligible endpoints. We retry without it if routing policy rejects the call.
-    body.plugins = [{ id: 'web', max_results: 3 }]
-  }
-
   if (useRouteEnhancements && supportsReasoning(model)) {
     // "high" is the step below the new "max" effort level introduced for
     // Claude 4.6 — gets heavy thinking on hard tasks without the open-ended

@@ -7,6 +7,7 @@ import { useLibraryStore } from './libraryStore'
 import { useMixStore } from './mixStore'
 import { useNotificationStore } from './notificationStore'
 import { usePlaylistStore } from './playlistStore'
+import { useSettingsStore } from './settingsStore'
 import { useTasteStore } from './tasteStore'
 
 interface GeneratedPlaylistResult {
@@ -23,6 +24,13 @@ interface RunPlaylistGenerationOptions {
   useTaste?: boolean
 }
 
+interface PendingPlaylistGeneration {
+  options: RunPlaylistGenerationOptions
+  prompt: string
+  runId: string
+  startedAt: number
+}
+
 interface PlaylistGeneratorState {
   activeRunId: string | null
   currentPrompt: string
@@ -33,8 +41,13 @@ interface PlaylistGeneratorState {
   clearCompletionNotification: () => void
   requestCompletionNotification: () => void
   reset: () => void
+  resumePending: () => Promise<void>
   run: (prompt: string, options?: RunPlaylistGenerationOptions) => Promise<void>
 }
+
+const PENDING_GENERATION_KEY = 'sauti.playlistGenerator.pending'
+const PENDING_MAX_AGE_MS = 6 * 60 * 60 * 1000
+let resumePendingPromise: Promise<void> | null = null
 
 async function materializeMixTracks(mixTrackIds: string[]): Promise<Track[]> {
   const libraryTracks = useLibraryStore.getState().tracks
@@ -70,6 +83,50 @@ function makeRunId() {
   return `playlist-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+function readPendingGeneration(): PendingPlaylistGeneration | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(PENDING_GENERATION_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<PendingPlaylistGeneration>
+    if (!parsed.prompt || !parsed.runId || typeof parsed.startedAt !== 'number') return null
+    if (Date.now() - parsed.startedAt > PENDING_MAX_AGE_MS) {
+      window.localStorage.removeItem(PENDING_GENERATION_KEY)
+      return null
+    }
+    return {
+      options: parsed.options ?? {},
+      prompt: parsed.prompt,
+      runId: parsed.runId,
+      startedAt: parsed.startedAt,
+    }
+  } catch {
+    return null
+  }
+}
+
+function writePendingGeneration(pending: PendingPlaylistGeneration): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(PENDING_GENERATION_KEY, JSON.stringify(pending))
+  } catch {
+    // Generation can still run without local resume support.
+  }
+}
+
+function clearPendingGeneration(runId?: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    if (runId) {
+      const pending = readPendingGeneration()
+      if (pending && pending.runId !== runId) return
+    }
+    window.localStorage.removeItem(PENDING_GENERATION_KEY)
+  } catch {
+    // Ignore local cleanup failures.
+  }
+}
+
 export const usePlaylistGeneratorStore = create<PlaylistGeneratorState>((set, get) => ({
   activeRunId: null,
   currentPrompt: '',
@@ -87,6 +144,7 @@ export const usePlaylistGeneratorStore = create<PlaylistGeneratorState>((set, ge
 
   reset: () => {
     if (get().status === 'running') return
+    clearPendingGeneration()
     set({
       activeRunId: null,
       currentPrompt: '',
@@ -97,11 +155,69 @@ export const usePlaylistGeneratorStore = create<PlaylistGeneratorState>((set, ge
     })
   },
 
+  resumePending: async () => {
+    if (get().status === 'running') return
+    if (resumePendingPromise) return resumePendingPromise
+    const pending = readPendingGeneration()
+    if (!pending) return
+
+    resumePendingPromise = (async () => {
+      await useSettingsStore.getState().hydrate()
+      await Promise.all([
+        useLibraryStore.getState().loadTracks(),
+        usePlaylistStore.getState().loadPlaylists(),
+        useTasteStore.getState().load(),
+      ])
+
+      const existing = usePlaylistStore.getState().appPlaylists.find((playlist) =>
+        playlist.origin === 'generated'
+        && playlist.generatedPrompt === pending.prompt
+        && (playlist.trackCount ?? playlist.items.length) > 0
+        && playlist.createdAt >= pending.startedAt - 60_000,
+      )
+
+      if (existing) {
+        clearPendingGeneration(pending.runId)
+        set({
+          activeRunId: null,
+          currentPrompt: pending.prompt,
+          error: null,
+          notifyOnCompletion: false,
+          result: {
+            blurb: existing.description,
+            id: existing.id,
+            name: existing.name,
+            prompt: pending.prompt,
+            trackCount: existing.trackCount ?? existing.items.length,
+          },
+          status: 'success',
+        })
+        return
+      }
+
+      const promise = get().run(pending.prompt, pending.options)
+      set({ notifyOnCompletion: true })
+      await promise
+    })()
+
+    try {
+      await resumePendingPromise
+    } finally {
+      resumePendingPromise = null
+    }
+  },
+
   run: async (prompt, options = {}) => {
     const trimmed = prompt.trim()
     if (!trimmed || get().status === 'running') return
 
     const runId = makeRunId()
+    writePendingGeneration({
+      options,
+      prompt: trimmed,
+      runId,
+      startedAt: Date.now(),
+    })
     set({
       activeRunId: runId,
       currentPrompt: trimmed,
@@ -159,6 +275,7 @@ export const usePlaylistGeneratorStore = create<PlaylistGeneratorState>((set, ge
 
       const shouldNotify = get().notifyOnCompletion
       if (get().activeRunId !== runId) return
+      clearPendingGeneration(runId)
 
       set({
         activeRunId: null,
@@ -183,6 +300,7 @@ export const usePlaylistGeneratorStore = create<PlaylistGeneratorState>((set, ge
 
       const shouldNotify = get().notifyOnCompletion
       if (get().activeRunId !== runId) return
+      clearPendingGeneration(runId)
 
       set({
         activeRunId: null,

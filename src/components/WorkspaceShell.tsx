@@ -35,6 +35,7 @@ import { useHistoryStore } from '../stores/historyStore'
 import { useLibraryStore } from '../stores/libraryStore'
 import { useMixStore } from '../stores/mixStore'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
+import { usePlaylistGeneratorStore } from '../stores/playlistGeneratorStore'
 import { usePlaylistStore } from '../stores/playlistStore'
 import { useSelectionStore } from '../stores/selectionStore'
 import { useTasteStore } from '../stores/tasteStore'
@@ -113,6 +114,8 @@ export default function WorkspaceShell() {
 
   const selecting = useSelectionStore((state) => state.selecting)
   const exitSelection = useSelectionStore((state) => state.exit)
+  const requestGeneratorCompletionNotification = usePlaylistGeneratorStore((state) => state.requestCompletionNotification)
+  const resumePendingGeneration = usePlaylistGeneratorStore((state) => state.resumePending)
 
   useEffect(() => {
     void loadTracks()
@@ -138,11 +141,44 @@ export default function WorkspaceShell() {
         if (persisted.libraryFilter && LIBRARY_FILTER_VALUES.includes(persisted.libraryFilter)) {
           setLibraryFilter(persisted.libraryFilter)
         }
+        void resumePendingGeneration()
       })
       .finally(() => {
         setPrefsReady(true)
       })
-  }, [])
+  }, [resumePendingGeneration])
+
+  useEffect(() => {
+    function handleHidden() {
+      if (usePlaylistGeneratorStore.getState().status === 'running') {
+        requestGeneratorCompletionNotification()
+      }
+    }
+
+    function handleVisible() {
+      void resumePendingGeneration()
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'hidden') {
+        handleHidden()
+        return
+      }
+      handleVisible()
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('pagehide', handleHidden)
+    window.addEventListener('pageshow', handleVisible)
+    window.addEventListener('focus', handleVisible)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('pagehide', handleHidden)
+      window.removeEventListener('pageshow', handleVisible)
+      window.removeEventListener('focus', handleVisible)
+    }
+  }, [requestGeneratorCompletionNotification, resumePendingGeneration])
 
   useEffect(() => {
     if (!prefsReady) return
@@ -302,6 +338,9 @@ export default function WorkspaceShell() {
   }
 
   function closeModal() {
+    if (modal?.kind === 'generator' && usePlaylistGeneratorStore.getState().status === 'running') {
+      requestGeneratorCompletionNotification()
+    }
     setModal(null)
   }
 

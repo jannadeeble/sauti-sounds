@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { ExternalLink, Music, RefreshCw, Sparkles } from 'lucide-react'
+import { Bell, ExternalLink, Music, RefreshCw, Sparkles } from 'lucide-react'
 import { isLLMConfigured } from '../lib/llm'
-import NetworkLoadingAnimation from './NetworkLoadingAnimation'
 import { usePlaylistGeneratorStore } from '../stores/playlistGeneratorStore'
 import { useTasteStore } from '../stores/tasteStore'
 
@@ -60,13 +59,13 @@ export default function PlaylistGeneratorPanel({
     <div className={`flex flex-col ${isInline ? 'gap-4' : 'h-full min-h-[60vh]'}`}>
       {status === 'running' ? (
         <div className={`flex flex-1 flex-col items-center justify-center text-center ${isInline ? 'gap-4 py-2' : 'gap-6 py-8'}`}>
-          <div className={`${isInline ? 'h-36 w-36' : 'h-44 w-44'} rounded-full border border-black/8 bg-[radial-gradient(circle_at_top,rgba(239,84,102,0.14),rgba(255,255,255,0.8)_65%)] p-5 shadow-[0_20px_54px_rgba(17,17,22,0.10)]`}>
-            <NetworkLoadingAnimation />
+          <div className={`${isInline ? 'h-20 w-20' : 'h-24 w-24'} flex items-center justify-center rounded-full border border-[var(--sauti-border)] bg-[var(--sauti-panel)] text-accent shadow-[0_20px_54px_rgba(17,17,22,0.10)]`}>
+            <Bell size={isInline ? 28 : 34} />
           </div>
           <div className="space-y-2">
-            <h3 className={`sauti-title leading-none text-[#111116] ${isInline ? 'text-[1.55rem]' : 'text-[1.9rem]'}`}>Building your playlist</h3>
+            <h3 className={`sauti-title leading-none text-[#111116] ${isInline ? 'text-[1.55rem]' : 'text-[1.9rem]'}`}>Cool, thank you.</h3>
             <p className="mx-auto max-w-md text-sm leading-6 text-[#7a7b86]">
-              Sauti is resolving tracks and shaping the arc.
+              You can leave this screen. A notification will appear here when the playlist is ready, and it will show up in Playlists.
             </p>
             <p className="sauti-modal-card-muted mx-auto max-w-lg px-4 py-3 text-sm text-[#555661]">
               {currentPrompt}

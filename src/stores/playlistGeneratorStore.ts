@@ -222,7 +222,7 @@ export const usePlaylistGeneratorStore = create<PlaylistGeneratorState>((set, ge
       activeRunId: runId,
       currentPrompt: trimmed,
       error: null,
-      notifyOnCompletion: false,
+      notifyOnCompletion: true,
       result: null,
       status: 'running',
     })

@@ -22,6 +22,7 @@
 }
 
 :root {
+  color-scheme: light;
   --deezer-bg: #f8f8f9;
   --deezer-panel: #ffffff;
   --deezer-panel-muted: #f3f3f6;
@@ -38,6 +39,11 @@ html,
 body,
 #root {
   min-height: 100%;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
 }
 
 html,
@@ -57,6 +63,17 @@ body {
   background: var(--deezer-bg);
   color: var(--deezer-text);
   font-family: "Avenir Next", "Helvetica Neue", "Segoe UI", sans-serif;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 0;
+  height: calc(env(safe-area-inset-bottom, 0px) + 36px);
+  background: var(--deezer-bg);
+  pointer-events: none;
 }
 
 button,

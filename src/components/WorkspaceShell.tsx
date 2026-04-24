@@ -385,7 +385,7 @@ export default function WorkspaceShell() {
       <div className="min-h-[100dvh]">
         <div className="mx-auto flex min-h-[100dvh] max-w-[1460px] flex-col px-2 pb-[calc(12rem+env(safe-area-inset-bottom))] pt-2 sm:px-6 sm:pt-4 lg:px-8">
           <header className="sticky top-2 z-20 sm:top-4">
-            <div className="sauti-glass-panel rounded-[24px] px-2 py-2 sm:rounded-[32px] sm:px-4 sm:py-3">
+            <div className="sauti-glass-panel rounded-[28px] px-2 py-2 sm:rounded-[32px] sm:px-4 sm:py-3">
               <div className="flex items-center gap-2 sm:gap-3">
                 <div className="flex shrink-0 items-center gap-1 rounded-full border border-white/10 bg-white/6 p-1">
                   <TabButton active={activeTab === 'home'} onClick={() => setActiveTab('home')}>Home</TabButton>

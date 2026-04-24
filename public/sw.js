@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sauti-sounds-shell-v2'
+const CACHE_NAME = 'sauti-sounds-shell-v3'
 const APP_SHELL = ['/', '/manifest.json', '/brand/icon-192.png', '/brand/icon-512.png']
 
 self.addEventListener('install', (event) => {

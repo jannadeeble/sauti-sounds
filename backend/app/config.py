@@ -37,8 +37,13 @@ class Settings:
 
 
 def get_settings() -> Settings:
+    default_database_url = (
+        "sqlite:////tmp/sauti-sounds.db"
+        if os.getenv("VERCEL")
+        else "sqlite:///./backend/dev.db"
+    )
     database_url = _normalize_database_url(
-        os.getenv("DATABASE_URL", "sqlite:///./backend/dev.db")
+        os.getenv("DATABASE_URL", default_database_url)
     )
     cors_origins = [
         origin.strip()

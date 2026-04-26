@@ -1,14 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { ExternalLink, Music, Send, Sparkles, User } from 'lucide-react'
 import { chat, isLLMConfigured } from '../lib/llm'
-import { generateMoodPlaylist, generateSetlistSeed } from '../lib/mixGenerator'
-import { getTidalTrack } from '../lib/tidal'
-import { useLibraryStore } from '../stores/libraryStore'
-import { useMixStore } from '../stores/mixStore'
+import { runBackendGeneration } from '../lib/generationRuns'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
-import { usePlaylistStore } from '../stores/playlistStore'
 import { useTasteStore } from '../stores/tasteStore'
-import type { Track } from '../types'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -64,27 +59,6 @@ function inferTrackCount(message: string): number {
   return 15
 }
 
-async function materializeMixTracks(
-  mixTrackIds: string[],
-  libraryTracks: Track[],
-  cacheTidalTracks: (tracks: Track[]) => Promise<void>,
-): Promise<Track[]> {
-  const byId = new Map(libraryTracks.map((track) => [track.id, track]))
-  const missingIds = mixTrackIds.filter((id) => !byId.has(id))
-
-  if (missingIds.length > 0) {
-    const fetched = await Promise.all(
-      missingIds.map((id) => getTidalTrack(id.replace(/^tidal-/, ''))),
-    )
-    await cacheTidalTracks(fetched)
-    for (const track of fetched) {
-      byId.set(track.id, track)
-    }
-  }
-
-  return mixTrackIds.map((id) => byId.get(id)).filter((track): track is Track => !!track)
-}
-
 export default function AIChatPanel({ onOpenPlaylist }: { onOpenPlaylist?: (playlistId: string) => void }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -92,13 +66,7 @@ export default function AIChatPanel({ onOpenPlaylist }: { onOpenPlaylist?: (play
   const [useTaste, setUseTaste] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const currentTrack = usePlaybackSessionStore((state) => state.currentTrack)
-  const libraryTracks = useLibraryStore((state) => state.tracks)
-  const cacheTidalTracks = useLibraryStore((state) => state.cacheTidalTracks)
   const tasteProfile = useTasteStore((state) => state.profile)
-  const upsertMix = useMixStore((state) => state.upsert)
-  const markSaved = useMixStore((state) => state.markSaved)
-  const createAppPlaylist = usePlaylistStore((state) => state.createAppPlaylist)
-  const addTrackToPlaylist = usePlaylistStore((state) => state.addTrackToPlaylist)
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -128,44 +96,32 @@ export default function AIChatPanel({ onOpenPlaylist }: { onOpenPlaylist?: (play
 
     try {
       if (looksLikePlaylistRequest(message)) {
-        const mix = await generateMoodPlaylist(
-          {
-            library: libraryTracks,
-            tasteProfile: useTaste ? tasteProfile ?? null : null,
-            cacheResolvedTracks: cacheTidalTracks,
-          },
-          message,
-          { count: inferTrackCount(message) },
-        )
+        const result = await runBackendGeneration({
+          kind: 'mood-playlist',
+          prompt: message,
+          count: inferTrackCount(message),
+          source: 'ai-chat',
+          useTaste: Boolean(useTaste && tasteProfile),
+        })
 
-        if (mix) {
-          await upsertMix(mix)
-          const resolvedTracks = await materializeMixTracks(mix.trackIds, libraryTracks, cacheTidalTracks)
-          if (!resolvedTracks.length) {
-            throw new Error('The playlist generated, but no tracks could be loaded.')
-          }
-
-          const playlist = await createAppPlaylist(mix.title, mix.blurb)
-          for (const track of resolvedTracks) {
-            await addTrackToPlaylist(playlist, track)
-          }
-          await markSaved(mix.id)
-
-          setMessages((current) => [
-            ...current,
-            {
-              role: 'assistant',
-              content: `Built "${playlist.name}" as a ${resolvedTracks.length}-track playlist.${mix.blurb ? `\n\n${mix.blurb}` : ''}`,
-              timestamp: Date.now(),
-              playlist: {
-                id: playlist.id,
-                name: playlist.name,
-                trackCount: resolvedTracks.length,
-              },
-            },
-          ])
-          return
+        if (!result.playlistId || !result.name) {
+          throw new Error('The playlist generated, but the saved playlist could not be loaded.')
         }
+
+        setMessages((current) => [
+          ...current,
+          {
+            role: 'assistant',
+            content: `Built "${result.name}" as a ${result.trackCount}-track playlist.${result.blurb ? `\n\n${result.blurb}` : ''}`,
+            timestamp: Date.now(),
+            playlist: {
+              id: result.playlistId!,
+              name: result.name!,
+              trackCount: result.trackCount,
+            },
+          },
+        ])
+        return
       }
 
       const response = await chat(message, {
@@ -210,13 +166,15 @@ export default function AIChatPanel({ onOpenPlaylist }: { onOpenPlaylist?: (play
       ])
       setLoading(true)
       try {
-        const mix = await generateSetlistSeed(
-          { library: libraryTracks, tasteProfile, cacheResolvedTracks: cacheTidalTracks },
-          currentTrack,
-          { count: 12, useProfile: useTaste },
-        )
+        const result = await runBackendGeneration({
+          kind: 'setlist-seed',
+          seedTrackId: currentTrack.id,
+          count: 12,
+          source: 'ai-chat',
+          useTaste: Boolean(useTaste && tasteProfile),
+        })
+        const mix = result.mix
         if (mix) {
-          await upsertMix(mix)
           setMessages((current) => [
             ...current,
             {
@@ -235,6 +193,15 @@ export default function AIChatPanel({ onOpenPlaylist }: { onOpenPlaylist?: (play
             },
           ])
         }
+      } catch (error) {
+        setMessages((current) => [
+          ...current,
+          {
+            role: 'assistant',
+            content: `I ran into an error: ${error instanceof Error ? error.message : 'Generation failed.'}`,
+            timestamp: Date.now(),
+          },
+        ])
       } finally {
         setLoading(false)
       }

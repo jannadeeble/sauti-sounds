@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Disc3, Loader2, Sparkles } from 'lucide-react'
 import { isLLMConfigured } from '../lib/llm'
-import { generateSetlistSeed } from '../lib/mixGenerator'
+import { runBackendGeneration } from '../lib/generationRuns'
 import MorphSurface from './MorphSurface'
 import { useAIModalStore } from '../stores/aiModalStore'
 import { useLibraryStore } from '../stores/libraryStore'
@@ -34,11 +34,9 @@ function SetlistModal({
   onClose: () => void
 }) {
   const library = useLibraryStore((s) => s.tracks)
-  const cacheTidalTracks = useLibraryStore((s) => s.cacheTidalTracks)
   const tasteProfile = useTasteStore((s) => s.profile)
   const createAppPlaylist = usePlaylistStore((s) => s.createAppPlaylist)
   const appendTracksToAppPlaylist = usePlaylistStore((s) => s.appendTracksToAppPlaylist)
-  const upsert = useMixStore((s) => s.upsert)
   const markSaved = useMixStore((s) => s.markSaved)
   const playTracks = usePlaybackSessionStore((s) => s.playTracks)
 
@@ -69,20 +67,19 @@ function SetlistModal({
     setRunning(true)
     setError(null)
     try {
-      const next = await generateSetlistSeed(
-        { library, tasteProfile, excludeLibraryIds: new Set(), cacheResolvedTracks: cacheTidalTracks },
-        seed,
-        {
-          count,
-          focusPrompt: focus.trim() || undefined,
-          useProfile,
-        },
-      )
+      const result = await runBackendGeneration({
+        kind: 'setlist-seed',
+        seedTrackId: seed.id,
+        count,
+        focusPrompt: focus.trim() || undefined,
+        useTaste: Boolean(useProfile && tasteProfile),
+        source: 'modal',
+      })
+      const next = result.mix
       if (!next) {
         setError('Nothing resolved. Try a different focus, or check your Tidal connection.')
         return
       }
-      await upsert(next)
       setMix(next)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed')

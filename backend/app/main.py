@@ -31,6 +31,7 @@ from .schemas import (
     AppStateSnapshotRequest,
     AuthLoginRequest,
     AuthRegisterRequest,
+    GenerationCreateRequest,
     GenerationPlaylistRequest,
     LibrarySnapshotRequest,
     LLMChatRequest,
@@ -1045,13 +1046,11 @@ def app_state_snapshot_replace(
     return replace_app_state_snapshot(db, user_id, payload)
 
 
-@app.post("/api/generations/playlists")
-def generation_playlist_create(
-    payload: GenerationPlaylistRequest,
-    request: Request,
-    db: Session = Depends(get_db),
+def _create_generation_run(
+    payload: GenerationCreateRequest,
+    user_id: str,
+    db: Session,
 ) -> dict[str, str]:
-    user_id = auth_user_id(request)
     settings_payload = read_app_state_snapshot(db, user_id).get("settings", {})
     provider = settings_payload.get("llmProvider")
     api_key = settings_payload.get("llmApiKey")
@@ -1065,9 +1064,9 @@ def generation_playlist_create(
     run = GenerationRun(
         id=f"gen-{uuid.uuid4().hex}",
         user_id=user_id,
-        kind="mood-playlist",
+        kind=payload.kind,
         status="queued",
-        phase="recommendations",
+        phase="recommendations" if payload.kind != "rediscovery" else "saving",
         provider=provider,
         model=settings_payload.get("llmModel") if isinstance(settings_payload.get("llmModel"), str) and settings_payload.get("llmModel") else None,
         request_payload=payload.model_dump_json(by_alias=True),
@@ -1086,6 +1085,34 @@ def generation_playlist_create(
     db.commit()
     generation_worker.submit(run.id)
     return {"runId": run.id, "status": run.status, "phase": run.phase}
+
+
+@app.post("/api/generations")
+def generation_create(
+    payload: GenerationCreateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    user_id = auth_user_id(request)
+    return _create_generation_run(payload, user_id, db)
+
+
+@app.post("/api/generations/playlists")
+def generation_playlist_create(
+    payload: GenerationPlaylistRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    user_id = auth_user_id(request)
+    generic_payload = GenerationCreateRequest(
+        kind="mood-playlist",
+        prompt=payload.prompt,
+        count=payload.count,
+        titleOverride=payload.title_override,
+        useTaste=payload.use_taste,
+        source=payload.source,
+    )
+    return _create_generation_run(generic_payload, user_id, db)
 
 
 @app.get("/api/generations/{run_id}")

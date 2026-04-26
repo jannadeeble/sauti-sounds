@@ -8,7 +8,7 @@ import {
 } from '../lib/appStateSync'
 import { isLLMConfigured } from '../lib/llm'
 import { maybeRunHomeFeed, regenerateMix } from '../lib/homeOrchestrator'
-import { generateMoodPlaylist } from '../lib/mixGenerator'
+import { runBackendGeneration } from '../lib/generationRuns'
 import { useLibraryStore } from '../stores/libraryStore'
 import { useMixStore } from '../stores/mixStore'
 import { usePlaylistStore } from '../stores/playlistStore'
@@ -49,7 +49,6 @@ interface HomeSuggestionsProps {
 export default function HomeSuggestions({ onPlayTracks }: HomeSuggestionsProps) {
   const mixes = useMixStore((s) => s.mixes)
   const library = useLibraryStore((s) => s.tracks)
-  const cacheTidalTracks = useLibraryStore((s) => s.cacheTidalTracks)
   const tasteProfile = useTasteStore((s) => s.profile)
   const tidalConnected = useTidalStore((s) => s.tidalConnected)
   const createAppPlaylist = usePlaylistStore((s) => s.createAppPlaylist)
@@ -268,7 +267,7 @@ export default function HomeSuggestions({ onPlayTracks }: HomeSuggestionsProps) 
     setMoodRunning(true)
     setMoodError(null)
     try {
-      await handleMood(prompt, count, library, tasteProfile, cacheTidalTracks)
+      await handleMood(prompt, count, Boolean(tasteProfile))
       await useMixStore.getState().load()
     } catch (err) {
       setMoodError(err instanceof Error ? err.message : 'Prompt playlist failed.')
@@ -281,20 +280,16 @@ export default function HomeSuggestions({ onPlayTracks }: HomeSuggestionsProps) 
 async function handleMood(
   prompt: string,
   count: number,
-  library: Track[],
-  tasteProfile: ReturnType<typeof useTasteStore.getState>['profile'],
-  cacheResolvedTracks: (tracks: Track[]) => Promise<void>,
+  useTaste: boolean,
 ): Promise<void> {
   if (!isLLMConfigured()) return
-  const env = {
-    library,
-    tasteProfile: tasteProfile ?? null,
-    cacheResolvedTracks,
-  }
-  const mix = await generateMoodPlaylist(env, prompt, { count })
-  if (mix) {
-    await useMixStore.getState().upsert(mix)
-  }
+  await runBackendGeneration({
+    kind: 'mood-playlist',
+    prompt,
+    count,
+    source: 'home',
+    useTaste,
+  })
 }
 
 async function canSwap(): Promise<boolean> {

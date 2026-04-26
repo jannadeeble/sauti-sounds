@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -71,5 +71,33 @@ class GenerationPlaylistRequest(BaseModel):
     title_override: str | None = Field(default=None, alias="titleOverride", max_length=120)
     use_taste: bool = Field(default=False, alias="useTaste")
     source: str = Field(default="playlist-generator", min_length=1, max_length=40)
+
+    model_config = {"populate_by_name": True}
+
+
+GenerationKind = Literal[
+    "mood-playlist",
+    "setlist-seed",
+    "playlist-footer",
+    "track-echo",
+    "playlist-echo",
+    "similar-artist",
+    "cultural-bridge",
+    "rediscovery",
+    "auto-radio",
+]
+
+
+class GenerationCreateRequest(BaseModel):
+    kind: GenerationKind
+    prompt: str | None = Field(default=None, max_length=4000)
+    count: int = Field(default=15, ge=1, le=30)
+    title_override: str | None = Field(default=None, alias="titleOverride", max_length=120)
+    use_taste: bool = Field(default=False, alias="useTaste")
+    source: str = Field(default="generation-run", min_length=1, max_length=40)
+    seed_track_id: str | None = Field(default=None, alias="seedTrackId", max_length=255)
+    seed_playlist_id: str | None = Field(default=None, alias="seedPlaylistId", max_length=255)
+    seed_artist: str | None = Field(default=None, alias="seedArtist", max_length=255)
+    focus_prompt: str | None = Field(default=None, alias="focusPrompt", max_length=1000)
 
     model_config = {"populate_by_name": True}

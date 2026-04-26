@@ -1,11 +1,5 @@
 import { isLLMConfigured } from './llm'
-import {
-  generateCulturalBridge,
-  generatePlaylistEcho,
-  generateRediscovery,
-  generateSimilarArtist,
-  generateTrackEcho,
-} from './mixGenerator'
+import { runBackendGeneration } from './generationRuns'
 import {
   getPersistentUiState,
   hydrateAppStateFromBackend,
@@ -59,7 +53,6 @@ async function runHomeFeed(opts: RunOptions): Promise<void> {
 
   const library = libraryState.tracks
   if (library.length < 20) return // cold start: handled elsewhere
-  const resolvedTracksToCache: Track[] = []
 
   // Stale prior fresh home-feed mixes before generating new ones.
   await mixStore.markStale([
@@ -70,27 +63,15 @@ async function runHomeFeed(opts: RunOptions): Promise<void> {
     'cultural-bridge',
   ])
 
-  const env = {
-    library,
-    tasteProfile: tasteState.profile,
-    excludeLibraryIds: buildExcludeSet(library),
-    cacheResolvedTracks: async (tracks: Track[]) => {
-      resolvedTracksToCache.push(...tracks)
-    },
-  }
-
   const phases = opts.phases ?? ['rediscovery', 'track-echo', 'playlist-echo', 'similar-artist', 'cultural-bridge']
 
   const stats = await computePlayStats()
   const jobs: Promise<Mix | null>[] = []
+  const useTaste = Boolean(tasteState.profile)
 
   if (phases.includes('rediscovery')) {
     jobs.push(
-      generateRediscovery(env, {
-        playStats: new Map(
-          [...stats.entries()].map(([id, s]) => [id, { playCount: s.playCount, lastPlayedAt: s.lastPlayedAt }]),
-        ),
-      }),
+      runBackendGeneration({ kind: 'rediscovery', count: 10, source: 'home-feed' }).then((result) => result.mix ?? null),
     )
   }
 
@@ -98,7 +79,17 @@ async function runHomeFeed(opts: RunOptions): Promise<void> {
     const hot = pickHotTracks(stats).slice(0, 2)
     for (const trackId of hot) {
       const t = library.find(l => l.id === trackId)
-      if (t) jobs.push(generateTrackEcho(env, t))
+      if (t) {
+        jobs.push(
+          runBackendGeneration({
+            kind: 'track-echo',
+            seedTrackId: t.id,
+            count: 10,
+            source: 'home-feed',
+            useTaste,
+          }).then((result) => result.mix ?? null),
+        )
+      }
     }
   }
 
@@ -107,60 +98,74 @@ async function runHomeFeed(opts: RunOptions): Promise<void> {
     for (const playlist of seeds) {
       const tracks = resolvePlaylistTracks(playlist, library)
       if (tracks.length < 3) continue
-      jobs.push(generatePlaylistEcho(env, playlist, tracks))
+      jobs.push(
+        runBackendGeneration({
+          kind: 'playlist-echo',
+          seedPlaylistId: playlist.id,
+          count: 12,
+          source: 'home-feed',
+          useTaste,
+        }).then((result) => result.mix ?? null),
+      )
     }
   }
 
   if (phases.includes('similar-artist')) {
     const topArtist = pickTopArtistThisMonth(library, stats)
-    if (topArtist) jobs.push(generateSimilarArtist(env, topArtist))
-  }
-
-  if (phases.includes('cultural-bridge') && env.tasteProfile?.culturalMarkers?.length) {
-    jobs.push(generateCulturalBridge(env))
-  }
-
-  const results = await Promise.allSettled(jobs)
-  if (resolvedTracksToCache.length > 0) {
-    const byId = new Map(resolvedTracksToCache.map(track => [track.id, track]))
-    await libraryState.cacheTidalTracks([...byId.values()])
-  }
-  for (const r of results) {
-    if (r.status === 'fulfilled' && r.value) {
-      await mixStore.upsert(r.value)
+    if (topArtist) {
+      jobs.push(
+        runBackendGeneration({
+          kind: 'similar-artist',
+          seedArtist: topArtist,
+          count: 5,
+          source: 'home-feed',
+          useTaste,
+        }).then((result) => result.mix ?? null),
+      )
     }
   }
+
+  if (phases.includes('cultural-bridge') && tasteState.profile?.culturalMarkers?.length) {
+    jobs.push(
+      runBackendGeneration({
+        kind: 'cultural-bridge',
+        count: 8,
+        source: 'home-feed',
+        useTaste: true,
+      }).then((result) => result.mix ?? null),
+    )
+  }
+
+  await Promise.allSettled(jobs)
+  await Promise.all([libraryState.loadTracks(), mixStore.load()])
 }
 
 export async function regenerateMix(mix: Mix): Promise<Mix | null> {
   if (!isLLMConfigured()) return null
   const library = useLibraryStore.getState().tracks
-  const cacheTidalTracks = useLibraryStore.getState().cacheTidalTracks
   const tasteProfile = useTasteStore.getState().profile
   const playlists = usePlaylistStore.getState()
-
-  const env = {
-    library,
-    tasteProfile,
-    excludeLibraryIds: buildExcludeSet(library),
-    cacheResolvedTracks: cacheTidalTracks,
-  }
 
   let next: Mix | null = null
   switch (mix.kind) {
     case 'rediscovery': {
-      const stats = await computePlayStats()
-      next = await generateRediscovery(env, {
-        playStats: new Map(
-          [...stats.entries()].map(([id, s]) => [id, { playCount: s.playCount, lastPlayedAt: s.lastPlayedAt }]),
-        ),
-      })
+      const result = await runBackendGeneration({ kind: 'rediscovery', count: 10, source: 'home-feed' })
+      next = result.mix ?? null
       break
     }
     case 'track-echo': {
       const seedId = mix.seedRef?.type === 'track' ? mix.seedRef.id : null
       const seed = seedId ? library.find(t => t.id === seedId) : null
-      if (seed) next = await generateTrackEcho(env, seed)
+      if (seed) {
+        const result = await runBackendGeneration({
+          kind: 'track-echo',
+          seedTrackId: seed.id,
+          count: 10,
+          source: 'home-feed',
+          useTaste: Boolean(tasteProfile),
+        })
+        next = result.mix ?? null
+      }
       break
     }
     case 'playlist-echo': {
@@ -168,35 +173,51 @@ export async function regenerateMix(mix: Mix): Promise<Mix | null> {
       const seedPlaylist = seedId ? playlists.appPlaylists.find(p => p.id === seedId) : null
       if (seedPlaylist) {
         const tracks = resolvePlaylistTracks(seedPlaylist, library)
-        next = await generatePlaylistEcho(env, seedPlaylist, tracks)
+        if (tracks.length >= 3) {
+          const result = await runBackendGeneration({
+            kind: 'playlist-echo',
+            seedPlaylistId: seedPlaylist.id,
+            count: 12,
+            source: 'home-feed',
+            useTaste: Boolean(tasteProfile),
+          })
+          next = result.mix ?? null
+        }
       }
       break
     }
     case 'similar-artist': {
       const seedArtist = mix.seedRef?.type === 'artist' ? mix.seedRef.name : null
-      if (seedArtist) next = await generateSimilarArtist(env, seedArtist)
+      if (seedArtist) {
+        const result = await runBackendGeneration({
+          kind: 'similar-artist',
+          seedArtist,
+          count: 5,
+          source: 'home-feed',
+          useTaste: Boolean(tasteProfile),
+        })
+        next = result.mix ?? null
+      }
       break
     }
-    case 'cultural-bridge':
-      next = await generateCulturalBridge(env)
+    case 'cultural-bridge': {
+      const result = await runBackendGeneration({
+        kind: 'cultural-bridge',
+        count: 8,
+        source: 'home-feed',
+        useTaste: Boolean(tasteProfile),
+      })
+      next = result.mix ?? null
       break
+    }
   }
 
   if (next) {
     const mixStore = useMixStore.getState()
     await mixStore.setStatus(mix.id, 'dismissed')
-    await mixStore.upsert(next)
+    await mixStore.load()
   }
   return next
-}
-
-function buildExcludeSet(library: Track[]): Set<string> {
-  const ids = new Set<string>()
-  for (const t of library) {
-    if (t.providerTrackId) ids.add(t.providerTrackId)
-    ids.add(t.id)
-  }
-  return ids
 }
 
 function pickPlaylistSeeds(playlists: Playlist[], limit: number): Playlist[] {

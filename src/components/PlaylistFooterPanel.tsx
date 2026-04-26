@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Disc3, Loader2, RefreshCw, Sparkles, X } from 'lucide-react'
 import { isLLMConfigured } from '../lib/llm'
-import { generatePlaylistFooter } from '../lib/mixGenerator'
+import { runBackendGeneration } from '../lib/generationRuns'
 import { useLibraryStore } from '../stores/libraryStore'
 import { useMixStore } from '../stores/mixStore'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
@@ -18,10 +18,8 @@ interface Props {
 
 export default function PlaylistFooterPanel({ playlist, playlistTracks }: Props) {
   const library = useLibraryStore((s) => s.tracks)
-  const cacheTidalTracks = useLibraryStore((s) => s.cacheTidalTracks)
   const tasteProfile = useTasteStore((s) => s.profile)
   const mixes = useMixStore((s) => s.mixes)
-  const upsert = useMixStore((s) => s.upsert)
   const dismiss = useMixStore((s) => s.dismiss)
   const playTracks = usePlaybackSessionStore((s) => s.playTracks)
   const appendTrack = usePlaybackSessionStore((s) => s.appendTrack)
@@ -60,18 +58,19 @@ export default function PlaylistFooterPanel({ playlist, playlistTracks }: Props)
     setRunning(true)
     setError(null)
     try {
-      const next = await generatePlaylistFooter(
-        { library, tasteProfile, cacheResolvedTracks: cacheTidalTracks },
-        playlist,
-        playlistTracks,
-        { count: VISIBLE + 3 },
-      )
+      const result = await runBackendGeneration({
+        kind: 'playlist-footer',
+        seedPlaylistId: playlist.id,
+        count: VISIBLE + 3,
+        source: 'playlist-footer',
+        useTaste: Boolean(tasteProfile),
+      })
+      const next = result.mix
       if (!next) {
         setError('Nothing resolved. Try again later.')
         return
       }
       if (force && mix) await dismiss(mix.id)
-      await upsert(next)
       setMix(next)
       setDismissed(new Set())
     } catch (err) {

@@ -1,6 +1,6 @@
 import { isLLMConfigured } from './llm'
 import { tagTrackContext } from './listenContextRegistry'
-import { generateAutoRadioBatch } from './mixGenerator'
+import { runBackendGeneration } from './generationRuns'
 import { useLibraryStore } from '../stores/libraryStore'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -25,24 +25,17 @@ export async function maybeFillAutoRadio(seedTrack: Track | null): Promise<void>
 
   inFlight = true
   try {
-    const library = useLibraryStore.getState().tracks
     const tasteProfile = useTasteStore.getState().profile
-    const exclude = new Set<string>()
-    for (const t of library) {
-      if (t.providerTrackId) exclude.add(t.providerTrackId)
-      exclude.add(t.id)
-    }
-    const next = await generateAutoRadioBatch(
-      {
-        library,
-        tasteProfile,
-        excludeLibraryIds: exclude,
-        cacheResolvedTracks: useLibraryStore.getState().cacheTidalTracks,
-      },
-      seedTrack,
-      10,
-    )
+    const result = await runBackendGeneration({
+      kind: 'auto-radio',
+      seedTrackId: seedTrack.id,
+      count: 10,
+      source: 'auto-radio',
+      useTaste: Boolean(tasteProfile),
+    })
+    const next = result.tracks ?? []
     if (!next.length) return
+    await useLibraryStore.getState().loadTracks()
     const session = usePlaybackSessionStore.getState()
     for (const t of next) {
       autoAdded.add(t.id)

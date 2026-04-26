@@ -1,6 +1,10 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import {
+  ArrowLeft,
   ChevronRight,
+  Grid3X3,
+  List,
+  LoaderCircle,
   Play,
   Plus,
   Radio,
@@ -44,15 +48,17 @@ import type { Playlist, Track } from '../types'
 
 type WorkspaceTab = 'home' | 'library'
 type LibraryFilter = 'tracks' | 'playlists' | 'artists'
-type LibrarySort = 'recent' | 'title' | 'artist'
+type LibrarySort = 'recent' | 'title' | 'artist' | 'tracks'
+type LibraryViewMode = 'list' | 'grid'
+type LibraryDetail =
+  | { kind: 'artist'; artist: string }
+  | { kind: 'playlist'; playlistKind: 'app' | 'tidal'; playlistId: string }
 
 type ModalState =
   | { kind: 'search'; originRect: RectLike | null }
   | { kind: 'upload'; originRect: RectLike | null }
   | { kind: 'settings'; originRect: RectLike | null }
   | { kind: 'generator'; originRect: RectLike | null }
-  | { kind: 'artist'; originRect: RectLike | null; artist: string }
-  | { kind: 'playlist'; originRect: RectLike | null; playlistKind: 'app' | 'tidal'; playlistId: string }
 
 const WORKSPACE_TAB_VALUES: readonly WorkspaceTab[] = ['home', 'library']
 const LIBRARY_FILTER_VALUES: readonly LibraryFilter[] = ['tracks', 'playlists', 'artists']
@@ -63,10 +69,34 @@ const LIBRARY_FILTERS: { value: LibraryFilter; label: string }[] = [
   { value: 'tracks', label: 'Tracks' },
 ]
 
+function normalizeLibrarySort(filter: LibraryFilter, sort: LibrarySort): LibrarySort {
+  if (filter === 'artists') {
+    return sort === 'artist' ? 'recent' : sort
+  }
+  if (filter === 'playlists') {
+    return sort === 'artist' ? 'recent' : sort
+  }
+  return sort === 'tracks' ? 'recent' : sort
+}
+
+function sortTracks(tracks: Track[], sort: LibrarySort): Track[] {
+  const next = [...tracks]
+  if (sort === 'title') {
+    next.sort((left, right) => left.title.localeCompare(right.title))
+  } else if (sort === 'artist') {
+    next.sort((left, right) => left.artist.localeCompare(right.artist) || left.title.localeCompare(right.title))
+  } else {
+    next.sort((left, right) => (right.addedAt || 0) - (left.addedAt || 0))
+  }
+  return next
+}
+
 export default function WorkspaceShell() {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('home')
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('tracks')
   const [librarySort, setLibrarySort] = useState<LibrarySort>('recent')
+  const [libraryViewMode, setLibraryViewMode] = useState<LibraryViewMode>('list')
+  const [libraryDetail, setLibraryDetail] = useState<LibraryDetail | null>(null)
   const [query, setQuery] = useState('')
   const [tidalResults, setTidalResults] = useState<Track[]>([])
   const [tidalLoading, setTidalLoading] = useState(false)
@@ -116,6 +146,10 @@ export default function WorkspaceShell() {
   const exitSelection = useSelectionStore((state) => state.exit)
   const requestGeneratorCompletionNotification = usePlaylistGeneratorStore((state) => state.requestCompletionNotification)
   const resumePendingGeneration = usePlaylistGeneratorStore((state) => state.resumePending)
+  const playlistGenerationStatus = usePlaylistGeneratorStore((state) => state.status)
+  const playlistGenerationError = usePlaylistGeneratorStore((state) => state.error)
+  const playlistGenerating = playlistGenerationStatus === 'running'
+  const effectiveLibraryFilter = libraryDetail ? 'tracks' : libraryFilter
 
   useEffect(() => {
     void loadTracks()
@@ -193,17 +227,23 @@ export default function WorkspaceShell() {
   }, [libraryFilter, prefsReady])
 
   useEffect(() => {
+    const normalizedSort = normalizeLibrarySort(effectiveLibraryFilter, librarySort)
+    if (normalizedSort !== librarySort) {
+      setLibrarySort(normalizedSort)
+    }
+  }, [effectiveLibraryFilter, librarySort])
+
+  useEffect(() => {
     if (activeTab !== 'library' && selecting) {
       exitSelection()
     }
   }, [activeTab, exitSelection, selecting])
 
   useEffect(() => {
-    const playlistModal = modal?.kind === 'playlist' ? modal : null
-    if (playlistModal?.playlistKind === 'tidal' && !tidalPlaylistDetails[playlistModal.playlistId]) {
-      void loadTidalPlaylistDetail(playlistModal.playlistId)
+    if (libraryDetail?.kind === 'playlist' && libraryDetail.playlistKind === 'tidal' && !tidalPlaylistDetails[libraryDetail.playlistId]) {
+      void loadTidalPlaylistDetail(libraryDetail.playlistId)
     }
-  }, [loadTidalPlaylistDetail, modal, tidalPlaylistDetails])
+  }, [libraryDetail, loadTidalPlaylistDetail, tidalPlaylistDetails])
 
   useEffect(() => {
     if (!importNotice && highlightedImportIds.length === 0) return
@@ -267,15 +307,7 @@ export default function WorkspaceShell() {
   }, [historyEntries, tracks])
 
   const sortedTracks = useMemo(() => {
-    const next = [...tracks]
-    if (librarySort === 'title') {
-      next.sort((left, right) => left.title.localeCompare(right.title))
-    } else if (librarySort === 'artist') {
-      next.sort((left, right) => left.artist.localeCompare(right.artist))
-    } else {
-      next.sort((left, right) => (right.addedAt || 0) - (left.addedAt || 0))
-    }
-    return next
+    return sortTracks(tracks, librarySort)
   }, [librarySort, tracks])
 
   const localSearchResults = useMemo(() => {
@@ -307,15 +339,46 @@ export default function WorkspaceShell() {
     return [...app, ...tidal].sort((left, right) => right.updatedAt - left.updatedAt)
   }, [appPlaylists, tidalPlaylists])
 
-  const artistModal = modal?.kind === 'artist' ? modal : null
-  const artistModalTracks = useMemo(() => {
-    if (!artistModal) return []
-    return tracks.filter((track) => (track.artist || 'Unknown artist') === artistModal.artist)
-  }, [artistModal, tracks])
+  const sortedArtistGroups = useMemo(() => {
+    const next = [...artistGroups]
+    if (librarySort === 'tracks') {
+      next.sort((left, right) => right.tracks.length - left.tracks.length || left.artist.localeCompare(right.artist))
+    } else if (librarySort === 'recent') {
+      next.sort((left, right) => {
+        const leftRecent = Math.max(...left.tracks.map((track) => track.addedAt || 0))
+        const rightRecent = Math.max(...right.tracks.map((track) => track.addedAt || 0))
+        return rightRecent - leftRecent || left.artist.localeCompare(right.artist)
+      })
+    } else {
+      next.sort((left, right) => left.artist.localeCompare(right.artist))
+    }
+    return next
+  }, [artistGroups, librarySort])
 
-  const playlistModal = modal?.kind === 'playlist' ? modal : null
-  const selectedAppPlaylist = playlistModal?.playlistKind === 'app'
-    ? appPlaylists.find((playlist) => playlist.id === playlistModal.playlistId)
+  const sortedPlaylistRows = useMemo(() => {
+    const next = [...playlistRows]
+    if (librarySort === 'title') {
+      next.sort((left, right) => left.name.localeCompare(right.name))
+    } else if (librarySort === 'tracks') {
+      next.sort((left, right) => right.trackCount - left.trackCount || left.name.localeCompare(right.name))
+    } else {
+      next.sort((left, right) => right.updatedAt - left.updatedAt)
+    }
+    return next
+  }, [librarySort, playlistRows])
+
+  const artistDetail = libraryDetail?.kind === 'artist' ? libraryDetail : null
+  const artistDetailTracks = useMemo(() => {
+    if (!artistDetail) return []
+    return sortTracks(
+      tracks.filter((track) => (track.artist || 'Unknown artist') === artistDetail.artist),
+      librarySort,
+    )
+  }, [artistDetail, librarySort, tracks])
+
+  const playlistDetail = libraryDetail?.kind === 'playlist' ? libraryDetail : null
+  const selectedAppPlaylist = playlistDetail?.playlistKind === 'app'
+    ? appPlaylists.find((playlist) => playlist.id === playlistDetail.playlistId)
     : undefined
   const appPlaylistTracks = useMemo(() => {
     if (!selectedAppPlaylist) return []
@@ -329,8 +392,8 @@ export default function WorkspaceShell() {
       })
       .filter((value): value is { item: Playlist['items'][number]; track: Track; index: number } => value !== null)
   }, [providerTrackById, selectedAppPlaylist, trackById])
-  const selectedTidalDetail = playlistModal?.playlistKind === 'tidal'
-    ? tidalPlaylistDetails[playlistModal.playlistId]
+  const selectedTidalDetail = playlistDetail?.playlistKind === 'tidal'
+    ? tidalPlaylistDetails[playlistDetail.playlistId]
     : undefined
 
   function openModal(kind: ModalState['kind'], originRect: RectLike | null, payload?: Partial<ModalState>) {
@@ -365,19 +428,40 @@ export default function WorkspaceShell() {
 
     if (kind === 'app') {
       const playlist = await createAppPlaylist(name.trim())
-      openModal('playlist', null, { playlistKind: 'app', playlistId: playlist.id })
+      setActiveTab('library')
+      setLibraryFilter('playlists')
+      setLibraryDetail({ kind: 'playlist', playlistKind: 'app', playlistId: playlist.id })
       return
     }
 
     const playlist = await createProviderPlaylist(name.trim())
     if (playlist.providerPlaylistId) {
-      openModal('playlist', null, { playlistKind: 'tidal', playlistId: playlist.providerPlaylistId })
+      setActiveTab('library')
+      setLibraryFilter('playlists')
+      setLibraryDetail({ kind: 'playlist', playlistKind: 'tidal', playlistId: playlist.providerPlaylistId })
     }
   }
 
   function handlePlaylistPlayback(kind: 'app' | 'tidal', playlistId: string, playlistTracks: Track[]) {
     if (playlistTracks.length === 0) return
     playPlaylist(kind, playlistId, playlistTracks, 0)
+  }
+
+  async function handlePlaylistRowPlayback(playlist: Playlist & { label: string; trackCount: number; sourceKind: 'app' | 'tidal' }) {
+    if (playlist.sourceKind === 'app') {
+      const current = appPlaylists.find((candidate) => candidate.id === playlist.id)
+      if (!current) return
+      const playlistTracks = current.items
+        .map((item) => item.source === 'local'
+          ? trackById.get(item.trackId)
+          : providerTrackById.get(item.providerTrackId))
+        .filter((track): track is Track => !!track)
+      handlePlaylistPlayback('app', playlist.id, playlistTracks)
+      return
+    }
+
+    const detail = tidalPlaylistDetails[playlist.id] ?? await loadTidalPlaylistDetail(playlist.id)
+    handlePlaylistPlayback('tidal', playlist.id, detail.tracks)
   }
 
   function finalizeImport(result?: ImportDoneResult) {
@@ -417,6 +501,19 @@ export default function WorkspaceShell() {
     }
   }
 
+  function selectLibraryFilter(filter: LibraryFilter) {
+    setLibraryFilter(filter)
+    setLibrarySort((current) => normalizeLibrarySort(filter, current))
+    setLibraryDetail(null)
+  }
+
+  function openGeneratedPlaylist(playlistId: string) {
+    closeModal()
+    setActiveTab('library')
+    setLibraryFilter('playlists')
+    setLibraryDetail({ kind: 'playlist', playlistKind: 'app', playlistId })
+  }
+
   const playerVisible = queuedTracks.length > 0
 
   return (
@@ -427,7 +524,7 @@ export default function WorkspaceShell() {
             <div className="sauti-glass-panel pointer-events-auto mx-auto max-w-[1460px] rounded-[36px] px-2 py-2 sm:rounded-[40px] sm:px-4 sm:py-3">
               <div className="flex items-center gap-2 sm:gap-3">
                 <div className="flex shrink-0 items-center gap-1 rounded-full border border-white/10 bg-white/6 p-1">
-                  <TabButton active={activeTab === 'home'} onClick={() => setActiveTab('home')}>Home</TabButton>
+                  <TabButton active={activeTab === 'home'} onClick={() => setActiveTab('home')}>Discover</TabButton>
                   <TabButton active={activeTab === 'library'} onClick={() => setActiveTab('library')}>Library</TabButton>
                 </div>
                 <div className="hidden min-w-0 flex-1 pl-2 text-left lg:block">
@@ -439,6 +536,15 @@ export default function WorkspaceShell() {
                   </p>
                 </div>
                 <div className="ml-auto flex shrink-0 items-center justify-end gap-2">
+                  {playlistGenerating ? (
+                    <div
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/8 text-white/72"
+                      title="Generating playlist"
+                      aria-label="Generating playlist"
+                    >
+                      <LoaderCircle size={16} className="animate-spin" />
+                    </div>
+                  ) : null}
                   <TopIconButton
                     label={importing && importProgress ? `Uploading ${importProgress.current}/${importProgress.total}` : 'Upload'}
                     icon={<Upload size={15} />}
@@ -460,6 +566,9 @@ export default function WorkspaceShell() {
           <main className="flex-1 pt-[88px] sm:pt-[108px]">
             <div className="mx-auto w-full max-w-[1180px] space-y-8 px-1 sm:px-3 lg:px-6">
               {errorMessage ? <Banner>{errorMessage}</Banner> : null}
+              {playlistGenerationStatus === 'error' && playlistGenerationError ? (
+                <Banner>Playlist generation failed: {playlistGenerationError}</Banner>
+              ) : null}
               {importNotice ? <Banner>{importNotice}</Banner> : null}
 
               {importing && importProgress && modal?.kind !== 'upload' ? (
@@ -511,7 +620,7 @@ export default function WorkspaceShell() {
                       )}
                     />
                   ) : (
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
+                    <div className="grid grid-cols-3 gap-3">
                       {recentTracks.map((track) => (
                         <RecentTrackCard
                           key={track.id}
@@ -541,25 +650,6 @@ export default function WorkspaceShell() {
 
               {activeTab === 'library' ? (
                 <div className="space-y-6">
-                  <SectionHeader
-                    title="Library"
-                    subtitle={`${tracks.length} tracks · ${artistGroups.length} artists · ${playlistRows.length} playlists`}
-                    action={(
-                      <div className="flex flex-wrap gap-2">
-                        <ActionButton
-                          accent
-                          icon={<Sparkles size={15} />}
-                          onClick={(event) => openModal('generator', rectFromElement(event.currentTarget))}
-                        >
-                          Generate playlist
-                        </ActionButton>
-                        <ActionButton icon={<Plus size={15} />} onClick={() => void handleCreatePlaylist('app')}>
-                          New playlist
-                        </ActionButton>
-                      </div>
-                    )}
-                  />
-
                   <div className="flex flex-wrap items-center gap-3">
                     <div className="flex flex-wrap gap-2">
                       {LIBRARY_FILTERS.map((filter) => (
@@ -567,7 +657,7 @@ export default function WorkspaceShell() {
                           key={filter.value}
                           type="button"
                           data-active={libraryFilter === filter.value}
-                          onClick={() => setLibraryFilter(filter.value)}
+                          onClick={() => selectLibraryFilter(filter.value)}
                           className="sauti-filter-pill"
                         >
                           {filter.label}
@@ -575,23 +665,41 @@ export default function WorkspaceShell() {
                       ))}
                     </div>
 
-                    {libraryFilter === 'tracks' ? (
-                      <label className="ml-auto inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-3 py-2 text-sm text-[#555661]">
-                        <SlidersHorizontal size={14} />
-                        <select
-                          value={librarySort}
-                          onChange={(event) => setLibrarySort(event.target.value as LibrarySort)}
-                          className="bg-transparent text-[#111116] outline-none"
-                        >
-                          <option value="recent">Recent</option>
-                          <option value="title">Title</option>
-                          <option value="artist">Artist</option>
-                        </select>
-                      </label>
-                    ) : null}
+                    <LibraryToolbar
+                      filter={effectiveLibraryFilter}
+                      sort={librarySort}
+                      viewMode={libraryViewMode}
+                      showPlaylistActions={libraryFilter === 'playlists' && !libraryDetail}
+                      onSortChange={setLibrarySort}
+                      onViewModeChange={setLibraryViewMode}
+                      onGeneratePlaylist={(event) => openModal('generator', rectFromElement(event.currentTarget))}
+                      onCreatePlaylist={() => void handleCreatePlaylist('app')}
+                    />
                   </div>
 
-                  {libraryFilter === 'tracks' ? (
+                  {libraryDetail ? (
+                    <LibraryDetailView
+                      detail={libraryDetail}
+                      artistTracks={artistDetailTracks}
+                      playlistRow={playlistDetail ? playlistRows.find((item) => item.sourceKind === playlistDetail.playlistKind && item.id === playlistDetail.playlistId) : undefined}
+                      playlistDetail={playlistDetail}
+                      appPlaylist={selectedAppPlaylist}
+                      appPlaylistTracks={appPlaylistTracks}
+                      tidalDetail={selectedTidalDetail}
+                      viewMode={libraryViewMode}
+                      sort={librarySort}
+                      onBack={() => setLibraryDetail(null)}
+                      onPlayPlaylist={handlePlaylistPlayback}
+                      onRenameAppPlaylist={(playlistId, currentName, currentDescription) => void renamePlaylist(playlistId, currentName, currentDescription, renameAppPlaylist)}
+                      onDeleteAppPlaylist={async (playlistId) => {
+                        if (!window.confirm('Delete this playlist?')) return
+                        await deleteAppPlaylist(playlistId)
+                        setLibraryDetail(null)
+                      }}
+                      onMoveItem={(playlistId, fromIndex, toIndex) => void moveAppPlaylistItem(playlistId, fromIndex, toIndex)}
+                      onRemoveItem={(playlist, item, index) => void removeTrackFromPlaylist(playlist, item, index)}
+                    />
+                  ) : libraryFilter === 'tracks' ? (
                     libraryLoading && sortedTracks.length === 0 ? (
                       <EmptyState
                         title="Loading your library..."
@@ -601,14 +709,15 @@ export default function WorkspaceShell() {
                       <EmptyState
                         title="Your library is empty"
                         description="Upload local files or connect TIDAL in Settings to fill the library."
-                        action={(
-                          <ActionButton accent icon={<Upload size={15} />} onClick={() => void handleQuickImport()}>
-                            Upload music
-                          </ActionButton>
-                        )}
+                      />
+                    ) : libraryViewMode === 'grid' ? (
+                      <TrackGrid
+                        tracks={sortedTracks}
+                        playContext="library"
+                        highlightedImportIds={highlightedImportIds}
                       />
                     ) : (
-                      <SurfaceCard title="Tracks" meta={`${sortedTracks.length} tracks`}>
+                      <PlainListCard>
                         <div className="divide-y divide-black/6">
                           {sortedTracks.map((track, index) => (
                             <TrackRow
@@ -621,67 +730,72 @@ export default function WorkspaceShell() {
                             />
                           ))}
                         </div>
-                      </SurfaceCard>
+                      </PlainListCard>
                     )
                   ) : null}
 
-                  {libraryFilter === 'artists' ? (
-                    artistGroups.length === 0 ? (
+                  {!libraryDetail && libraryFilter === 'artists' ? (
+                    sortedArtistGroups.length === 0 ? (
                       <EmptyState
                         title="No artists yet"
                         description="Upload tracks or connect TIDAL to group your library by artist."
                       />
-                    ) : (
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                        {artistGroups.map((group) => (
+                    ) : libraryViewMode === 'grid' ? (
+                      <div className="grid grid-cols-3 gap-3">
+                        {sortedArtistGroups.map((group) => (
                           <ArtistCard
                             key={group.artist}
                             artist={group.artist}
                             tracks={group.tracks}
-                            onClick={(event) => openModal('artist', rectFromElement(event.currentTarget), { artist: group.artist })}
+                            onClick={() => setLibraryDetail({ kind: 'artist', artist: group.artist })}
                           />
                         ))}
                       </div>
+                    ) : (
+                      <PlainListCard>
+                        <div className="divide-y divide-black/6">
+                          {sortedArtistGroups.map((group) => (
+                            <ArtistRow
+                            key={group.artist}
+                            artist={group.artist}
+                            tracks={group.tracks}
+                            onOpen={() => setLibraryDetail({ kind: 'artist', artist: group.artist })}
+                          />
+                          ))}
+                        </div>
+                      </PlainListCard>
                     )
                   ) : null}
 
-                  {libraryFilter === 'playlists' ? (
-                    playlistRows.length === 0 ? (
+                  {!libraryDetail && libraryFilter === 'playlists' ? (
+                    sortedPlaylistRows.length === 0 ? (
                       <EmptyState
                         title="No playlists yet"
                         description="Create a playlist, generate one from a prompt, or connect TIDAL to pull in synced collections."
-                        action={(
-                          <ActionButton accent icon={<Plus size={15} />} onClick={() => void handleCreatePlaylist('app')}>
-                            New playlist
-                          </ActionButton>
-                        )}
                       />
+                    ) : libraryViewMode === 'list' ? (
+                      <PlainListCard>
+                        <div className="divide-y divide-black/6">
+                          {sortedPlaylistRows.map((playlist) => (
+                            <PlaylistRow
+                              key={`${playlist.sourceKind}-${playlist.id}`}
+                              playlist={playlist}
+                              active={Boolean(selectedPlaylist?.kind === playlist.sourceKind && selectedPlaylist.id === playlist.id)}
+                              onOpen={() => setLibraryDetail({ kind: 'playlist', playlistKind: playlist.sourceKind, playlistId: playlist.id })}
+                              onPlay={() => void handlePlaylistRowPlayback(playlist)}
+                            />
+                          ))}
+                        </div>
+                      </PlainListCard>
                     ) : (
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                        {playlistRows.map((playlist) => (
+                      <div className="grid grid-cols-3 gap-4">
+                        {sortedPlaylistRows.map((playlist) => (
                           <PlaylistCard
                             key={`${playlist.sourceKind}-${playlist.id}`}
                             playlist={playlist}
                             active={Boolean(selectedPlaylist?.kind === playlist.sourceKind && selectedPlaylist.id === playlist.id)}
-                            onOpen={(event) => openModal('playlist', rectFromElement(event.currentTarget), {
-                              playlistKind: playlist.sourceKind,
-                              playlistId: playlist.id,
-                            })}
-                            onPlay={() => {
-                              if (playlist.sourceKind === 'app') {
-                                const current = appPlaylists.find((candidate) => candidate.id === playlist.id)
-                                if (!current) return
-                                const playlistTracks = current.items
-                                  .map((item) => item.source === 'local'
-                                    ? trackById.get(item.trackId)
-                                    : providerTrackById.get(item.providerTrackId))
-                                  .filter((track): track is Track => !!track)
-                                handlePlaylistPlayback('app', playlist.id, playlistTracks)
-                                return
-                              }
-                              const detail = tidalPlaylistDetails[playlist.id]
-                              if (detail) handlePlaylistPlayback('tidal', playlist.id, detail.tracks)
-                            }}
+                            onOpen={() => setLibraryDetail({ kind: 'playlist', playlistKind: playlist.sourceKind, playlistId: playlist.id })}
+                            onPlay={() => void handlePlaylistRowPlayback(playlist)}
                           />
                         ))}
                       </div>
@@ -770,59 +884,7 @@ export default function WorkspaceShell() {
           size="lg"
           maxHeightClassName="max-h-[88vh]"
         >
-          <PlaylistGeneratorPanel />
-        </BottomSheet>
-
-        <BottomSheet
-          open={Boolean(artistModal)}
-          title={artistModal?.artist ?? 'Artist'}
-          description={artistModal ? `${artistModalTracks.length} tracks` : undefined}
-          onClose={closeModal}
-          variant="light"
-          originRect={artistModal?.originRect}
-          size="lg"
-          maxHeightClassName="max-h-[88vh]"
-        >
-          <div className="divide-y divide-black/6 rounded-[24px] border border-black/8 bg-white">
-            {artistModalTracks.map((track, index) => (
-              <TrackRow
-                key={track.id}
-                track={track}
-                tracks={artistModalTracks}
-                playContext="library"
-                index={index}
-              />
-            ))}
-          </div>
-        </BottomSheet>
-
-        <BottomSheet
-          open={Boolean(playlistModal)}
-          title={selectedAppPlaylist?.name || selectedTidalDetail?.playlist.name || playlistRows.find((item) => item.id === playlistModal?.playlistId)?.name || 'Playlist'}
-          description={playlistModal?.playlistKind === 'app' ? 'App playlist' : 'TIDAL playlist'}
-          onClose={closeModal}
-          variant="light"
-          originRect={playlistModal?.originRect}
-          size="xl"
-          maxHeightClassName="max-h-[92vh]"
-        >
-          {playlistModal ? (
-            <PlaylistDetailModal
-              playlistModal={playlistModal}
-              appPlaylist={selectedAppPlaylist}
-              appPlaylistTracks={appPlaylistTracks}
-              tidalDetail={selectedTidalDetail}
-              onPlayPlaylist={handlePlaylistPlayback}
-              onRenameAppPlaylist={(playlistId, currentName, currentDescription) => void renamePlaylist(playlistId, currentName, currentDescription, renameAppPlaylist)}
-              onDeleteAppPlaylist={async (playlistId) => {
-                if (!window.confirm('Delete this playlist?')) return
-                await deleteAppPlaylist(playlistId)
-                closeModal()
-              }}
-              onMoveItem={(playlistId, fromIndex, toIndex) => void moveAppPlaylistItem(playlistId, fromIndex, toIndex)}
-              onRemoveItem={(playlist, item, index) => void removeTrackFromPlaylist(playlist, item, index)}
-            />
-          ) : null}
+          <PlaylistGeneratorPanel onOpenPlaylist={openGeneratedPlaylist} />
         </BottomSheet>
 
         <QueueSheet open={playerOpen} onClose={() => setPlayerOpen(false)} />
@@ -901,6 +963,103 @@ function SectionHeader({
 function Banner({ children }: { children: ReactNode }) {
   return (
     <div className="rounded-[22px] border border-[#f4c6cc] bg-[#fff4f6] px-5 py-4 text-sm text-[#8d3140]">
+      {children}
+    </div>
+  )
+}
+
+function LibraryToolbar({
+  filter,
+  sort,
+  viewMode,
+  showPlaylistActions,
+  onSortChange,
+  onViewModeChange,
+  onGeneratePlaylist,
+  onCreatePlaylist,
+}: {
+  filter: LibraryFilter
+  sort: LibrarySort
+  viewMode: LibraryViewMode
+  showPlaylistActions: boolean
+  onSortChange: (sort: LibrarySort) => void
+  onViewModeChange: (mode: LibraryViewMode) => void
+  onGeneratePlaylist: (event: React.MouseEvent<HTMLButtonElement>) => void
+  onCreatePlaylist: () => void
+}) {
+  const options = filter === 'artists'
+    ? [
+        { value: 'recent', label: 'Recent' },
+        { value: 'title', label: 'Artist' },
+        { value: 'tracks', label: 'Tracks' },
+      ]
+    : filter === 'playlists'
+      ? [
+          { value: 'recent', label: 'Recent' },
+          { value: 'title', label: 'Title' },
+          { value: 'tracks', label: 'Tracks' },
+        ]
+      : [
+          { value: 'recent', label: 'Recent' },
+          { value: 'title', label: 'Title' },
+          { value: 'artist', label: 'Artist' },
+        ]
+
+  const validSort = options.some((option) => option.value === sort) ? sort : 'recent'
+
+  return (
+    <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+      {showPlaylistActions ? (
+        <div className="mr-1 flex flex-wrap gap-2">
+          <ActionButton accent icon={<Sparkles size={15} />} onClick={onGeneratePlaylist}>
+            Generate playlist
+          </ActionButton>
+          <ActionButton icon={<Plus size={15} />} onClick={onCreatePlaylist}>
+            New playlist
+          </ActionButton>
+        </div>
+      ) : null}
+      <label className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-3 py-2 text-sm text-[#555661]">
+        <SlidersHorizontal size={14} />
+        <select
+          value={validSort}
+          onChange={(event) => onSortChange(event.target.value as LibrarySort)}
+          className="bg-transparent text-[#111116] outline-none"
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+      </label>
+      <div className="inline-flex rounded-full border border-black/8 bg-white p-1">
+        <button
+          type="button"
+          aria-label="List view"
+          title="List view"
+          data-active={viewMode === 'list'}
+          onClick={() => onViewModeChange('list')}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#686973] transition-colors data-[active=true]:bg-[#111116] data-[active=true]:text-white"
+        >
+          <List size={15} />
+        </button>
+        <button
+          type="button"
+          aria-label="Grid view"
+          title="Grid view"
+          data-active={viewMode === 'grid'}
+          onClick={() => onViewModeChange('grid')}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#686973] transition-colors data-[active=true]:bg-[#111116] data-[active=true]:text-white"
+        >
+          <Grid3X3 size={15} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function PlainListCard({ children }: { children: ReactNode }) {
+  return (
+    <div className="overflow-hidden rounded-[24px] border border-black/8 bg-white shadow-[0_1px_0_rgba(17,17,22,0.03)]">
       {children}
     </div>
   )
@@ -1080,11 +1239,36 @@ function SearchPanel({
   )
 }
 
-function RecentTrackCard({ track, onClick }: { track: Track; onClick: () => void }) {
+function TrackGrid({
+  tracks,
+  playContext,
+  highlightedImportIds = [],
+}: {
+  tracks: Track[]
+  playContext: 'library' | 'search-local' | 'search-tidal' | 'app-playlist' | 'tidal-playlist'
+  highlightedImportIds?: string[]
+}) {
+  const playTracks = usePlaybackSessionStore((state) => state.playTracks)
+
+  return (
+    <div className="grid grid-cols-3 gap-3">
+      {tracks.map((track, index) => (
+        <RecentTrackCard
+          key={`${track.id}-${index}`}
+          track={track}
+          highlighted={highlightedImportIds.includes(track.id)}
+          onClick={() => playTracks(tracks, playContext, index)}
+        />
+      ))}
+    </div>
+  )
+}
+
+function RecentTrackCard({ track, onClick, highlighted = false }: { track: Track; onClick: () => void; highlighted?: boolean }) {
   const artworkUrl = useTrackArtworkUrl(track)
   return (
-    <button type="button" onClick={onClick} className="group flex flex-col gap-2 text-left">
-      <div className="overflow-hidden rounded-[20px] border border-black/8 bg-white">
+    <button type="button" onClick={onClick} className="group flex min-w-0 flex-col gap-2 text-left">
+      <div className={`overflow-hidden rounded-[20px] border bg-white ${highlighted ? 'border-[#f4aebb] ring-2 ring-[#fff0f3]' : 'border-black/8'}`}>
         <div className="aspect-square w-full">
           {artworkUrl ? (
             <img src={artworkUrl} alt="" className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]" />
@@ -1108,7 +1292,7 @@ function ArtistCard({
 }: {
   artist: string
   tracks: Track[]
-  onClick: (event: React.MouseEvent<HTMLButtonElement>) => void
+  onClick: () => void
 }) {
   const artworkUrl = useTrackArtworkUrl(tracks[0] ?? {})
   return (
@@ -1122,10 +1306,38 @@ function ArtistCard({
           )}
         </div>
       </div>
-      <div className="mt-3">
+      <div className="mt-3 min-w-0">
         <p className="truncate text-sm font-medium text-[#111116]">{artist}</p>
         <p className="truncate text-xs text-[#7a7b86]">{tracks.length} tracks</p>
       </div>
+    </button>
+  )
+}
+
+function ArtistRow({
+  artist,
+  tracks,
+  onOpen,
+}: {
+  artist: string
+  tracks: Track[]
+  onOpen: () => void
+}) {
+  const artworkUrl = useTrackArtworkUrl(tracks[0] ?? {})
+  return (
+    <button type="button" onClick={onOpen} className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-[#fafafb]">
+      <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-[#f1f1f4]">
+        {artworkUrl ? (
+          <img src={artworkUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <GradientArtwork seed={artist} className="h-full w-full" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-[#111116]">{artist}</p>
+        <p className="truncate text-xs text-[#7a7b86]">{tracks.length} tracks</p>
+      </div>
+      <ChevronRight size={16} className="text-[#9ea0aa]" />
     </button>
   )
 }
@@ -1138,7 +1350,7 @@ function PlaylistCard({
 }: {
   playlist: Playlist & { label: string; trackCount: number; sourceKind: 'app' | 'tidal' }
   active: boolean
-  onOpen: (event: React.MouseEvent<HTMLButtonElement>) => void
+  onOpen: () => void
   onPlay: () => void
 }) {
   return (
@@ -1172,55 +1384,204 @@ function PlaylistCard({
   )
 }
 
-function PlaylistDetailModal({
-  playlistModal,
+function PlaylistRow({
+  playlist,
+  active,
+  onOpen,
+  onPlay,
+}: {
+  playlist: Playlist & { label: string; trackCount: number; sourceKind: 'app' | 'tidal' }
+  active: boolean
+  onOpen: () => void
+  onPlay: () => void
+}) {
+  return (
+    <article className={`flex items-center gap-3 px-5 py-3 transition-colors ${active ? 'bg-[#fff4f6]' : 'hover:bg-[#fafafb]'}`}>
+      <button type="button" onClick={onOpen} className="grid h-12 w-12 shrink-0 grid-cols-2 gap-0.5 overflow-hidden rounded-xl bg-[#f3f3f6]">
+        <GradientArtwork seed={`${playlist.name}-a`} className="h-full w-full" />
+        <GradientArtwork seed={`${playlist.name}-b`} className="h-full w-full" />
+        <GradientArtwork seed={`${playlist.name}-c`} className="h-full w-full" />
+        <GradientArtwork seed={`${playlist.name}-d`} className="h-full w-full" />
+      </button>
+      <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
+        <p className="truncate text-sm font-medium text-[#111116]">{playlist.name}</p>
+        <p className="truncate text-xs text-[#7a7b86]">{playlist.trackCount} tracks · {playlist.label}</p>
+      </button>
+      <button type="button" onClick={onPlay} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/8 bg-[#f8f8f9] text-[#555661] transition-colors hover:text-[#111116]">
+        <Play size={14} />
+      </button>
+      <button type="button" onClick={onOpen} className="rounded-full p-2 text-[#9ea0aa] transition-colors hover:bg-black/4 hover:text-[#111116]" aria-label={`Open ${playlist.name}`}>
+        <ChevronRight size={16} />
+      </button>
+    </article>
+  )
+}
+
+function LibraryDetailView({
+  detail,
+  artistTracks,
+  playlistRow,
+  playlistDetail,
   appPlaylist,
   appPlaylistTracks,
   tidalDetail,
+  viewMode,
+  sort,
+  onBack,
   onPlayPlaylist,
   onRenameAppPlaylist,
   onDeleteAppPlaylist,
   onMoveItem,
   onRemoveItem,
 }: {
-  playlistModal: Extract<ModalState, { kind: 'playlist' }>
+  detail: LibraryDetail
+  artistTracks: Track[]
+  playlistRow?: Playlist & { label: string; trackCount: number; sourceKind: 'app' | 'tidal' }
+  playlistDetail: Extract<LibraryDetail, { kind: 'playlist' }> | null
   appPlaylist?: Playlist
   appPlaylistTracks: Array<{ item: Playlist['items'][number]; track: Track; index: number }>
   tidalDetail?: { playlist: Playlist; tracks: Track[] }
+  viewMode: LibraryViewMode
+  sort: LibrarySort
+  onBack: () => void
   onPlayPlaylist: (kind: 'app' | 'tidal', playlistId: string, tracks: Track[]) => void
   onRenameAppPlaylist: (playlistId: string, currentName: string, currentDescription?: string) => void
   onDeleteAppPlaylist: (playlistId: string) => void
   onMoveItem: (playlistId: string, fromIndex: number, toIndex: number) => void
   onRemoveItem: (playlist: Playlist, item: Playlist['items'][number], index: number) => void
 }) {
-  const tracks = playlistModal.playlistKind === 'app' ? appPlaylistTracks.map((entry) => entry.track) : tidalDetail?.tracks || []
+  if (detail.kind === 'artist') {
+    return (
+      <div className="space-y-4">
+        <DetailBackBar title={detail.artist} onBack={onBack} />
+        {viewMode === 'grid' ? (
+          <TrackGrid tracks={artistTracks} playContext="library" />
+        ) : (
+          <PlainListCard>
+            <div className="divide-y divide-black/6">
+              {artistTracks.map((track, index) => (
+                <TrackRow key={track.id} track={track} tracks={artistTracks} playContext="library" index={index} />
+              ))}
+            </div>
+          </PlainListCard>
+        )}
+      </div>
+    )
+  }
 
-  if (playlistModal.playlistKind === 'app' && !appPlaylist) {
+  if (!playlistDetail) return null
+
+  return (
+    <PlaylistDetailView
+      playlistDetail={playlistDetail}
+      playlistRow={playlistRow}
+      appPlaylist={appPlaylist}
+      appPlaylistTracks={appPlaylistTracks}
+      tidalDetail={tidalDetail}
+      viewMode={viewMode}
+      sort={sort}
+      onBack={onBack}
+      onPlayPlaylist={onPlayPlaylist}
+      onRenameAppPlaylist={onRenameAppPlaylist}
+      onDeleteAppPlaylist={onDeleteAppPlaylist}
+      onMoveItem={onMoveItem}
+      onRemoveItem={onRemoveItem}
+    />
+  )
+}
+
+function DetailBackBar({ title, onBack }: { title: string; onBack: () => void }) {
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        type="button"
+        onClick={onBack}
+        className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/8 bg-white text-[#555661] transition-colors hover:border-black/14 hover:text-[#111116]"
+        aria-label="Back"
+      >
+        <ArrowLeft size={16} />
+      </button>
+      <h2 className="min-w-0 truncate text-lg font-semibold text-[#111116]">{title}</h2>
+    </div>
+  )
+}
+
+function PlaylistDetailView({
+  playlistDetail,
+  playlistRow,
+  appPlaylist,
+  appPlaylistTracks,
+  tidalDetail,
+  viewMode,
+  sort,
+  onBack,
+  onPlayPlaylist,
+  onRenameAppPlaylist,
+  onDeleteAppPlaylist,
+  onMoveItem,
+  onRemoveItem,
+}: {
+  playlistDetail: Extract<LibraryDetail, { kind: 'playlist' }>
+  playlistRow?: Playlist & { label: string; trackCount: number; sourceKind: 'app' | 'tidal' }
+  appPlaylist?: Playlist
+  appPlaylistTracks: Array<{ item: Playlist['items'][number]; track: Track; index: number }>
+  tidalDetail?: { playlist: Playlist; tracks: Track[] }
+  viewMode: LibraryViewMode
+  sort: LibrarySort
+  onBack: () => void
+  onPlayPlaylist: (kind: 'app' | 'tidal', playlistId: string, tracks: Track[]) => void
+  onRenameAppPlaylist: (playlistId: string, currentName: string, currentDescription?: string) => void
+  onDeleteAppPlaylist: (playlistId: string) => void
+  onMoveItem: (playlistId: string, fromIndex: number, toIndex: number) => void
+  onRemoveItem: (playlist: Playlist, item: Playlist['items'][number], index: number) => void
+}) {
+  const displayedAppPlaylistTracks = playlistDetail.playlistKind === 'app'
+    ? (
+        sort === 'recent'
+          ? appPlaylistTracks
+          : appPlaylistTracks.slice().sort((left, right) => {
+              if (sort === 'title') return left.track.title.localeCompare(right.track.title)
+              if (sort === 'artist') return left.track.artist.localeCompare(right.track.artist) || left.track.title.localeCompare(right.track.title)
+              return left.index - right.index
+            })
+      )
+    : []
+  const tracks = playlistDetail.playlistKind === 'app'
+    ? displayedAppPlaylistTracks.map((entry) => entry.track)
+    : sort === 'recent'
+      ? tidalDetail?.tracks || []
+      : sortTracks(tidalDetail?.tracks || [], sort)
+
+  if (playlistDetail.playlistKind === 'app' && !appPlaylist) {
     return <div className="rounded-[24px] border border-black/8 bg-white px-4 py-4 text-sm text-[#7a7b86]">Playlist not found.</div>
   }
 
-  if (playlistModal.playlistKind === 'tidal' && !tidalDetail) {
+  if (playlistDetail.playlistKind === 'tidal' && !tidalDetail) {
     return <div className="rounded-[24px] border border-black/8 bg-white px-4 py-4 text-sm text-[#7a7b86]">Loading TIDAL playlist…</div>
   }
 
-  const playlist = playlistModal.playlistKind === 'app' ? appPlaylist! : tidalDetail!.playlist
+  const playlist = playlistDetail.playlistKind === 'app' ? appPlaylist! : tidalDetail!.playlist
+  const title = playlist.name || playlistRow?.name || 'Playlist'
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap gap-2">
-        <ActionButton accent icon={<Play size={15} />} onClick={() => onPlayPlaylist(playlistModal.playlistKind, playlist.id, tracks)}>
-          Play all
-        </ActionButton>
-        {playlistModal.playlistKind === 'app' ? (
-          <>
-            <ActionButton icon={<Settings size={15} />} onClick={() => onRenameAppPlaylist(playlist.id, playlist.name, playlist.description)}>
-              Rename
-            </ActionButton>
-            <ActionButton icon={<Settings size={15} />} onClick={() => onDeleteAppPlaylist(playlist.id)}>
-              Delete
-            </ActionButton>
-          </>
-        ) : null}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <DetailBackBar title={title} onBack={onBack} />
+        <div className="flex flex-wrap gap-2">
+          <ActionButton accent icon={<Play size={15} />} onClick={() => onPlayPlaylist(playlistDetail.playlistKind, playlist.id, tracks)}>
+            Play all
+          </ActionButton>
+          {playlistDetail.playlistKind === 'app' ? (
+            <>
+              <ActionButton icon={<Settings size={15} />} onClick={() => onRenameAppPlaylist(playlist.id, playlist.name, playlist.description)}>
+                Rename
+              </ActionButton>
+              <ActionButton icon={<Settings size={15} />} onClick={() => onDeleteAppPlaylist(playlist.id)}>
+                Delete
+              </ActionButton>
+            </>
+          ) : null}
+        </div>
       </div>
 
       {tracks.length === 0 ? (
@@ -1228,9 +1589,12 @@ function PlaylistDetailModal({
           This playlist is empty.
         </div>
       ) : (
-        <div className="divide-y divide-black/6 rounded-[24px] border border-black/8 bg-white">
-          {playlistModal.playlistKind === 'app'
-            ? appPlaylistTracks.map(({ item, track, index }) => {
+        viewMode === 'grid' ? (
+          <TrackGrid tracks={tracks} playContext={playlistDetail.playlistKind === 'app' ? 'app-playlist' : 'tidal-playlist'} />
+        ) : (
+          <div className="divide-y divide-black/6 rounded-[24px] border border-black/8 bg-white">
+          {playlistDetail.playlistKind === 'app'
+            ? displayedAppPlaylistTracks.map(({ item, track, index }, displayIndex) => {
                 const extraActions: TrackAction[] = [
                   {
                     label: 'Remove from playlist',
@@ -1239,14 +1603,14 @@ function PlaylistDetailModal({
                   },
                 ]
 
-                if (index > 0) {
+                if (sort === 'recent' && index > 0) {
                   extraActions.unshift({
                     label: 'Move earlier',
                     onClick: () => onMoveItem(playlist.id, index, index - 1),
                   })
                 }
 
-                if (index < appPlaylistTracks.length - 1) {
+                if (sort === 'recent' && index < appPlaylistTracks.length - 1) {
                   extraActions.unshift({
                     label: 'Move later',
                     onClick: () => onMoveItem(playlist.id, index, index + 1),
@@ -1259,21 +1623,22 @@ function PlaylistDetailModal({
                     track={track}
                     tracks={tracks}
                     playContext="app-playlist"
-                    index={index}
+                    index={displayIndex}
                     extraActions={extraActions}
                   />
                 )
               })
-            : tidalDetail!.tracks.map((track, index) => (
+            : tracks.map((track, index) => (
                 <TrackRow
                   key={`${track.id}-${index}`}
                   track={track}
-                  tracks={tidalDetail!.tracks}
+                  tracks={tracks}
                   playContext="tidal-playlist"
                   index={index}
                 />
               ))}
-        </div>
+          </div>
+        )
       )}
     </div>
   )

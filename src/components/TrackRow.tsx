@@ -1,5 +1,5 @@
 import { type PointerEvent, type MouseEvent, useRef, useState } from 'react'
-import { Check, Heart, ListPlus, MoreVertical, Play, Plus, Radio } from 'lucide-react'
+import { Check, Heart, ListPlus, LoaderCircle, MoreVertical, Play, Plus, Radio } from 'lucide-react'
 import AddToPlaylistDialog from './AddToPlaylistDialog'
 import MorphSurface from './MorphSurface'
 import { useTrackArtworkUrl } from '../lib/artwork'
@@ -42,6 +42,7 @@ export default function TrackRow({
   const playTracks = usePlaybackSessionStore((state) => state.playTracks)
   const appendTrack = usePlaybackSessionStore((state) => state.appendTrack)
   const currentTrack = usePlaybackSessionStore((state) => state.currentTrack)
+  const loadingTrackId = usePlaybackSessionStore((state) => state.loadingTrackId)
   const queuedTracks = usePlaybackSessionStore((state) => state.tracks)
   const libraryTracks = useLibraryStore((state) => state.tracks)
   const toggleTidalFavorite = useLibraryStore((state) => state.toggleTidalFavorite)
@@ -56,6 +57,7 @@ export default function TrackRow({
   const [originRect, setOriginRect] = useState<ReturnType<typeof rectFromElement>>(null)
 
   const isActive = currentTrack?.id === track.id
+  const isLoading = loadingTrackId === track.id && !isActive
   const artworkUrl = useTrackArtworkUrl(track)
 
   const actions: TrackAction[] = [
@@ -220,9 +222,11 @@ export default function TrackRow({
                   event.stopPropagation()
                   handlePlay()
                 }}
-                className="absolute inset-0 flex items-center justify-center bg-black/45 text-white opacity-0 transition-opacity duration-150 group-hover/row:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
+                className={`absolute inset-0 flex items-center justify-center bg-black/45 text-white transition-opacity duration-150 focus-visible:opacity-100 focus-visible:outline-none ${
+                  isLoading ? 'opacity-100' : 'opacity-0 group-hover/row:opacity-100'
+                }`}
               >
-                <Play size={16} fill="currentColor" />
+                {isLoading ? <LoaderCircle size={16} className="animate-spin" /> : <Play size={16} fill="currentColor" />}
               </button>
             ) : null}
           </div>

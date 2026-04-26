@@ -65,7 +65,7 @@ export default function QueueSheet({ open, onClose }: { open: boolean; onClose: 
           onDragEnd={handleDragEnd}
         >
           <SortableContext items={tracks.map((track) => track.id)} strategy={verticalListSortingStrategy}>
-            <ul className="divide-y divide-black/6">
+            <ul className="space-y-2">
               {tracks.map((track) => (
                 <QueueRow
                   key={track.id}
@@ -104,11 +104,15 @@ function QueueRow({
     <li
       ref={setNodeRef}
       style={style}
-      className={`flex items-center gap-3 px-4 py-3 ${isCurrent ? 'bg-[#fff4f6]' : 'bg-transparent hover:bg-[#f3f3f6]'}`}
+      className={`flex items-center gap-3 rounded-[18px] px-4 py-3 transition-colors ${
+        isCurrent ? 'bg-[#111116]' : 'bg-[#f8f8f9] hover:bg-[#f3f3f6]'
+      }`}
     >
       <button
         type="button"
-        className="cursor-grab touch-none rounded-full p-1 text-[#8b8c95] transition-colors hover:text-[#111116] active:cursor-grabbing"
+        className={`cursor-grab touch-none rounded-full p-1 transition-colors active:cursor-grabbing ${
+          isCurrent ? 'text-white/48 hover:text-white' : 'text-[#8b8c95] hover:text-[#111116]'
+        }`}
         aria-label={`Drag ${track.title}`}
         {...attributes}
         {...listeners}
@@ -127,7 +131,7 @@ function QueueRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           {isCurrent ? <Play size={12} className="text-accent" /> : null}
-          <p className={`truncate text-sm font-medium ${isCurrent ? 'text-accent' : 'text-[#111116]'}`}>
+          <p className={`truncate text-sm font-medium ${isCurrent ? 'text-white' : 'text-[#111116]'}`}>
             {track.title}
           </p>
           {track.source === 'tidal' ? (
@@ -143,14 +147,16 @@ function QueueRow({
             </span>
           ) : null}
         </div>
-        <p className="truncate text-xs text-[#7a7b86]">{track.artist}</p>
+        <p className={`truncate text-xs ${isCurrent ? 'text-white/62' : 'text-[#7a7b86]'}`}>{track.artist}</p>
       </div>
 
-      <span className="text-xs text-[#8b8c95]">{formatTime(track.duration)}</span>
+      <span className={`text-xs ${isCurrent ? 'text-white/52' : 'text-[#8b8c95]'}`}>{formatTime(track.duration)}</span>
       <button
         type="button"
         onClick={onRemove}
-        className="rounded-full p-2 text-[#8b8c95] transition-colors hover:bg-[#fff4f6] hover:text-[#8d3140]"
+        className={`rounded-full p-2 transition-colors hover:bg-[#fff4f6] hover:text-[#8d3140] ${
+          isCurrent ? 'text-white/52' : 'text-[#8b8c95]'
+        }`}
         aria-label={`Remove ${track.title} from queue`}
       >
         <Trash2 size={15} />

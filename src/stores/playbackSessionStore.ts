@@ -24,6 +24,7 @@ interface SyncedPlayerState {
 
 interface PlaybackSessionState extends SyncedPlayerState {
   context: PlaybackContext
+  loadingTrackId: string | null
   tracks: Track[]
   startIndex: number
   requestedTrackId: string | null
@@ -60,6 +61,7 @@ function normalizeStartIndex(tracks: Track[], startIndex: number) {
 export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
   ...initialSyncedState,
   context: 'library',
+  loadingTrackId: null,
   tracks: [],
   startIndex: 0,
   requestedTrackId: null,
@@ -73,6 +75,7 @@ export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
     const nextIndex = normalizeStartIndex(tracks, startIndex)
     set((state) => ({
       context,
+      loadingTrackId: tracks[nextIndex]?.id ?? null,
       tracks,
       startIndex: nextIndex,
       requestedTrackId: tracks[nextIndex]?.id ?? null,
@@ -87,6 +90,7 @@ export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
     set((state) => ({
       selectedPlaylist: { kind, id },
       context: kind === 'app' ? 'app-playlist' : 'tidal-playlist',
+      loadingTrackId: tracks[nextIndex]?.id ?? null,
       tracks,
       startIndex: nextIndex,
       requestedTrackId: tracks[nextIndex]?.id ?? null,
@@ -146,6 +150,7 @@ export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
     set({
       ...initialSyncedState,
       tracks: [],
+      loadingTrackId: null,
       startIndex: 0,
       requestedTrackId: null,
       errorMessage: null,
@@ -160,7 +165,10 @@ export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
   },
 
   setErrorMessage: (errorMessage) => {
-    set({ errorMessage })
+    set({
+      errorMessage,
+      ...(errorMessage ? { loadingTrackId: null } : {}),
+    })
   },
 
   syncPlayerState: (state) => {
@@ -170,6 +178,7 @@ export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
       isPlaying: state.isPlaying ?? current.isPlaying,
       currentTime: state.currentTime ?? current.currentTime,
       duration: state.duration ?? current.duration,
+      loadingTrackId: state.currentTrack?.id === current.loadingTrackId ? null : current.loadingTrackId,
     }))
   },
 }))

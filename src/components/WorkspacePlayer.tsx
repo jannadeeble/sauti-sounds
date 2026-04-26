@@ -1,5 +1,5 @@
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Heart, ListMusic, MoreVertical, Pause, Play, Radio, SkipBack, SkipForward } from 'lucide-react'
+import { Heart, ListMusic, LoaderCircle, MoreVertical, Pause, Play, Radio, SkipBack, SkipForward } from 'lucide-react'
 import AddToPlaylistDialog from './AddToPlaylistDialog'
 import MorphSurface from './MorphSurface'
 import { useTrackArtworkUrl } from '../lib/artwork'
@@ -148,6 +148,7 @@ function PlayerRuntime({
   const [isPlaying, setIsPlaying] = useState(true)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
+  const [playbackPending, setPlaybackPending] = useState(true)
   const [showActions, setShowActions] = useState(false)
   const [showPlaylistDialog, setShowPlaylistDialog] = useState(false)
   const [originRect, setOriginRect] = useState<ReturnType<typeof rectFromElement>>(null)
@@ -251,15 +252,18 @@ function PlayerRuntime({
     if (!audio) return
 
     pendingPlayRef.current = true
+    setPlaybackPending(true)
 
     void audio.play().then(() => {
       pendingPlayRef.current = false
+      setPlaybackPending(false)
     }).catch((error: unknown) => {
       if (error instanceof DOMException && error.name === 'AbortError') {
         return
       }
 
       pendingPlayRef.current = false
+      setPlaybackPending(false)
       setIsPlaying(false)
     })
   }, [])
@@ -276,6 +280,7 @@ function PlayerRuntime({
     lastLoadedTrackIdRef.current = resolvedTrack.trackId
     lastLoadedSrcRef.current = resolvedTrack.src
     pendingPlayRef.current = isPlayingRef.current
+    setPlaybackPending(isPlayingRef.current)
     audio.src = resolvedTrack.src
     audio.load()
   }, [resolvedTrack])
@@ -306,7 +311,7 @@ function PlayerRuntime({
 
     if (isPlaying) {
       if (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
-        attemptPlayback()
+        window.queueMicrotask(attemptPlayback)
       } else {
         pendingPlayRef.current = true
       }
@@ -314,6 +319,7 @@ function PlayerRuntime({
     }
 
     pendingPlayRef.current = false
+    setPlaybackPending(false)
     audio.pause()
   }, [attemptPlayback, isPlaying, resolvedTrack])
 
@@ -416,6 +422,7 @@ function PlayerRuntime({
         onLoadStart={() => {
           setCurrentTime(0)
           setDuration(0)
+          setPlaybackPending(isPlayingRef.current)
         }}
         onCanPlay={() => {
           if (pendingPlayRef.current || isPlaying) {
@@ -427,7 +434,12 @@ function PlayerRuntime({
         onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
         onPlay={() => {
           pendingPlayRef.current = false
+          setPlaybackPending(false)
           setIsPlaying(true)
+        }}
+        onPlaying={() => setPlaybackPending(false)}
+        onWaiting={() => {
+          if (isPlayingRef.current) setPlaybackPending(true)
         }}
         onPause={(event) => {
           if (pendingPlayRef.current) return
@@ -469,7 +481,11 @@ function PlayerRuntime({
               onClick={() => setIsPlaying((current) => !current)}
               large
             >
-              {isPlaying ? <Pause size={20} strokeWidth={2.1} /> : <Play size={20} strokeWidth={2.1} />}
+              {isPlaying && playbackPending
+                ? <LoaderCircle size={20} className="animate-spin" />
+                : isPlaying
+                  ? <Pause size={20} strokeWidth={2.1} />
+                  : <Play size={20} strokeWidth={2.1} />}
             </PlayerIconButton>
             <PlayerIconButton label="Next track" onClick={handleNext}>
               <SkipForward size={18} strokeWidth={2.05} />

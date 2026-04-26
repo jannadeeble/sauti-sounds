@@ -1,0 +1,13 @@
+.claude
+.playwright-mcp
+.git
+node_modules
+dist
+dist-ssr
+.venv
+__pycache__
+*.pyc
+*.log
+backend/.env
+backend/dev.db
+backend/import-test.db

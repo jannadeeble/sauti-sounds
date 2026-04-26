@@ -33,3 +33,4 @@ research/
 *.njsproj
 *.sln
 *.sw?
+.vercel

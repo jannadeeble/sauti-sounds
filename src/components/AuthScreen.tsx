@@ -59,7 +59,7 @@ export default function AuthScreen() {
     <div className="sauti-theme flex min-h-screen items-center justify-center px-5 py-10">
       <div className="absolute inset-0 sauti-stage" aria-hidden />
       <section className="relative flex w-full max-w-[420px] items-center justify-center">
-        <div className="w-full rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(24,27,38,0.86),rgba(14,16,24,0.82))] p-6 shadow-[0_28px_80px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl">
+        <div className="w-full rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(24,27,38,0.86),rgba(14,16,24,0.82))] p-6 backdrop-blur-2xl">
           <div className="text-center">
             <div className="sauti-title text-[2.7rem] leading-none text-white">sauti</div>
             <p className="mt-2 text-sm text-white/44">
@@ -138,7 +138,7 @@ export default function AuthScreen() {
                   <button
                     type="submit"
                     disabled={submitting || !signinEmail.trim() || signinPassword.length < 8}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-[18px] bg-orange-500 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-orange-600 disabled:opacity-50"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-[18px] bg-accent px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-accent-dark disabled:opacity-50"
                   >
                     <ArrowRight size={16} />
                     {submitting ? 'Signing in…' : 'Sign in'}
@@ -206,7 +206,7 @@ export default function AuthScreen() {
                       || registerPassword.length < 8
                       || (requiresInviteCode && !inviteCode.trim())
                     }
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-[18px] bg-orange-500 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-orange-600 disabled:opacity-50"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-[18px] bg-accent px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-accent-dark disabled:opacity-50"
                   >
                     <ArrowRight size={16} />
                     {submitting ? 'Creating account…' : 'Create account'}

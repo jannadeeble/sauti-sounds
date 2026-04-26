@@ -34,3 +34,5 @@ research/
 *.sln
 *.sw?
 .vercel
+.claude/
+.playwright-mcp/

@@ -12,7 +12,6 @@ import {
   Settings,
   SlidersHorizontal,
   Sparkles,
-  Upload,
 } from 'lucide-react'
 import AIModalHost from './AIModalHost'
 import BatchActionsBar from './BatchActionsBar'
@@ -38,6 +37,7 @@ import { runTagJob } from '../lib/tagJob'
 import { useHistoryStore } from '../stores/historyStore'
 import { useLibraryStore } from '../stores/libraryStore'
 import { useMixStore } from '../stores/mixStore'
+import { useNotificationStore } from '../stores/notificationStore'
 import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
 import { usePlaylistGeneratorStore } from '../stores/playlistGeneratorStore'
 import { usePlaylistStore } from '../stores/playlistStore'
@@ -110,7 +110,6 @@ export default function WorkspaceShell() {
   const libraryLoading = useLibraryStore((state) => state.loading)
   const loadTracks = useLibraryStore((state) => state.loadTracks)
   const cacheTidalTracks = useLibraryStore((state) => state.cacheTidalTracks)
-  const importFiles = useLibraryStore((state) => state.importFiles)
   const importing = useLibraryStore((state) => state.importing)
   const importProgress = useLibraryStore((state) => state.importProgress)
 
@@ -139,6 +138,8 @@ export default function WorkspaceShell() {
 
   const loadHistory = useHistoryStore((state) => state.loadHistory)
   const historyEntries = useHistoryStore((state) => state.entries)
+  const notifications = useNotificationStore((state) => state.notifications)
+  const loadNotifications = useNotificationStore((state) => state.loadNotifications)
   const loadMixes = useMixStore((state) => state.load)
   const loadTasteProfile = useTasteStore((state) => state.load)
 
@@ -150,14 +151,18 @@ export default function WorkspaceShell() {
   const playlistGenerationError = usePlaylistGeneratorStore((state) => state.error)
   const playlistGenerating = playlistGenerationStatus === 'running'
   const effectiveLibraryFilter = libraryDetail ? 'tracks' : libraryFilter
+  const showGenerateAction = playlistGenerating || activeTab === 'home' || (activeTab === 'library' && libraryFilter === 'playlists')
+  const showNewPlaylistAction = activeTab === 'library' && libraryFilter === 'playlists' && !libraryDetail
+  const showNotificationsAction = notifications.length > 0
 
   useEffect(() => {
     void loadTracks()
     void loadPlaylists()
     void loadHistory()
+    void loadNotifications()
     void loadMixes()
     void loadTasteProfile()
-  }, [loadHistory, loadMixes, loadPlaylists, loadTasteProfile, loadTracks])
+  }, [loadHistory, loadMixes, loadNotifications, loadPlaylists, loadTasteProfile, loadTracks])
 
   const trackCount = tracks.length
   useEffect(() => {
@@ -485,23 +490,8 @@ export default function WorkspaceShell() {
     void loadPlaylists()
   }
 
-  async function handleQuickImport() {
-    if (!('showOpenFilePicker' in window)) {
-      openModal('upload', null)
-      return
-    }
-
-    const result = await importFiles()
-    if (result.dedupeUncertain.length > 0) {
-      openModal('upload', null)
-      return
-    }
-    if (result.tracks.length > 0) {
-      finalizeImport({ importedTracks: result.tracks })
-    }
-  }
-
   function selectLibraryFilter(filter: LibraryFilter) {
+    setActiveTab('library')
     setLibraryFilter(filter)
     setLibrarySort((current) => normalizeLibrarySort(filter, current))
     setLibraryDetail(null)
@@ -519,51 +509,40 @@ export default function WorkspaceShell() {
   return (
     <div className="workspace-shell min-h-[100dvh]">
       <div className="min-h-[100dvh]">
-        <div className="mx-auto flex min-h-[100dvh] max-w-[1460px] flex-col px-2 pb-[calc(12rem+env(safe-area-inset-bottom))] pt-2 sm:px-6 sm:pt-4 lg:px-8">
-          <header className="pointer-events-none fixed inset-x-0 top-2 z-30 px-2 sm:top-4 sm:px-6 lg:px-8">
-            <div className="sauti-glass-panel pointer-events-auto mx-auto max-w-[1460px] rounded-[36px] px-2 py-2 sm:rounded-[40px] sm:px-4 sm:py-3">
-              <div className="flex items-center gap-2 sm:gap-3">
-                <div className="flex shrink-0 items-center gap-1 rounded-full border border-white/10 bg-white/6 p-1">
+        <div className={`mx-auto flex min-h-[100dvh] max-w-[1460px] flex-col px-2 pt-2 sm:px-6 sm:pt-4 lg:px-8 ${
+          playerVisible
+            ? 'pb-[calc(16rem+env(safe-area-inset-bottom))]'
+            : 'pb-[calc(7rem+env(safe-area-inset-bottom))]'
+        }`}>
+          <header className="pointer-events-none fixed inset-x-0 top-0 z-30 border-b border-transparent bg-white px-2 py-2 sm:px-6 sm:py-4 lg:px-8">
+            <div className="pointer-events-auto mx-auto flex max-w-[1180px] flex-col items-start gap-2 px-1 sm:px-3 lg:px-6">
+              <div className="flex w-full justify-start">
+                <div className="flex shrink-0 items-center gap-2">
                   <TabButton active={activeTab === 'home'} onClick={() => setActiveTab('home')}>Discover</TabButton>
                   <TabButton active={activeTab === 'library'} onClick={() => setActiveTab('library')}>Library</TabButton>
                 </div>
-                <div className="hidden min-w-0 flex-1 pl-2 text-left lg:block">
-                  <p className="text-[11px] uppercase tracking-[0.28em] text-white/34">Sauti Sounds</p>
-                  <p className="mt-1 text-sm text-white/56">
-                    {activeTab === 'home'
-                      ? 'Recently played, suggestions, and your current taste graph.'
-                      : 'Tracks, artists, playlists, and synced collections.'}
-                  </p>
-                </div>
-                <div className="ml-auto flex shrink-0 items-center justify-end gap-2">
-                  {playlistGenerating ? (
-                    <div
-                      className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/8 text-white/72"
-                      title="Generating playlist"
-                      aria-label="Generating playlist"
-                    >
-                      <LoaderCircle size={16} className="animate-spin" />
-                    </div>
-                  ) : null}
-                  <TopIconButton
-                    label={importing && importProgress ? `Uploading ${importProgress.current}/${importProgress.total}` : 'Upload'}
-                    icon={<Upload size={15} />}
-                    onClick={(event) => openModal('upload', rectFromElement(event.currentTarget))}
-                  />
-                  <div className="hidden sm:block">
-                    <NotificationBell />
-                  </div>
-                  <TopIconButton
-                    label="Settings"
-                    icon={<Settings size={15} />}
-                    onClick={(event) => openModal('settings', rectFromElement(event.currentTarget))}
-                  />
-                </div>
               </div>
+              {activeTab === 'library' ? (
+                <div className="flex w-full justify-start overflow-x-auto">
+                  <div className="flex min-w-max gap-2">
+                    {LIBRARY_FILTERS.map((filter) => (
+                      <button
+                        key={filter.value}
+                        type="button"
+                        data-active={libraryFilter === filter.value}
+                        onClick={() => selectLibraryFilter(filter.value)}
+                        className="sauti-nav-pill"
+                      >
+                        {filter.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           </header>
 
-          <main className="flex-1 pt-[88px] sm:pt-[108px]">
+          <main className={`flex-1 ${activeTab === 'home' ? 'pt-[100px] sm:pt-[112px]' : 'pt-[104px] sm:pt-[116px]'}`}>
             <div className="mx-auto w-full max-w-[1180px] space-y-8 px-1 sm:px-3 lg:px-6">
               {errorMessage ? <Banner>{errorMessage}</Banner> : null}
               {playlistGenerationStatus === 'error' && playlistGenerationError ? (
@@ -598,26 +577,12 @@ export default function WorkspaceShell() {
                   <SectionHeader
                     title="Recently played"
                     subtitle="Jump straight back in"
-                    action={(
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('library')}
-                        className="text-sm font-medium text-accent transition-colors hover:text-accent-dark"
-                      >
-                        Open library
-                      </button>
-                    )}
                   />
 
                   {recentTracks.length === 0 ? (
                     <EmptyState
                       title="No plays yet"
                       description="Upload music or connect TIDAL to start filling this surface."
-                      action={(
-                        <ActionButton accent icon={<Upload size={15} />} onClick={() => void handleQuickImport()}>
-                          Upload music
-                        </ActionButton>
-                      )}
                     />
                   ) : (
                     <div className="grid grid-cols-3 gap-3">
@@ -631,49 +596,19 @@ export default function WorkspaceShell() {
                     </div>
                   )}
 
-                  <div className="flex flex-wrap gap-2">
-                    <ActionButton
-                      accent
-                      icon={<Sparkles size={15} />}
-                      onClick={(event) => openModal('generator', rectFromElement(event.currentTarget))}
-                    >
-                      Generate playlist
-                    </ActionButton>
-                    <ActionButton icon={<Upload size={15} />} onClick={() => void handleQuickImport()}>
-                      Quick import
-                    </ActionButton>
-                  </div>
-
                   <HomeSuggestions onPlayTracks={(list) => playTracks(list, 'library', 0)} />
                 </div>
               ) : null}
 
               {activeTab === 'library' ? (
                 <div className="space-y-6">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex flex-wrap gap-2">
-                      {LIBRARY_FILTERS.map((filter) => (
-                        <button
-                          key={filter.value}
-                          type="button"
-                          data-active={libraryFilter === filter.value}
-                          onClick={() => selectLibraryFilter(filter.value)}
-                          className="sauti-filter-pill"
-                        >
-                          {filter.label}
-                        </button>
-                      ))}
-                    </div>
-
+                  <div className="flex flex-wrap items-center justify-end gap-3">
                     <LibraryToolbar
                       filter={effectiveLibraryFilter}
                       sort={librarySort}
                       viewMode={libraryViewMode}
-                      showPlaylistActions={libraryFilter === 'playlists' && !libraryDetail}
                       onSortChange={setLibrarySort}
                       onViewModeChange={setLibraryViewMode}
-                      onGeneratePlaylist={(event) => openModal('generator', rectFromElement(event.currentTarget))}
-                      onCreatePlaylist={() => void handleCreatePlaylist('app')}
                     />
                   </div>
 
@@ -807,17 +742,36 @@ export default function WorkspaceShell() {
           </main>
         </div>
 
-        <div className="workspace-search-fab" data-player-visible={playerVisible ? 'true' : 'false'}>
-          <button
-            type="button"
-            aria-label="Search"
-            title="Search"
+        <div className="workspace-action-cluster" data-player-visible={playerVisible ? 'true' : 'false'}>
+          {showGenerateAction ? (
+            <BottomActionButton
+              label="Generate"
+              icon={playlistGenerating ? <LoaderCircle size={17} className="animate-spin" /> : <Sparkles size={17} />}
+              active={playlistGenerating}
+              onClick={(event) => openModal('generator', rectFromElement(event.currentTarget))}
+            />
+          ) : null}
+          {showNewPlaylistAction ? (
+            <BottomActionButton
+              label="New playlist"
+              icon={<Plus size={17} />}
+              onClick={() => void handleCreatePlaylist('app')}
+            />
+          ) : null}
+          <BottomActionButton
+            label="Search"
+            icon={<Search size={17} />}
             onClick={(event) => openModal('search', rectFromElement(event.currentTarget))}
-            className="workspace-search-fab__button"
-          >
-            <Search size={18} />
-            <span className="workspace-search-fab__label">Search</span>
-          </button>
+          />
+          {showNotificationsAction ? (
+            <NotificationBell buttonClassName="workspace-action-button workspace-action-button--icon relative" />
+          ) : null}
+          <BottomActionButton
+            label="Settings"
+            icon={<Settings size={17} />}
+            iconOnly
+            onClick={(event) => openModal('settings', rectFromElement(event.currentTarget))}
+          />
         </div>
 
         <WorkspacePlayer />
@@ -871,7 +825,7 @@ export default function WorkspaceShell() {
           size="lg"
           maxHeightClassName="max-h-[88vh]"
         >
-          <SettingsPanel />
+          <SettingsPanel onOpenUpload={(event) => openModal('upload', rectFromElement(event.currentTarget))} />
         </BottomSheet>
 
         <BottomSheet
@@ -909,22 +863,25 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full px-3 py-2 text-sm font-medium transition-colors sm:px-4 ${
-        active ? 'bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]' : 'text-white/56 hover:text-white'
-      }`}
+      data-active={active ? 'true' : 'false'}
+      className="sauti-nav-pill sauti-nav-pill--primary"
     >
       {children}
     </button>
   )
 }
 
-function TopIconButton({
+function BottomActionButton({
   label,
   icon,
+  active = false,
+  iconOnly = false,
   onClick,
 }: {
   label: string
   icon: ReactNode
+  active?: boolean
+  iconOnly?: boolean
   onClick: (event: React.MouseEvent<HTMLButtonElement>) => void
 }) {
   return (
@@ -933,9 +890,11 @@ function TopIconButton({
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="sauti-glass-button"
+      data-active={active ? 'true' : 'false'}
+      className={`workspace-action-button ${iconOnly ? 'workspace-action-button--icon' : ''}`}
     >
       {icon}
+      {iconOnly ? null : <span className="workspace-action-button__label">{label}</span>}
     </button>
   )
 }
@@ -972,20 +931,14 @@ function LibraryToolbar({
   filter,
   sort,
   viewMode,
-  showPlaylistActions,
   onSortChange,
   onViewModeChange,
-  onGeneratePlaylist,
-  onCreatePlaylist,
 }: {
   filter: LibraryFilter
   sort: LibrarySort
   viewMode: LibraryViewMode
-  showPlaylistActions: boolean
   onSortChange: (sort: LibrarySort) => void
   onViewModeChange: (mode: LibraryViewMode) => void
-  onGeneratePlaylist: (event: React.MouseEvent<HTMLButtonElement>) => void
-  onCreatePlaylist: () => void
 }) {
   const options = filter === 'artists'
     ? [
@@ -1009,16 +962,6 @@ function LibraryToolbar({
 
   return (
     <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-      {showPlaylistActions ? (
-        <div className="mr-1 flex flex-wrap gap-2">
-          <ActionButton accent icon={<Sparkles size={15} />} onClick={onGeneratePlaylist}>
-            Generate playlist
-          </ActionButton>
-          <ActionButton icon={<Plus size={15} />} onClick={onCreatePlaylist}>
-            New playlist
-          </ActionButton>
-        </div>
-      ) : null}
       <label className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-3 py-2 text-sm text-[#555661]">
         <SlidersHorizontal size={14} />
         <select

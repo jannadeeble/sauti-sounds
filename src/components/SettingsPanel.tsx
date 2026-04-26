@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Bell, Brain, Download, Eye, EyeOff, HardDrive, Info, KeyRound, LogOut, Radio, RefreshCw, Server, Trash2 } from 'lucide-react'
+import { type MouseEvent, useEffect, useMemo, useState } from 'react'
+import { Bell, Brain, Download, Eye, EyeOff, HardDrive, Info, KeyRound, LogOut, Radio, RefreshCw, Server, Trash2, Upload } from 'lucide-react'
 import AIStatsPanel from './AIStatsPanel'
 import NotificationBell from './NotificationBell'
 import { clearPersistedLibrary } from '../lib/librarySync'
@@ -12,7 +12,11 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useTasteStore } from '../stores/tasteStore'
 import { useTidalStore } from '../stores/tidalStore'
 
-export default function SettingsPanel() {
+interface SettingsPanelProps {
+  onOpenUpload: (event: MouseEvent<HTMLButtonElement>) => void
+}
+
+export default function SettingsPanel({ onOpenUpload }: SettingsPanelProps) {
   const { tracks, loadTracks } = useLibraryStore()
   const settings = useSettingsStore()
   const authAvailable = useAuthStore((state) => state.available)
@@ -161,6 +165,15 @@ export default function SettingsPanel() {
             <p className="text-xs text-[#7a7b86]">Artists</p>
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={onOpenUpload}
+          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-black/8 bg-[#f8f8f9] px-4 py-3 text-sm font-medium text-[#111116] transition-colors hover:bg-[#f1f1f4]"
+        >
+          <Upload size={16} />
+          Upload music
+        </button>
 
         <button
           type="button"

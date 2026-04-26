@@ -113,53 +113,65 @@ img {
     var(--deezer-bg);
 }
 
-.workspace-search-fab {
+.workspace-action-cluster {
   position: fixed;
   right: 8px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
   z-index: 32;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap-reverse;
+  gap: 8px;
+  max-width: min(100vw - 16px, 760px);
+  pointer-events: auto;
+  transition: bottom 0.2s ease;
 }
 
-.workspace-search-fab[data-player-visible="true"] {
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 148px);
+.workspace-action-cluster[data-player-visible="true"] {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 232px);
 }
 
-.workspace-search-fab__button {
+.workspace-action-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  min-width: 54px;
-  min-height: 54px;
-  padding: 0 18px;
+  flex: 0 0 auto;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 14px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background:
-    linear-gradient(180deg, rgba(30, 34, 46, 0.78), rgba(14, 16, 24, 0.74)),
-    rgba(10, 12, 18, 0.72);
-  color: var(--sauti-glass-fg);
+  border: 1px solid rgba(239, 84, 102, 0.18);
+  background: var(--sauti-accent);
+  color: #fff;
   box-shadow:
-    0 24px 56px rgba(0, 0, 0, 0.34),
+    0 18px 38px rgba(0, 0, 0, 0.28),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+  white-space: nowrap;
   transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
-.workspace-search-fab__button:hover {
+.workspace-action-button:hover,
+.workspace-action-button[data-active="true"] {
   transform: translateY(-1px);
-  border-color: rgba(255, 255, 255, 0.16);
-  background:
-    linear-gradient(180deg, rgba(34, 39, 52, 0.84), rgba(18, 20, 30, 0.8)),
-    rgba(14, 16, 24, 0.76);
+  border-color: rgba(224, 54, 74, 0.26);
+  background: var(--sauti-accent-deep);
+  color: #fff;
   box-shadow:
-    0 28px 60px rgba(0, 0, 0, 0.38),
+    0 18px 34px rgba(0, 0, 0, 0.28),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
-.workspace-search-fab__label {
+.workspace-action-button--icon {
+  width: 46px;
+  padding: 0;
+}
+
+.workspace-action-button__label {
   font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
 }
 
 .deezer-search-shell {
@@ -502,24 +514,30 @@ img {
 }
 
 @media (max-width: 479px) {
-  .workspace-search-fab__button {
-    width: 56px;
-    padding: 0;
+  .workspace-action-cluster {
+    right: 6px;
+    max-width: calc(100vw - 12px);
   }
 
-  .workspace-search-fab__label {
-    display: none;
+  .workspace-action-button {
+    min-height: 44px;
+    padding-inline: 12px;
+  }
+
+  .workspace-action-button--icon {
+    width: 44px;
+    padding: 0;
   }
 }
 
 @media (min-width: 640px) {
-  .workspace-search-fab {
+  .workspace-action-cluster {
     right: 24px;
-    bottom: 24px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
   }
 
-  .workspace-search-fab[data-player-visible="true"] {
-    bottom: 32px;
+  .workspace-action-cluster[data-player-visible="true"] {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 244px);
   }
 }
 
@@ -636,6 +654,42 @@ input[type="range"]::-moz-range-thumb {
   border-color: var(--sauti-glass-border-strong);
   background: var(--sauti-glass-button-surface-hover);
   transform: translateY(-1px);
+}
+
+.sauti-nav-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--sauti-border);
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--sauti-text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  white-space: nowrap;
+  backdrop-filter: blur(16px) saturate(140%);
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.sauti-nav-pill--primary {
+  min-height: 46px;
+  padding: 0 20px;
+  font-size: 16px;
+}
+
+.sauti-nav-pill:hover {
+  color: #fff;
+  border-color: transparent;
+  background: var(--sauti-text);
+}
+
+.sauti-nav-pill[data-active="true"] {
+  color: #fff;
+  border-color: transparent;
+  background: var(--sauti-text);
 }
 
 .sauti-filter-pill {

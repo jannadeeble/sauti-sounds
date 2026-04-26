@@ -492,6 +492,12 @@ function recommendationErrorMessage(err: unknown): string {
   if (status === '401' || status === '403') {
     return `${provider} rejected the request. Check the API key and selected model in Settings.${detail ? ` (${detail})` : ''}`
   }
+  if (/api network error|failed to fetch|network/i.test(raw)) {
+    return `${provider} could not be reached from Sauti. Check that the backend is running and the provider endpoint is reachable.${detail ? ` (${detail})` : ''}`
+  }
+  if (/empty message/i.test(raw) && /finish reason:\s*length/i.test(raw)) {
+    return `${provider} used the output budget before returning a track list. Sauti retried with a plain-output request, but the provider still returned no usable JSON.${detail ? ` (${detail})` : ''}`
+  }
   if (status === '429') {
     if (/quota|credit|billing|insufficient|exceeded your current quota/i.test(detail)) {
       return `${provider} returned a quota or billing limit. Check that provider account's credits, quota, and selected model in Settings.${detail ? ` (${detail})` : ''}`
@@ -501,10 +507,6 @@ function recommendationErrorMessage(err: unknown): string {
   if (status && Number(status) >= 500) {
     return `${provider} is having trouble right now. Try again shortly.${detail ? ` (${detail})` : ''}`
   }
-  if (/failed to fetch|network/i.test(raw)) {
-    return 'Sauti could not reach the AI provider. Check the network connection and try again.'
-  }
-
   return `Recommendation generation failed: ${raw}`
 }
 

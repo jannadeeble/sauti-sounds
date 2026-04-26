@@ -65,6 +65,29 @@ class UserAppStateSnapshot(Base):
     updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
+class GenerationRun(Base):
+    __tablename__ = "generation_runs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    phase: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider: Mapped[str] = mapped_column(String(40), nullable=False)
+    model: Mapped[str | None] = mapped_column(String(200))
+    request_payload: Mapped[str] = mapped_column(Text, nullable=False)
+    attempt_count: Mapped[int] = mapped_column(default=0, nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(60))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    result_payload: Mapped[str | None] = mapped_column(Text)
+    mix_id: Mapped[str | None] = mapped_column(String(64))
+    playlist_id: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    started_at: Mapped[int | None] = mapped_column(BigInteger)
+    finished_at: Mapped[int | None] = mapped_column(BigInteger)
+    updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
 connect_args = (
     {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
 )

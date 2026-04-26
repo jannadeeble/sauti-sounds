@@ -1,5 +1,5 @@
 import type { TasteProfile, Track, TrackTags } from '../types'
-import { apiPost } from './api'
+import { ApiError, apiPost } from './api'
 
 export type { TasteProfile, TrackTags } from '../types'
 
@@ -37,7 +37,12 @@ interface ChatMessage {
   content: string
 }
 
+type LLMTaskType = 'recommendations' | 'track-tags' | 'taste-profile' | 'adjudication' | 'blurb' | 'chat'
+type LLMResponseMode = 'text' | 'json_object'
+
 interface LLMChatResponse {
+  data?: unknown
+  finishReason?: string | null
   text: string
 }
 
@@ -50,7 +55,12 @@ export interface ClaudeSystemBlock {
 export interface ClaudeCallOptions {
   model?: string
   maxTokens?: number
+  responseMode?: LLMResponseMode
+  responseSchema?: Record<string, unknown>
+  taskType?: LLMTaskType
+  temperature?: number
   thinkingBudget?: number
+  useRouteEnhancements?: boolean
   // When provided, takes precedence over the system message inside `messages`.
   // Pass an array of blocks to attach `cache_control` to the static prefix.
   systemBlocks?: ClaudeSystemBlock[]
@@ -59,7 +69,7 @@ export interface ClaudeCallOptions {
 async function callLLM(messages: ChatMessage[], maxTokens = 2048): Promise<string> {
   if (!config) throw new Error('LLM not configured')
 
-  return callConfiguredProvider(messages, { maxTokens })
+  return callConfiguredProviderText(messages, { maxTokens })
 }
 
 function mergeSystemPrompt(messages: ChatMessage[], systemBlocks?: ClaudeSystemBlock[]): ChatMessage[] {
@@ -78,37 +88,53 @@ function mergeSystemPrompt(messages: ChatMessage[], systemBlocks?: ClaudeSystemB
   return [{ role: 'system', content: mergedSystem }, ...withoutSystem]
 }
 
-async function callConfiguredProvider(
+async function callConfiguredProviderResponse(
   messages: ChatMessage[],
   opts: ClaudeCallOptions = {},
-): Promise<string> {
+): Promise<LLMChatResponse> {
   if (!config) throw new Error('LLM not configured')
 
   switch (config.provider) {
     case 'claude':
       return callClaude(messages, opts)
     case 'openai':
-      return callOpenAI(mergeSystemPrompt(messages, opts.systemBlocks), opts.maxTokens ?? 2048)
+      return callOpenAI(mergeSystemPrompt(messages, opts.systemBlocks), opts.maxTokens ?? 2048, opts)
     case 'gemini':
-      return callGemini(mergeSystemPrompt(messages, opts.systemBlocks), opts.maxTokens ?? 2048)
+      return callGemini(mergeSystemPrompt(messages, opts.systemBlocks), opts.maxTokens ?? 2048, opts)
     case 'openrouter':
-      return callOpenRouter(mergeSystemPrompt(messages, opts.systemBlocks), opts.maxTokens ?? 2048)
+      return callOpenRouter(mergeSystemPrompt(messages, opts.systemBlocks), opts)
     default:
       throw new Error(`Unknown provider: ${config.provider}`)
   }
 }
 
-async function callClaude(messages: ChatMessage[], opts: ClaudeCallOptions = {}): Promise<string> {
-  const data = await apiPost<LLMChatResponse>('/api/llm/chat', {
+async function callConfiguredProviderText(messages: ChatMessage[], opts: ClaudeCallOptions = {}): Promise<string> {
+  const data = await callConfiguredProviderResponse(messages, opts)
+  return data.text
+}
+
+async function callStructuredTask<T>(messages: ChatMessage[], opts: ClaudeCallOptions): Promise<T> {
+  const data = await callConfiguredProviderResponse(messages, opts)
+  if (data.data == null) {
+    throw new Error('The AI provider returned no structured data.')
+  }
+  return data.data as T
+}
+
+async function callClaude(messages: ChatMessage[], opts: ClaudeCallOptions = {}): Promise<LLMChatResponse> {
+  return apiPost<LLMChatResponse>('/api/llm/chat', {
     provider: 'claude',
     apiKey: config!.apiKey,
     model: opts.model || config!.model || MODEL_SONNET_46,
     messages,
     maxTokens: opts.maxTokens ?? 2048,
+    responseMode: opts.responseMode ?? 'text',
+    responseSchema: opts.responseSchema,
+    taskType: opts.taskType ?? 'chat',
+    temperature: opts.temperature,
     thinkingBudget: opts.thinkingBudget,
     systemBlocks: opts.systemBlocks,
   })
-  return data.text
 }
 
 /**
@@ -120,18 +146,21 @@ export async function callClaudeDirect(
   messages: ChatMessage[],
   opts: ClaudeCallOptions = {},
 ): Promise<string> {
-  return callConfiguredProvider(messages, opts)
+  return callConfiguredProviderText(messages, opts)
 }
 
-async function callOpenAI(messages: ChatMessage[], maxTokens: number): Promise<string> {
-  const data = await apiPost<LLMChatResponse>('/api/llm/chat', {
+async function callOpenAI(messages: ChatMessage[], maxTokens: number, opts: ClaudeCallOptions = {}): Promise<LLMChatResponse> {
+  return apiPost<LLMChatResponse>('/api/llm/chat', {
     provider: 'openai',
     apiKey: config!.apiKey,
     model: config!.model || 'gpt-4o',
     messages,
     maxTokens,
+    responseMode: opts.responseMode ?? 'text',
+    responseSchema: opts.responseSchema,
+    taskType: opts.taskType ?? 'chat',
+    temperature: opts.temperature,
   })
-  return data.text
 }
 
 export interface OpenRouterModel {
@@ -218,18 +247,20 @@ function supportsReasoning(modelId: string): boolean {
 
 async function callOpenRouter(
   messages: ChatMessage[],
-  maxTokens: number,
-): Promise<string> {
+  opts: ClaudeCallOptions = {},
+): Promise<LLMChatResponse> {
   // OpenRouter is OpenAI-compatible. The HTTP-Referer and X-Title headers are
   // optional attribution metadata shown on OpenRouter's leaderboard.
-  const model = config!.model || OPENROUTER_DEFAULT_MODEL
+  const maxTokens = opts.maxTokens ?? 2048
+  const model = opts.model || config!.model || OPENROUTER_DEFAULT_MODEL
+  const useRouteEnhancements = opts.useRouteEnhancements ?? true
 
-  const first = await callOpenRouterOnce(messages, maxTokens, model, true)
-  if (first.ok) return first.text
+  const first = await callOpenRouterOnce(messages, maxTokens, model, useRouteEnhancements, opts)
+  if (first.ok) return first.data
 
-  if (isOpenRouterEndpointGuardrailError(first.error)) {
-    const retry = await callOpenRouterOnce(messages, maxTokens, model, false)
-    if (retry.ok) return retry.text
+  if (useRouteEnhancements && isOpenRouterEndpointGuardrailError(first.error)) {
+    const retry = await callOpenRouterOnce(messages, maxTokens, model, false, opts)
+    if (retry.ok) return retry.data
     throw new Error(formatOpenRouterError(retry.status, retry.error))
   }
 
@@ -237,7 +268,7 @@ async function callOpenRouter(
 }
 
 type OpenRouterCallResult =
-  | { ok: true; text: string }
+  | { data: LLMChatResponse; ok: true }
   | { ok: false; status: number; error: string }
 
 async function callOpenRouterOnce(
@@ -245,6 +276,7 @@ async function callOpenRouterOnce(
   maxTokens: number,
   model: string,
   useRouteEnhancements: boolean,
+  opts: ClaudeCallOptions,
 ): Promise<OpenRouterCallResult> {
   try {
     const data = await apiPost<LLMChatResponse>('/api/llm/chat', {
@@ -253,12 +285,20 @@ async function callOpenRouterOnce(
       model,
       messages,
       maxTokens,
+      responseMode: opts.responseMode ?? 'text',
+      responseSchema: opts.responseSchema,
+      taskType: opts.taskType ?? 'chat',
+      temperature: opts.temperature,
       useRouteEnhancements: useRouteEnhancements && supportsReasoning(model),
     })
-    return { ok: true, text: data.text }
+    return { ok: true, data }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown OpenRouter error'
-    return { ok: false, status: extractProviderStatus(message) ?? 0, error: message }
+    return {
+      ok: false,
+      status: extractProviderStatus(message) ?? (error instanceof ApiError ? error.status : 0),
+      error: message,
+    }
   }
 }
 
@@ -283,6 +323,9 @@ function formatOpenRouterError(statusCode: number, error: string): string {
   if (isOpenRouterEndpointGuardrailError(message)) {
     return `OpenRouter could not route the selected model under the current account/provider policy. In Settings, choose another OpenRouter model or update OpenRouter privacy/data settings. (${message})`
   }
+  if (statusCode === 0) {
+    return `OpenRouter request failed before a provider status was returned. Check that the backend is running, the browser can reach /api/llm/chat, and the OpenRouter key/model in Settings are valid. (${message})`
+  }
   if (/^OpenRouter API error:/i.test(message)) {
     return message
   }
@@ -293,15 +336,19 @@ function formatOpenRouterError(statusCode: number, error: string): string {
 async function callGemini(
   messages: ChatMessage[],
   maxTokens: number,
-): Promise<string> {
-  const data = await apiPost<LLMChatResponse>('/api/llm/chat', {
+  opts: ClaudeCallOptions = {},
+): Promise<LLMChatResponse> {
+  return apiPost<LLMChatResponse>('/api/llm/chat', {
     provider: 'gemini',
     apiKey: config!.apiKey,
     model: config!.model || 'gemini-2.0-flash',
     messages,
     maxTokens,
+    responseMode: opts.responseMode ?? 'text',
+    responseSchema: opts.responseSchema,
+    taskType: opts.taskType ?? 'chat',
+    temperature: opts.temperature,
   })
-  return data.text
 }
 
 // ── Track Tagging ──
@@ -316,7 +363,7 @@ export async function tagTracks(tracks: Track[]): Promise<Map<string, TrackTags>
       `${idx + 1}. "${t.title}" by ${t.artist} (Album: ${t.album}${t.genre ? `, Genre: ${t.genre}` : ''})`
     ).join('\n')
 
-    const response = await callLLM([
+    const response = await callStructuredTask<{ tags: GeneratedTrackTags[] }>([
       {
         role: 'system',
         content: `You are a music analysis expert. Tag each track with:
@@ -333,28 +380,21 @@ Respond with valid JSON array only, one object per track. No markdown, no explan
         role: 'user',
         content: `Tag these tracks:\n${trackList}`,
       },
-    ])
+    ], { taskType: 'track-tags', responseMode: 'json_object', maxTokens: 2048 })
 
-    try {
-      const parsed = JSON.parse(response.replace(/```json?\n?|\n?```/g, ''))
-      if (Array.isArray(parsed)) {
-        parsed.forEach((tags: GeneratedTrackTags, idx: number) => {
-          if (batch[idx]) {
-            results.set(batch[idx].id, {
-              energy: typeof tags.energy === 'number' ? tags.energy : 0.5,
-              mood: tags.mood || 'neutral',
-              genres: Array.isArray(tags.genres) ? tags.genres : [],
-              bpmEstimate: tags.bpmEstimate,
-              vibeDescriptors: Array.isArray(tags.vibeDescriptors) ? tags.vibeDescriptors : [],
-              culturalContext: tags.culturalContext,
-              taggedAt: Date.now(),
-            })
-          }
+    response.tags.forEach((tags, idx) => {
+      if (batch[idx]) {
+        results.set(batch[idx].id, {
+          energy: typeof tags.energy === 'number' ? tags.energy : 0.5,
+          mood: tags.mood || 'neutral',
+          genres: Array.isArray(tags.genres) ? tags.genres.map(String) : [],
+          bpmEstimate: tags.bpmEstimate,
+          vibeDescriptors: Array.isArray(tags.vibeDescriptors) ? tags.vibeDescriptors.map(String) : [],
+          culturalContext: tags.culturalContext,
+          taggedAt: Date.now(),
         })
       }
-    } catch {
-      console.error('Failed to parse LLM tag response')
-    }
+    })
   }
 
   return results
@@ -367,7 +407,7 @@ export async function buildTasteProfile(tracks: Track[]): Promise<TasteProfile> 
     `"${t.title}" by ${t.artist}${t.genre ? ` [${t.genre}]` : ''}`
   ).join('\n')
 
-  const response = await callLLM([
+  const response = await callStructuredTask<TasteProfile>([
     {
       role: 'system',
       content: `You are a music taste analyst. Based on a user's library, create a detailed taste profile. Respond with valid JSON only matching this structure:
@@ -385,21 +425,8 @@ export async function buildTasteProfile(tracks: Track[]): Promise<TasteProfile> 
       role: 'user',
       content: `Build a taste profile from this library (${tracks.length} total tracks, showing first 200):\n${trackSummary}`,
     },
-  ])
-
-  try {
-    return JSON.parse(response.replace(/```json?\n?|\n?```/g, ''))
-  } catch {
-    return {
-      coreIdentity: 'Music enthusiast',
-      primaryGenres: [],
-      energyPreference: { min: 0.2, max: 0.8, sweet_spot: 0.5 },
-      culturalMarkers: [],
-      antiPreferences: [],
-      favoriteArtists: [],
-      moodPreferences: [],
-    }
-  }
+  ], { taskType: 'taste-profile', responseMode: 'json_object', maxTokens: 2048 })
+  return response
 }
 
 // ── Recommendations ──
@@ -417,23 +444,6 @@ export interface Recommendation {
   artist: string
   title: string
   reason: string
-}
-
-function parseRecommendationResponse(response: string): Recommendation[] {
-  const parsed = JSON.parse(response.replace(/```json?\n?|\n?```/g, ''))
-  if (!Array.isArray(parsed)) {
-    throw new Error('Recommendation response was not an array')
-  }
-  const recommendations = parsed.filter((item): item is Recommendation => (
-    item &&
-    typeof item.artist === 'string' &&
-    typeof item.title === 'string' &&
-    typeof item.reason === 'string'
-  ))
-  if (parsed.length > 0 && recommendations.length === 0) {
-    throw new Error('Recommendation response did not include usable artist/title pairs')
-  }
-  return recommendations
 }
 
 export async function getRecommendations(req: RecommendationRequest): Promise<Recommendation[]> {
@@ -505,17 +515,11 @@ Consider energy flow, genre coherence, and mood journey. Start with a track that
     }
   }
 
-  const response = await callLLM([
+  const response = await callStructuredTask<{ recommendations: Recommendation[] }>([
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userPrompt },
-  ])
-
-  try {
-    return parseRecommendationResponse(response)
-  } catch (err) {
-    console.error('Failed to parse recommendations', err)
-    throw new Error('The AI provider returned recommendations in an unreadable format. Try again, or choose a different model if it keeps happening.')
-  }
+  ], { taskType: 'recommendations', responseMode: 'json_object', maxTokens: 8192 })
+  return response.recommendations
 }
 
 // ── AI Chat ──
@@ -569,34 +573,67 @@ export interface SuggestionContext {
 export async function getRecommendationsCached(
   context: SuggestionContext,
   instruction: string,
-  options: { count?: number; thinkingBudget?: number; model?: string } = {},
+  options: {
+    count?: number
+    maxTokens?: number
+    thinkingBudget?: number
+    model?: string
+    useRouteEnhancements?: boolean
+  } = {},
 ): Promise<Recommendation[]> {
   const count = options.count ?? 10
+  const provider = config?.provider
+  const model = provider === 'claude' ? options.model ?? MODEL_SONNET_46 : options.model
   const systemPrompt = `You are an expert music curator and DJ. You deeply understand musical flow, energy, mood, genre, and cultural context.
 
 Always respond with a valid JSON array of objects: [{"artist": "...", "title": "...", "reason": "..."}]. No markdown, no explanation outside the JSON.`
-
-  const response = await callClaudeDirect(
-    [
-      { role: 'user', content: `${instruction}\n\nReturn exactly ${count} tracks.\n\n${context.tail}` },
+  const request = [
+    { role: 'user' as const, content: `${instruction}\n\nReturn exactly ${count} tracks.\n\n${context.tail}` },
+  ]
+  const requestOptions: ClaudeCallOptions = {
+    model,
+    maxTokens: options.maxTokens ?? 8192,
+    thinkingBudget: options.thinkingBudget ?? 0,
+    useRouteEnhancements: options.useRouteEnhancements ?? false,
+    systemBlocks: [
+      { type: 'text', text: systemPrompt },
+      { type: 'text', text: context.prefix, cache_control: { type: 'ephemeral' } },
     ],
-    {
-      model: options.model ?? MODEL_SONNET_46,
-      maxTokens: 4096,
-      thinkingBudget: options.thinkingBudget ?? DEFAULT_THINKING_BUDGET,
-      systemBlocks: [
-        { type: 'text', text: systemPrompt },
-        { type: 'text', text: context.prefix, cache_control: { type: 'ephemeral' } },
-      ],
-    },
-  )
-
-  try {
-    return parseRecommendationResponse(response)
-  } catch (err) {
-    console.error('Failed to parse cached recommendations', err)
-    throw new Error('The AI provider returned recommendations in an unreadable format. Try again, or choose a different model if it keeps happening.')
   }
+
+  let response: { recommendations: Recommendation[] }
+  try {
+    response = await callStructuredTask<{ recommendations: Recommendation[] }>(request, {
+      ...requestOptions,
+      taskType: 'recommendations',
+      responseMode: 'json_object',
+    })
+  } catch (error) {
+    if (
+      provider === 'openrouter'
+      && isOpenRouterLengthExhaustion(error)
+      && (requestOptions.maxTokens ?? 0) < 12_000
+    ) {
+      response = await callStructuredTask<{ recommendations: Recommendation[] }>(request, {
+        ...requestOptions,
+        maxTokens: 12_000,
+        responseMode: 'json_object',
+        taskType: 'recommendations',
+        thinkingBudget: 0,
+        useRouteEnhancements: false,
+      })
+    } else {
+      throw error
+    }
+  }
+
+  return response.recommendations
+}
+
+function isOpenRouterLengthExhaustion(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /openrouter api returned an empty message/i.test(message)
+    && /finish reason:\s*length/i.test(message)
 }
 
 export interface AdjudicatorCandidate {
@@ -624,21 +661,16 @@ export async function adjudicateMatch(
       album: c.album,
     })),
   }
-  const response = await callClaudeDirect(
+  const response = await callStructuredTask<{ pickIndex: number | null }>(
     [
       {
         role: 'user',
         content: `Pick the candidate that is the best match for the wanted track. Reject if it's a clearly different track (a cover, live version, karaoke, or different artist). Respond with strict JSON only: {"pickIndex": <number>} or {"pickIndex": null}.\n\n${JSON.stringify(payload)}`,
       },
     ],
-    { model: MODEL_HAIKU_45, maxTokens: 64 },
+    { model: MODEL_HAIKU_45, maxTokens: 64, responseMode: 'json_object', taskType: 'adjudication' },
   )
-  try {
-    const parsed = JSON.parse(response.replace(/```json?\n?|\n?```/g, ''))
-    return typeof parsed.pickIndex === 'number' ? parsed.pickIndex : null
-  } catch {
-    return null
-  }
+  return typeof response.pickIndex === 'number' ? response.pickIndex : null
 }
 
 /**

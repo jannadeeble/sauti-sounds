@@ -1,8 +1,6 @@
 import { create } from 'zustand'
-import { generateMoodPlaylist } from '../lib/mixGenerator'
+import { createPlaylistGeneration, getPlaylistGenerationStatus, type GenerationPhase } from '../lib/generationApi'
 import { isLLMConfigured } from '../lib/llm'
-import { getTidalTrack } from '../lib/tidal'
-import type { Track } from '../types'
 import { useLibraryStore } from './libraryStore'
 import { useMixStore } from './mixStore'
 import { useNotificationStore } from './notificationStore'
@@ -13,6 +11,7 @@ import { useTasteStore } from './tasteStore'
 interface GeneratedPlaylistResult {
   blurb?: string
   id: string
+  mixId?: string
   name: string
   prompt: string
   trackCount: number
@@ -35,6 +34,7 @@ interface PlaylistGeneratorState {
   activeRunId: string | null
   currentPrompt: string
   error: string | null
+  phase: GenerationPhase | null
   notifyOnCompletion: boolean
   result: GeneratedPlaylistResult | null
   status: 'idle' | 'running' | 'success' | 'error'
@@ -48,36 +48,6 @@ interface PlaylistGeneratorState {
 const PENDING_GENERATION_KEY = 'sauti.playlistGenerator.pending'
 const PENDING_MAX_AGE_MS = 6 * 60 * 60 * 1000
 let resumePendingPromise: Promise<void> | null = null
-
-async function materializeMixTracks(mixTrackIds: string[]): Promise<Track[]> {
-  const libraryTracks = useLibraryStore.getState().tracks
-  const cacheTidalTracks = useLibraryStore.getState().cacheTidalTracks
-  const byId = new Map(libraryTracks.map((track) => [track.id, track]))
-  const missingIds = mixTrackIds.filter((id) => !byId.has(id))
-
-  if (missingIds.length > 0) {
-    const fetched = await Promise.allSettled(
-      missingIds.map((id) => getTidalTrack(id.replace(/^tidal-/, ''))),
-    )
-    const resolved = fetched
-      .filter((result): result is PromiseFulfilledResult<Track> => result.status === 'fulfilled')
-      .map((result) => result.value)
-    const rejectedCount = fetched.length - resolved.length
-
-    if (resolved.length === 0 && rejectedCount > 0) {
-      throw new Error('The playlist generated, but TIDAL track lookup failed. Check the backend/TIDAL connection and try again.')
-    }
-
-    if (resolved.length > 0) {
-      await cacheTidalTracks(resolved)
-      for (const track of resolved) {
-        byId.set(track.id, track)
-      }
-    }
-  }
-
-  return mixTrackIds.map((id) => byId.get(id)).filter((track): track is Track => !!track)
-}
 
 function makeRunId() {
   return `playlist-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -131,6 +101,7 @@ export const usePlaylistGeneratorStore = create<PlaylistGeneratorState>((set, ge
   activeRunId: null,
   currentPrompt: '',
   error: null,
+  phase: null,
   notifyOnCompletion: false,
   result: null,
   status: 'idle',
@@ -149,6 +120,7 @@ export const usePlaylistGeneratorStore = create<PlaylistGeneratorState>((set, ge
       activeRunId: null,
       currentPrompt: '',
       error: null,
+      phase: null,
       notifyOnCompletion: false,
       result: null,
       status: 'idle',
@@ -182,6 +154,7 @@ export const usePlaylistGeneratorStore = create<PlaylistGeneratorState>((set, ge
           activeRunId: null,
           currentPrompt: pending.prompt,
           error: null,
+          phase: null,
           notifyOnCompletion: false,
           result: {
             blurb: existing.description,
@@ -195,9 +168,16 @@ export const usePlaylistGeneratorStore = create<PlaylistGeneratorState>((set, ge
         return
       }
 
-      const promise = get().run(pending.prompt, pending.options)
-      set({ notifyOnCompletion: true })
-      await promise
+      set({
+        activeRunId: pending.runId,
+        currentPrompt: pending.prompt,
+        error: null,
+        phase: 'recommendations',
+        notifyOnCompletion: true,
+        result: null,
+        status: 'running',
+      })
+      await pollGeneration(pending.runId, pending.prompt)
     })()
 
     try {
@@ -211,17 +191,19 @@ export const usePlaylistGeneratorStore = create<PlaylistGeneratorState>((set, ge
     const trimmed = prompt.trim()
     if (!trimmed || get().status === 'running') return
 
-    const runId = makeRunId()
+    const localRunId = makeRunId()
+    let activeRunId = localRunId
     writePendingGeneration({
       options,
       prompt: trimmed,
-      runId,
+      runId: localRunId,
       startedAt: Date.now(),
     })
     set({
-      activeRunId: runId,
+      activeRunId: localRunId,
       currentPrompt: trimmed,
       error: null,
+      phase: 'recommendations',
       notifyOnCompletion: true,
       result: null,
       status: 'running',
@@ -232,66 +214,23 @@ export const usePlaylistGeneratorStore = create<PlaylistGeneratorState>((set, ge
         throw new Error('Configure an AI provider in Settings before generating playlists.')
       }
 
-      const library = useLibraryStore.getState().tracks
-      const cacheResolvedTracks = useLibraryStore.getState().cacheTidalTracks
-      const tasteProfile = useTasteStore.getState().profile
-      const mix = await generateMoodPlaylist(
-        {
-          library,
-          tasteProfile: options.useTaste ? tasteProfile ?? null : null,
-          cacheResolvedTracks,
-        },
-        trimmed,
-        { count: options.count },
-      )
-
-      if (!mix) {
-        throw new Error('Sauti generated recommendations, but none could be matched to playable tracks. Try a different prompt, or check TIDAL if this keeps happening.')
-      }
-
-      await useMixStore.getState().upsert(mix)
-
-      const resolvedTracks = await materializeMixTracks(mix.trackIds)
-      if (!resolvedTracks.length) {
-        throw new Error('The playlist generated, but no tracks could be loaded.')
-      }
-
-      const playlistName = options.titleOverride?.trim() || mix.title
-      const playlist = await usePlaylistStore.getState().createAppPlaylist(playlistName, mix.blurb, {
-        generatedFromMixId: mix.id,
-        generatedPrompt: trimmed,
-        origin: 'generated',
-      })
-      await usePlaylistStore.getState().appendTracksToAppPlaylist(playlist.id, resolvedTracks)
-      await useMixStore.getState().markSaved(mix.id)
-
-      const result: GeneratedPlaylistResult = {
-        blurb: mix.blurb,
-        id: playlist.id,
-        name: playlist.name,
+      const created = await createPlaylistGeneration({
+        count: options.count ?? 15,
         prompt: trimmed,
-        trackCount: resolvedTracks.length,
-      }
-
-      const shouldNotify = get().notifyOnCompletion
-      if (get().activeRunId !== runId) return
-      clearPendingGeneration(runId)
-
-      set({
-        activeRunId: null,
-        error: null,
-        notifyOnCompletion: false,
-        result,
-        status: 'success',
+        source: 'playlist-generator',
+        titleOverride: options.titleOverride,
+        useTaste: Boolean(options.useTaste && useTasteStore.getState().profile),
       })
-
-      if (shouldNotify) {
-        await useNotificationStore.getState().push({
-          kind: 'success',
-          title: `"${playlist.name}" is ready`,
-          body: `Generated ${resolvedTracks.length} tracks. Find it in Playlists under generated.`,
-        })
-      }
+      writePendingGeneration({
+        options,
+        prompt: trimmed,
+        runId: created.runId,
+        startedAt: Date.now(),
+      })
+      if (get().activeRunId !== localRunId) return
+      activeRunId = created.runId
+      set({ activeRunId: created.runId, phase: created.phase })
+      await pollGeneration(created.runId, trimmed)
     } catch (error) {
       const message =
         error instanceof Error
@@ -299,12 +238,14 @@ export const usePlaylistGeneratorStore = create<PlaylistGeneratorState>((set, ge
           : 'Sauti hit an unexpected problem while building the playlist.'
 
       const shouldNotify = get().notifyOnCompletion
-      if (get().activeRunId !== runId) return
-      clearPendingGeneration(runId)
+      if (get().activeRunId !== activeRunId) return
+      const pendingRunId = get().activeRunId || activeRunId
+      clearPendingGeneration(pendingRunId)
 
       set({
         activeRunId: null,
         error: message,
+        phase: null,
         notifyOnCompletion: false,
         result: null,
         status: 'error',
@@ -320,3 +261,66 @@ export const usePlaylistGeneratorStore = create<PlaylistGeneratorState>((set, ge
     }
   },
 }))
+
+async function hydrateGeneratedState(): Promise<void> {
+  await Promise.all([
+    useLibraryStore.getState().loadTracks(),
+    usePlaylistStore.getState().loadPlaylists(),
+    useMixStore.getState().load(),
+    useTasteStore.getState().load(),
+  ])
+}
+
+async function pollGeneration(runId: string, prompt: string): Promise<void> {
+  while (true) {
+    const status = await getPlaylistGenerationStatus(runId)
+    if (usePlaylistGeneratorStore.getState().activeRunId !== runId) return
+    if (status.status === 'queued' || status.status === 'running') {
+      usePlaylistGeneratorStore.setState({ phase: status.phase, status: 'running' })
+      await wait(1500)
+      continue
+    }
+
+    if (status.status === 'failed') {
+      throw new Error(status.errorMessage || 'Playlist generation failed.')
+    }
+
+    await hydrateGeneratedState()
+    const result = status.result
+    if (!result) {
+      throw new Error('Playlist generation succeeded, but the result payload was empty.')
+    }
+    const shouldNotify = usePlaylistGeneratorStore.getState().notifyOnCompletion
+    clearPendingGeneration(runId)
+    usePlaylistGeneratorStore.setState({
+      activeRunId: null,
+      currentPrompt: prompt,
+      error: null,
+      phase: null,
+      notifyOnCompletion: false,
+      result: {
+        blurb: result.blurb,
+        id: result.playlistId,
+        mixId: result.mixId,
+        name: result.name,
+        prompt,
+        trackCount: result.trackCount,
+      },
+      status: 'success',
+    })
+    if (shouldNotify) {
+      await useNotificationStore.getState().push({
+        kind: 'success',
+        title: `"${result.name}" is ready`,
+        body: `Generated ${result.trackCount} tracks. Find it in Playlists under generated.`,
+      })
+    }
+    return
+  }
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms)
+  })
+}

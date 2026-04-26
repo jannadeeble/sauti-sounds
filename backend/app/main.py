@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .database import (
+    GenerationRun,
     LibraryPlaylist,
     LibraryPlaylistFolder,
     LibraryTrack,
@@ -24,10 +25,13 @@ from .database import (
     init_db,
     migrate_db,
 )
+from .generation_service import GenerationWorker
+from .llm_runner import run_llm_task
 from .schemas import (
     AppStateSnapshotRequest,
     AuthLoginRequest,
     AuthRegisterRequest,
+    GenerationPlaylistRequest,
     LibrarySnapshotRequest,
     LLMChatRequest,
     PlaylistAddItemsRequest,
@@ -57,6 +61,8 @@ app = FastAPI(title="Sauti Sounds Backend", version="0.1.0")
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DIST_DIR = PROJECT_ROOT / "dist"
 INDEX_FILE = DIST_DIR / "index.html"
+DEFAULT_BASE_URL = settings.cors_origins[0] if settings.cors_origins else "https://sauti-sounds.local"
+generation_worker = GenerationWorker(base_url=DEFAULT_BASE_URL)
 
 app.add_middleware(
     CORSMiddleware,
@@ -76,6 +82,7 @@ def startup() -> None:
         tidal_manager.load_from_db(db)
     finally:
         db.close()
+    generation_worker.recover()
 
 
 def auth_required(request: Request) -> None:
@@ -177,6 +184,54 @@ def _openrouter_supports_reasoning(model_id: str) -> bool:
     )
 
 
+def _coerce_text_content(content: object) -> str:
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                text = block.get("text") or block.get("content")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "\n".join(part.strip() for part in parts if part.strip())
+    if isinstance(content, dict):
+        text = content.get("text") or content.get("content")
+        return text.strip() if isinstance(text, str) else ""
+    return ""
+
+
+def _chat_completion_text(data: object) -> str:
+    if not isinstance(data, dict):
+        return ""
+    output_text = data.get("output_text")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text.strip()
+
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return ""
+    first = choices[0]
+    if not isinstance(first, dict):
+        return ""
+    message = first.get("message")
+    if isinstance(message, dict):
+        return _coerce_text_content(message.get("content"))
+    return _coerce_text_content(first.get("text"))
+
+
+def _empty_response_detail(label: str, data: object) -> str:
+    finish_reason = None
+    if isinstance(data, dict):
+        choices = data.get("choices")
+        if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+            finish_reason = choices[0].get("finish_reason")
+    suffix = f" Finish reason: {finish_reason}." if finish_reason else ""
+    return f"{label} API returned an empty message.{suffix}"
+
+
 def _call_claude_llm(payload: LLMChatRequest) -> str:
     system_from_messages = next(
         (
@@ -218,11 +273,17 @@ def _call_claude_llm(payload: LLMChatRequest) -> str:
         _raise_provider_error("Claude", response)
 
     data = response.json()
-    return "\n".join(
+    text = "\n".join(
         block.get("text", "")
         for block in data.get("content", [])
         if block.get("type") == "text" and isinstance(block.get("text"), str)
     )
+    if not text.strip():
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=_empty_response_detail("Claude", data),
+        )
+    return text
 
 
 def _call_openai_llm(payload: LLMChatRequest) -> str:
@@ -243,19 +304,16 @@ def _call_openai_llm(payload: LLMChatRequest) -> str:
         _raise_provider_error("OpenAI", response)
 
     data = response.json()
-    return data["choices"][0]["message"]["content"]
+    text = _chat_completion_text(data)
+    if not text:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=_empty_response_detail("OpenAI", data),
+        )
+    return text
 
 
-def _call_openrouter_llm(payload: LLMChatRequest, request: Request) -> str:
-    model = payload.model or "anthropic/claude-sonnet-4.6"
-    body: dict = {
-        "model": model,
-        "max_tokens": payload.max_tokens,
-        "messages": _merge_system_prompt(payload.messages, payload.system_blocks),
-    }
-    if payload.use_route_enhancements and _openrouter_supports_reasoning(model):
-        body["reasoning"] = {"effort": "high"}
-
+def _post_openrouter_llm(payload: LLMChatRequest, request: Request, body: dict) -> dict:
     response = requests.post(
         "https://openrouter.ai/api/v1/chat/completions",
         headers={
@@ -270,8 +328,36 @@ def _call_openrouter_llm(payload: LLMChatRequest, request: Request) -> str:
     if not response.ok:
         _raise_provider_error("OpenRouter", response)
 
-    data = response.json()
-    return data["choices"][0]["message"]["content"]
+    return response.json()
+
+
+def _call_openrouter_llm(payload: LLMChatRequest, request: Request) -> str:
+    model = payload.model or "anthropic/claude-sonnet-4.6"
+    body: dict = {
+        "model": model,
+        "max_tokens": payload.max_tokens,
+        "messages": _merge_system_prompt(payload.messages, payload.system_blocks),
+    }
+    use_reasoning = payload.use_route_enhancements and _openrouter_supports_reasoning(model)
+    if use_reasoning:
+        body["reasoning"] = {"effort": "high"}
+
+    data = _post_openrouter_llm(payload, request, body)
+    text = _chat_completion_text(data)
+    if text:
+        return text
+
+    if use_reasoning:
+        body.pop("reasoning", None)
+        data = _post_openrouter_llm(payload, request, body)
+        text = _chat_completion_text(data)
+        if text:
+            return text
+
+    raise HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail=_empty_response_detail("OpenRouter", data),
+    )
 
 
 def _call_gemini_llm(payload: LLMChatRequest) -> str:
@@ -310,30 +396,28 @@ def _call_gemini_llm(payload: LLMChatRequest) -> str:
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Gemini API error: empty response",
         )
-    return candidates[0]["content"]["parts"][0]["text"]
+    text = candidates[0]["content"]["parts"][0]["text"]
+    if not isinstance(text, str) or not text.strip():
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=_empty_response_detail("Gemini", data),
+        )
+    return text
 
 
 @app.post("/api/llm/chat")
-def llm_chat(payload: LLMChatRequest, request: Request, _: None = Depends(auth_required)) -> dict[str, str]:
-    provider = payload.provider.lower()
-    try:
-        if provider == "claude":
-            text = _call_claude_llm(payload)
-        elif provider == "openai":
-            text = _call_openai_llm(payload)
-        elif provider == "openrouter":
-            text = _call_openrouter_llm(payload, request)
-        elif provider == "gemini":
-            text = _call_gemini_llm(payload)
-        else:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown provider: {payload.provider}")
-    except requests.RequestException as exc:
+def llm_chat(payload: LLMChatRequest, request: Request, _: None = Depends(auth_required)) -> dict[str, object]:
+    result = run_llm_task(payload, str(request.base_url))
+    if not isinstance(result.text, str) or not result.text.strip():
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"{payload.provider} API network error: {exc}",
-        ) from exc
-
-    return {"text": text}
+            detail=f"{payload.provider} API returned an empty message.",
+        )
+    return {
+        "text": result.text,
+        "data": result.data,
+        "finishReason": result.finish_reason,
+    }
 
 
 def normalize_email(email: str) -> str:
@@ -959,6 +1043,71 @@ def app_state_snapshot_replace(
 ) -> dict:
     user_id = auth_user_id(request)
     return replace_app_state_snapshot(db, user_id, payload)
+
+
+@app.post("/api/generations/playlists")
+def generation_playlist_create(
+    payload: GenerationPlaylistRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    user_id = auth_user_id(request)
+    settings_payload = read_app_state_snapshot(db, user_id).get("settings", {})
+    provider = settings_payload.get("llmProvider")
+    api_key = settings_payload.get("llmApiKey")
+    if not isinstance(provider, str) or not provider or not isinstance(api_key, str) or not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Configure an AI provider in Settings before generating playlists.",
+        )
+
+    now = int(time.time() * 1000)
+    run = GenerationRun(
+        id=f"gen-{uuid.uuid4().hex}",
+        user_id=user_id,
+        kind="mood-playlist",
+        status="queued",
+        phase="recommendations",
+        provider=provider,
+        model=settings_payload.get("llmModel") if isinstance(settings_payload.get("llmModel"), str) and settings_payload.get("llmModel") else None,
+        request_payload=payload.model_dump_json(by_alias=True),
+        attempt_count=0,
+        error_code=None,
+        error_message=None,
+        result_payload=None,
+        mix_id=None,
+        playlist_id=None,
+        created_at=now,
+        started_at=None,
+        finished_at=None,
+        updated_at=now,
+    )
+    db.add(run)
+    db.commit()
+    generation_worker.submit(run.id)
+    return {"runId": run.id, "status": run.status, "phase": run.phase}
+
+
+@app.get("/api/generations/{run_id}")
+def generation_playlist_status(
+    run_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    user_id = auth_user_id(request)
+    run = db.get(GenerationRun, run_id)
+    if run is None or run.user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generation run not found")
+    result = json.loads(run.result_payload) if isinstance(run.result_payload, str) and run.result_payload else None
+    return {
+        "runId": run.id,
+        "kind": run.kind,
+        "status": run.status,
+        "phase": run.phase,
+        "errorCode": run.error_code,
+        "errorMessage": run.error_message,
+        "result": result,
+    }
 
 
 @app.exception_handler(ValueError)

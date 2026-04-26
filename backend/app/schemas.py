@@ -57,5 +57,19 @@ class LLMChatRequest(BaseModel):
     thinking_budget: int | None = Field(default=None, alias="thinkingBudget", ge=0, le=64000)
     system_blocks: list[dict[str, Any]] | None = Field(default=None, alias="systemBlocks")
     use_route_enhancements: bool = Field(default=True, alias="useRouteEnhancements")
+    task_type: str = Field(default="chat", alias="taskType", min_length=1, max_length=40)
+    response_mode: str = Field(default="text", alias="responseMode", min_length=1, max_length=20)
+    response_schema: dict[str, Any] | None = Field(default=None, alias="responseSchema")
+    temperature: float | None = Field(default=None, ge=0, le=2)
+
+    model_config = {"populate_by_name": True}
+
+
+class GenerationPlaylistRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=4000)
+    count: int = Field(default=15, ge=8, le=30)
+    title_override: str | None = Field(default=None, alias="titleOverride", max_length=120)
+    use_taste: bool = Field(default=False, alias="useTaste")
+    source: str = Field(default="playlist-generator", min_length=1, max_length=40)
 
     model_config = {"populate_by_name": True}

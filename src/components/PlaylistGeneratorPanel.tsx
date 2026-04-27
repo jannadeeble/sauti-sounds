@@ -13,9 +13,11 @@ const PROMPT_SUGGESTIONS = [
 
 export default function PlaylistGeneratorPanel({
   onOpenPlaylist,
+  onSubmitted,
   variant = 'sheet',
 }: {
   onOpenPlaylist?: (playlistId: string) => void
+  onSubmitted?: () => void
   variant?: 'sheet' | 'inline'
 }) {
   const [count, setCount] = useState(15)
@@ -35,12 +37,14 @@ export default function PlaylistGeneratorPanel({
   const inputClass = 'sauti-modal-input mt-2 px-4 py-3 text-sm'
   const secondaryButtonClass = 'sauti-modal-secondary-button px-4 py-2.5 text-sm font-medium'
   const primaryButtonClass = 'sauti-modal-primary-button px-4 py-2.5 text-sm font-medium'
+  const replacedCount = result?.unresolvedTracks?.length ?? 0
 
   function handleSubmit(nextPrompt?: string) {
     const prompt = (nextPrompt ?? input).trim()
     if (!prompt || status === 'running') return
     setInput(prompt)
     void run(prompt, { count, titleOverride, useTaste })
+    onSubmitted?.()
   }
 
   if (!isLLMConfigured()) {
@@ -78,12 +82,32 @@ export default function PlaylistGeneratorPanel({
             <p className="sauti-modal-kicker">Generated playlist</p>
             <h3 className="sauti-title mt-3 text-[2rem] leading-none text-[#111116]">{result.name}</h3>
             <p className="mt-3 text-sm text-[#7a7b86]">
-              {result.trackCount} tracks built from your prompt.
+              {result.trackCount} tracks built from your prompt
+              {result.unresolvedCount
+                ? ` · ${result.unresolvedCount} still could not resolve`
+                : replacedCount
+                  ? ` · ${replacedCount} replaced during matching`
+                  : ''}
+              .
             </p>
             {result.blurb ? (
               <p className="sauti-modal-card-muted mt-4 px-4 py-4 text-sm leading-6 text-[#555661]">
                 {result.blurb}
               </p>
+            ) : null}
+            {replacedCount ? (
+              <details className="sauti-modal-card-muted mt-4 px-4 py-3 text-xs text-[#555661]">
+                <summary className="cursor-pointer font-medium text-[#111116]">Resolution notes</summary>
+                <div className="mt-3 space-y-2">
+                  {result.unresolvedTracks?.map((track, index) => (
+                    <p key={`${track.artist}-${track.title}-${index}`}>
+                      <span className="font-medium text-[#111116]">{track.title || 'Unknown title'}</span>
+                      {' by '}
+                      {track.artist || 'Unknown artist'}: {track.message}
+                    </p>
+                  ))}
+                </div>
+              </details>
             ) : null}
             <div className="mt-5 flex flex-wrap gap-2">
               <button

@@ -162,6 +162,21 @@ export type MixSeedRef =
 
 export type MixStatus = 'fresh' | 'stale' | 'dismissed' | 'saved'
 
+export interface UnresolvedRecommendation {
+  artist: string
+  title: string
+  reason: string
+  message: string
+  round?: number
+  score?: number
+  candidate?: {
+    artist?: string
+    title?: string
+    album?: string
+  }
+  error?: string
+}
+
 export interface Mix {
   id: string
   kind: MixKind
@@ -170,6 +185,7 @@ export interface Mix {
   blurb: string
   trackIds: string[]
   unresolvedCount: number
+  unresolvedTracks?: UnresolvedRecommendation[]
   focusPrompt?: string
   generatedAt: number
   expiresAt: number

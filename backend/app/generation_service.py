@@ -20,6 +20,7 @@ from .tidal_service import tidal_manager
 FRESH_TTL_MS = 1000 * 60 * 60 * 24 * 2
 ACCEPT_SCORE = 0.82
 REJECT_SCORE = 0.55
+MAX_RESOLUTION_PASSES = 3
 
 
 class GenerationFailure(Exception):
@@ -101,6 +102,28 @@ def _has_qualifier(value: str) -> bool:
         qualifier in lowered
         for qualifier in ("live", "karaoke", "cover", "remix", "edit", "version", "remaster", "acoustic", "instrumental")
     )
+
+
+def _recommendation_key(recommendation: dict[str, Any]) -> str:
+    artist = _normalize(str(recommendation.get("artist") or ""))
+    title = _normalize(str(recommendation.get("title") or ""))
+    return f"{artist}:{title}" if artist or title else ""
+
+
+def _unresolved_recommendation(
+    recommendation: dict[str, Any],
+    reason: str,
+    message: str,
+    **extra: Any,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "artist": str(recommendation.get("artist") or "").strip(),
+        "title": str(recommendation.get("title") or "").strip(),
+        "reason": reason,
+        "message": message,
+    }
+    payload.update({key: value for key, value in extra.items() if value is not None})
+    return payload
 
 
 def _mix_id(kind: str) -> str:
@@ -256,6 +279,8 @@ def _mix_result_payload(mix: dict[str, Any]) -> dict[str, Any]:
         "mix": mix,
         "trackIds": mix.get("trackIds", []),
         "trackCount": len(mix.get("trackIds", [])),
+        "unresolvedCount": int(mix.get("unresolvedCount") or 0),
+        "unresolvedTracks": mix.get("unresolvedTracks", []),
     }
 
 
@@ -379,7 +404,7 @@ class MusicGenerationService:
         recommendations: list[dict[str, str]],
         library_tracks: list[dict[str, Any]],
         context: UserGenerationContext,
-    ) -> tuple[list[dict[str, Any]], int]:
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         exclude_ids = {
             str(value)
             for track in library_tracks
@@ -387,20 +412,40 @@ class MusicGenerationService:
             if value
         }
         resolved: list[dict[str, Any]] = []
-        vetoed = 0
+        unresolved: list[dict[str, Any]] = []
         search_failures = 0
 
         for recommendation in recommendations:
-            wanted_artist = recommendation["artist"]
-            wanted_title = recommendation["title"]
+            wanted_artist = str(recommendation.get("artist") or "").strip()
+            wanted_title = str(recommendation.get("title") or "").strip()
+            if not wanted_artist or not wanted_title:
+                unresolved.append(_unresolved_recommendation(
+                    recommendation,
+                    "invalid_recommendation",
+                    "The AI returned a recommendation without both artist and title.",
+                ))
+                continue
+            search_error: str | None = None
             try:
                 search = tidal_manager.search_tracks(f"{wanted_artist} {wanted_title}", 5)
                 candidates = [track for track in search if track.get("id") not in exclude_ids]
-            except Exception:
+            except Exception as exc:
                 search_failures += 1
+                search_error = str(exc)
                 candidates = []
             if not candidates:
-                vetoed += 1
+                reason = "tidal_search_failed" if search_error else "no_candidates"
+                message = (
+                    "TIDAL search failed for this recommendation."
+                    if reason == "tidal_search_failed"
+                    else "TIDAL returned no playable candidates outside the existing library and current mix."
+                )
+                unresolved.append(_unresolved_recommendation(
+                    recommendation,
+                    reason,
+                    message,
+                    error=search_error,
+                ))
                 continue
             scored: list[tuple[float, dict[str, Any]]] = []
             for candidate in candidates:
@@ -413,7 +458,17 @@ class MusicGenerationService:
             scored.sort(key=lambda item: item[0], reverse=True)
             top_score, top_candidate = scored[0]
             if top_score <= REJECT_SCORE:
-                vetoed += 1
+                unresolved.append(_unresolved_recommendation(
+                    recommendation,
+                    "low_confidence_match",
+                    "The best TIDAL candidate looked too different from the AI recommendation.",
+                    score=round(top_score, 3),
+                    candidate={
+                        "artist": top_candidate.get("artist"),
+                        "title": top_candidate.get("title"),
+                        "album": top_candidate.get("album"),
+                    },
+                ))
                 continue
             pick = top_candidate
             if REJECT_SCORE < top_score < ACCEPT_SCORE:
@@ -443,6 +498,19 @@ class MusicGenerationService:
                     pick_index = adjudicated.data.get("pickIndex") if isinstance(adjudicated.data, dict) else None
                     if isinstance(pick_index, int) and 0 <= pick_index < len(scored):
                         pick = scored[pick_index][1]
+                    elif pick_index is None:
+                        unresolved.append(_unresolved_recommendation(
+                            recommendation,
+                            "adjudication_rejected",
+                            "The resolver could not confidently choose one of the TIDAL candidates.",
+                            score=round(top_score, 3),
+                            candidate={
+                                "artist": top_candidate.get("artist"),
+                                "title": top_candidate.get("title"),
+                                "album": top_candidate.get("album"),
+                            },
+                        ))
+                        continue
                 except Exception:
                     pick = top_candidate
             exclude_ids.add(str(pick.get("id")))
@@ -453,7 +521,103 @@ class MusicGenerationService:
 
         if search_failures == len(recommendations) and recommendations:
             raise GenerationFailure("tidal_search_failed", "TIDAL search failed while resolving AI picks. Check the backend/TIDAL connection and try again.")
-        return resolved, vetoed
+        return resolved, unresolved
+
+    def _request_recommendations(
+        self,
+        context: UserGenerationContext,
+        *,
+        instruction: str,
+        tail: str,
+        prefix: str,
+        count: int,
+    ) -> list[dict[str, str]]:
+        llm_payload = self._make_llm_payload(
+            context,
+            task_type="recommendations",
+            instruction=f"{instruction}\n\nReturn exactly {count} tracks.",
+            tail=tail,
+            prefix=prefix,
+            max_tokens=8192,
+        )
+        llm_result = run_llm_task(llm_payload, self.base_url)
+        data = llm_result.data if isinstance(llm_result.data, dict) else {}
+        return data.get("recommendations") if isinstance(data.get("recommendations"), list) else []
+
+    def _resolve_recommendations_with_refills(
+        self,
+        *,
+        context: UserGenerationContext,
+        library_tracks: list[dict[str, Any]],
+        instruction: str,
+        tail: str,
+        prefix: str,
+        count: int,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        resolved_tracks: list[dict[str, Any]] = []
+        unresolved_tracks: list[dict[str, Any]] = []
+        attempted_keys: set[str] = set()
+
+        for round_index in range(MAX_RESOLUTION_PASSES):
+            needed = count - len(resolved_tracks)
+            if needed <= 0:
+                break
+
+            round_instruction = instruction
+            if round_index > 0:
+                rejected = "\n".join(
+                    f'- "{item.get("title", "Unknown")}" — {item.get("artist", "Unknown")} ({item.get("reason", "unresolved")})'
+                    for item in unresolved_tracks[-20:]
+                )
+                accepted = "\n".join(
+                    f'- "{track.get("title", "Unknown")}" — {track.get("artist", "Unknown")}'
+                    for track in resolved_tracks[-20:]
+                )
+                round_instruction = (
+                    f"{instruction}\n\n"
+                    f"Replacement pass: {len(unresolved_tracks)} earlier recommendation"
+                    f"{'' if len(unresolved_tracks) == 1 else 's'} could not be matched to playable TIDAL tracks. "
+                    f"Recommend {needed} different replacement track{'' if needed == 1 else 's'}. "
+                    "Do not repeat any accepted or rejected tracks.\n\n"
+                    f"Rejected tracks:\n{rejected or '- none'}\n\n"
+                    f"Accepted tracks:\n{accepted or '- none'}"
+                )
+
+            recommendations = self._request_recommendations(
+                context,
+                instruction=round_instruction,
+                tail=tail,
+                prefix=prefix,
+                count=needed,
+            )
+            if not recommendations:
+                if round_index == 0:
+                    raise GenerationFailure("provider_empty", "The AI provider returned no recommendations.")
+                break
+
+            unique_recommendations: list[dict[str, str]] = []
+            for recommendation in recommendations:
+                key = _recommendation_key(recommendation)
+                if key and key in attempted_keys:
+                    continue
+                if key:
+                    attempted_keys.add(key)
+                unique_recommendations.append(recommendation)
+            if not unique_recommendations:
+                break
+
+            batch_resolved, batch_unresolved = self._resolve_recommendations(
+                unique_recommendations,
+                [*library_tracks, *resolved_tracks],
+                context,
+            )
+            resolved_tracks.extend(batch_resolved)
+            unresolved_tracks.extend(
+                {**item, "round": round_index + 1}
+                for item in batch_unresolved
+            )
+
+        return resolved_tracks[:count], unresolved_tracks
 
     def _build_blurb(self, context: UserGenerationContext, payload: dict[str, Any]) -> str:
         request = LLMChatRequest(
@@ -577,6 +741,8 @@ class MusicGenerationService:
                 "name": result["playlist"]["name"],
                 "blurb": result["playlist"].get("description") or result["mix"].get("blurb") or "",
                 "trackCount": result["trackCount"],
+                "unresolvedCount": result.get("unresolvedCount", 0),
+                "unresolvedTracks": result.get("unresolvedTracks", []),
                 "mix": result["mix"],
             }
 
@@ -666,25 +832,19 @@ class MusicGenerationService:
         else:
             raise GenerationFailure("unsupported_kind", f"Unsupported generation kind: {request.kind}")
 
-        llm_payload = self._make_llm_payload(
-            context,
-            task_type="recommendations",
-            instruction=f"{instruction}\n\nReturn exactly {count} tracks.",
-            tail=tail,
-            prefix=prefix,
-            max_tokens=8192,
-        )
-        llm_result = run_llm_task(llm_payload, self.base_url)
-        data = llm_result.data if isinstance(llm_result.data, dict) else {}
-        recommendations = data.get("recommendations") if isinstance(data.get("recommendations"), list) else []
-        if not recommendations:
-            raise GenerationFailure("provider_empty", "The AI provider returned no recommendations.")
-
         if on_phase_change:
             on_phase_change("resolving")
-        resolved_tracks, vetoed = self._resolve_recommendations(recommendations, context.library_tracks, context)
+        resolved_tracks, unresolved_tracks = self._resolve_recommendations_with_refills(
+            context=context,
+            library_tracks=context.library_tracks,
+            instruction=instruction,
+            tail=tail,
+            prefix=prefix,
+            count=count,
+        )
         if not resolved_tracks:
             raise GenerationFailure("no_tracks_resolved", "Sauti generated recommendations, but none could be matched to playable tracks.")
+        unresolved_count = max(0, count - len(resolved_tracks))
 
         if request.kind == "auto-radio":
             tracks_by_id = {str(track["id"]): track for track in context.library_tracks}
@@ -696,10 +856,11 @@ class MusicGenerationService:
                 "trackIds": [track["id"] for track in resolved_tracks],
                 "tracks": resolved_tracks,
                 "trackCount": len(resolved_tracks),
-                "unresolvedCount": vetoed,
+                "unresolvedCount": unresolved_count,
+                "unresolvedTracks": unresolved_tracks,
             }
 
-        bridge_artist = recommendations[0].get("artist") if request.kind == "similar-artist" and recommendations else None
+        bridge_artist = resolved_tracks[0].get("artist") if request.kind == "similar-artist" and resolved_tracks else None
         if request.kind == "similar-artist" and bridge_artist:
             title = f"{bridge_artist} feels like a bridge from {request.seed_artist}"
             blurb_payload["to"] = bridge_artist
@@ -713,7 +874,8 @@ class MusicGenerationService:
             "title": title or request.kind,
             "blurb": blurb,
             "trackIds": [track["id"] for track in resolved_tracks],
-            "unresolvedCount": vetoed,
+            "unresolvedCount": unresolved_count,
+            "unresolvedTracks": unresolved_tracks,
             "focusPrompt": request.focus_prompt,
             "status": "fresh",
             **_now_envelope(),
@@ -740,25 +902,19 @@ class MusicGenerationService:
             f"Mood playlist: build a {request.count}-track playlist matching the user's prompt. "
             "Think energy flow — the opener, the build, the closer. Respect the taste profile."
         )
-        llm_payload = self._make_llm_payload(
-            context,
-            task_type="recommendations",
-            instruction=f"{instruction}\n\nReturn exactly {request.count} tracks.",
-            tail=tail,
-            prefix=prefix,
-            max_tokens=8192,
-        )
-        llm_result = run_llm_task(llm_payload, self.base_url)
-        data = llm_result.data if isinstance(llm_result.data, dict) else {}
-        recommendations = data.get("recommendations") if isinstance(data.get("recommendations"), list) else []
-        if not recommendations:
-            raise GenerationFailure("provider_empty", "The AI provider returned no recommendations.")
-
         if on_phase_change:
             on_phase_change("resolving")
-        resolved_tracks, vetoed = self._resolve_recommendations(recommendations, context.library_tracks, context)
+        resolved_tracks, unresolved_tracks = self._resolve_recommendations_with_refills(
+            context=context,
+            library_tracks=context.library_tracks,
+            instruction=instruction,
+            tail=tail,
+            prefix=prefix,
+            count=request.count,
+        )
         if not resolved_tracks:
             raise GenerationFailure("no_tracks_resolved", "Sauti generated recommendations, but none could be matched to playable tracks.")
+        unresolved_count = max(0, request.count - len(resolved_tracks))
 
         mix_id = _mix_id("mood-playlist")
         blurb = self._build_blurb(context, {"prompt": request.prompt, "resolvedCount": len(resolved_tracks)})
@@ -769,7 +925,8 @@ class MusicGenerationService:
             "title": request.prompt[:80],
             "blurb": blurb,
             "trackIds": [track["id"] for track in resolved_tracks],
-            "unresolvedCount": vetoed,
+            "unresolvedCount": unresolved_count,
+            "unresolvedTracks": unresolved_tracks,
             "focusPrompt": request.prompt,
             "status": "saved",
             **_now_envelope(),
@@ -799,6 +956,8 @@ class MusicGenerationService:
             "mix": mix,
             "playlist": playlist,
             "trackCount": len(resolved_tracks),
+            "unresolvedCount": unresolved_count,
+            "unresolvedTracks": unresolved_tracks,
         }
 
     def process_generation_run(self, run_id: str) -> None:

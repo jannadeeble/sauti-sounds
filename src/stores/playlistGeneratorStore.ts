@@ -7,6 +7,7 @@ import { useNotificationStore } from './notificationStore'
 import { usePlaylistStore } from './playlistStore'
 import { useSettingsStore } from './settingsStore'
 import { useTasteStore } from './tasteStore'
+import type { UnresolvedRecommendation } from '../types'
 
 interface GeneratedPlaylistResult {
   blurb?: string
@@ -15,6 +16,8 @@ interface GeneratedPlaylistResult {
   name: string
   prompt: string
   trackCount: number
+  unresolvedCount?: number
+  unresolvedTracks?: UnresolvedRecommendation[]
 }
 
 interface RunPlaylistGenerationOptions {
@@ -162,6 +165,8 @@ export const usePlaylistGeneratorStore = create<PlaylistGeneratorState>((set, ge
             name: existing.name,
             prompt: pending.prompt,
             trackCount: existing.trackCount ?? existing.items.length,
+            unresolvedCount: 0,
+            unresolvedTracks: [],
           },
           status: 'success',
         })
@@ -305,6 +310,8 @@ async function pollGeneration(runId: string, prompt: string): Promise<void> {
         name: result.name,
         prompt,
         trackCount: result.trackCount,
+        unresolvedCount: result.unresolvedCount,
+        unresolvedTracks: result.unresolvedTracks,
       },
       status: 'success',
     })

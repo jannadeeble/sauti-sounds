@@ -339,6 +339,7 @@ function MixTile({
   onDismiss: () => void
 }) {
   const preview = tracks.slice(0, 4)
+  const replacedCount = mix.unresolvedTracks?.length ?? 0
   return (
     <article className="rounded-2xl border border-black/8 bg-white p-4">
       <div className="flex gap-3">
@@ -350,7 +351,14 @@ function MixTile({
         <div className="min-w-0 flex-1">
           <h4 className="truncate text-sm font-semibold text-[#111116]">{mix.title}</h4>
           {mix.blurb ? <p className="mt-1 line-clamp-2 text-xs text-[#686973]">{mix.blurb}</p> : null}
-          <p className="mt-2 text-xs text-[#7a7b86]">{tracks.length} tracks{mix.unresolvedCount ? ` · ${mix.unresolvedCount} couldn't resolve` : ''}</p>
+          <p className="mt-2 text-xs text-[#7a7b86]">
+            {tracks.length} tracks
+            {mix.unresolvedCount
+              ? ` · ${mix.unresolvedCount} couldn't resolve`
+              : replacedCount
+                ? ` · ${replacedCount} replaced`
+                : ''}
+          </p>
         </div>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">

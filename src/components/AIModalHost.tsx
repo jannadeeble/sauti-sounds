@@ -58,6 +58,7 @@ function SetlistModal({
     const byId = new Map(library.map((t) => [t.id, t]))
     return mix.trackIds.map((id) => byId.get(id)).filter((t): t is Track => !!t)
   }, [mix, library])
+  const replacedCount = mix?.unresolvedTracks?.length ?? 0
 
   async function handleGenerate() {
     if (!isLLMConfigured()) {
@@ -188,8 +189,26 @@ function SetlistModal({
           {mix.blurb ? <p className="text-sm text-[var(--sauti-text-secondary)]">{mix.blurb}</p> : null}
           <p className="text-xs text-[var(--sauti-text-muted)]">
             {resolvedTracks.length} tracks
-            {mix.unresolvedCount ? ` · ${mix.unresolvedCount} couldn't resolve` : ''}
+            {mix.unresolvedCount
+              ? ` · ${mix.unresolvedCount} couldn't resolve`
+              : replacedCount
+                ? ` · ${replacedCount} replaced`
+                : ''}
           </p>
+          {replacedCount ? (
+            <details className="sauti-modal-card-muted px-3 py-2 text-xs text-[var(--sauti-text-secondary)]">
+              <summary className="cursor-pointer font-medium text-[var(--sauti-text)]">Resolution notes</summary>
+              <div className="mt-2 space-y-1.5">
+                {mix.unresolvedTracks?.map((track, index) => (
+                  <p key={`${track.artist}-${track.title}-${index}`}>
+                    <span className="font-medium">{track.title || 'Unknown title'}</span>
+                    {' by '}
+                    {track.artist || 'Unknown artist'}: {track.message}
+                  </p>
+                ))}
+              </div>
+            </details>
+          ) : null}
           <div className="sauti-modal-card-muted max-h-72 space-y-1 overflow-y-auto p-2">
             {resolvedTracks.map((t, i) => (
               <PreviewRow key={t.id + i} track={t} index={i} />

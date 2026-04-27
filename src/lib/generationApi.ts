@@ -1,5 +1,5 @@
 import { apiFetch, apiPost } from './api'
-import type { Mix, Track } from '../types'
+import type { Mix, Track, UnresolvedRecommendation } from '../types'
 
 export type GenerationStatus = 'queued' | 'running' | 'succeeded' | 'failed'
 export type GenerationPhase = 'recommendations' | 'resolving' | 'saving'
@@ -43,6 +43,7 @@ export interface GenerationResult {
   tracks?: Track[]
   trackCount: number
   unresolvedCount?: number
+  unresolvedTracks?: UnresolvedRecommendation[]
 }
 
 export interface GenerationStatusResponse {
@@ -61,7 +62,7 @@ export type PlaylistGenerationCreateRequest = Omit<GenerationCreateRequest, 'kin
   source?: 'playlist-generator' | 'ai-chat' | 'home'
 }
 export type PlaylistGenerationCreateResponse = GenerationCreateResponse
-export type PlaylistGenerationResult = Required<Pick<GenerationResult, 'playlistId' | 'mixId' | 'name' | 'trackCount'>> & Pick<GenerationResult, 'blurb' | 'mix'>
+export type PlaylistGenerationResult = Required<Pick<GenerationResult, 'playlistId' | 'mixId' | 'name' | 'trackCount'>> & Pick<GenerationResult, 'blurb' | 'mix' | 'unresolvedCount' | 'unresolvedTracks'>
 export type PlaylistGenerationStatusResponse = Omit<GenerationStatusResponse, 'result'> & {
   result?: PlaylistGenerationResult | null
 }

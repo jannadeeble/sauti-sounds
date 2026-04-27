@@ -838,7 +838,7 @@ export default function WorkspaceShell() {
           size="lg"
           maxHeightClassName="max-h-[88vh]"
         >
-          <PlaylistGeneratorPanel onOpenPlaylist={openGeneratedPlaylist} />
+          <PlaylistGeneratorPanel onOpenPlaylist={openGeneratedPlaylist} onSubmitted={closeModal} />
         </BottomSheet>
 
         <QueueSheet open={playerOpen} onClose={() => setPlayerOpen(false)} />

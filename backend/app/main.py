@@ -599,6 +599,7 @@ def read_app_state_snapshot(db: Session, user_id: str) -> dict:
             "listenEvents": [],
             "mixes": [],
             "tasteProfile": None,
+            "playback": None,
             "settings": {},
             "ui": {},
         }
@@ -609,6 +610,7 @@ def read_app_state_snapshot(db: Session, user_id: str) -> dict:
         "listenEvents": payload.get("listenEvents", []),
         "mixes": payload.get("mixes", []),
         "tasteProfile": payload.get("tasteProfile"),
+        "playback": payload.get("playback"),
         "settings": payload.get("settings", {}),
         "ui": payload.get("ui", {}),
     }
@@ -627,6 +629,7 @@ def replace_app_state_snapshot(
         "listenEvents": payload.listen_events,
         "mixes": payload.mixes,
         "tasteProfile": payload.taste_profile,
+        "playback": payload.playback,
         "settings": payload.settings,
         "ui": payload.ui,
     }

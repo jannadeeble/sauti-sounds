@@ -92,6 +92,39 @@ export interface AppNotification {
   readAt?: number
 }
 
+export type PlaybackContext =
+  | 'library'
+  | 'search-local'
+  | 'search-tidal'
+  | 'app-playlist'
+  | 'tidal-playlist'
+
+export interface SelectedPlaylist {
+  kind: 'app' | 'tidal'
+  id: string
+}
+
+export type PersistedTrackSnapshot = Omit<Track, 'audioBlob' | 'artworkBlob' | 'fileHandle' | 'waveformData'>
+
+export interface PersistedQueueItem {
+  id: string
+  source: TrackSource
+  providerTrackId?: string
+  track: PersistedTrackSnapshot
+}
+
+export interface PersistedPlaybackState {
+  context: PlaybackContext
+  queue: PersistedQueueItem[]
+  currentTrackId: string | null
+  currentIndex: number
+  currentTime: number
+  duration: number
+  wasPlaying: boolean
+  selectedPlaylist?: SelectedPlaylist
+  updatedAt: number
+}
+
 export type RepeatMode = 'off' | 'all' | 'one'
 export type ViewMode = 'list' | 'grid'
 

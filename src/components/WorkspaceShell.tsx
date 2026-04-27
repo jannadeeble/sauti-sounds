@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   ChevronRight,
@@ -28,6 +28,7 @@ import {
   getPersistentUiState,
   hydrateAppStateFromBackend,
   pushAppStateSnapshot,
+  setPersistentPlaybackState,
   setPersistentUiState,
 } from '../lib/appStateSync'
 import { useTrackArtworkUrl } from '../lib/artwork'
@@ -38,13 +39,13 @@ import { useHistoryStore } from '../stores/historyStore'
 import { useLibraryStore } from '../stores/libraryStore'
 import { useMixStore } from '../stores/mixStore'
 import { useNotificationStore } from '../stores/notificationStore'
-import { usePlaybackSessionStore } from '../stores/playbackSessionStore'
+import { buildPersistedPlaybackState, usePlaybackSessionStore } from '../stores/playbackSessionStore'
 import { usePlaylistGeneratorStore } from '../stores/playlistGeneratorStore'
 import { usePlaylistStore } from '../stores/playlistStore'
 import { useSelectionStore } from '../stores/selectionStore'
 import { useTasteStore } from '../stores/tasteStore'
 import { useTidalStore } from '../stores/tidalStore'
-import type { Playlist, Track } from '../types'
+import type { PersistedPlaybackState, Playlist, Track } from '../types'
 
 type WorkspaceTab = 'home' | 'library'
 type LibraryFilter = 'tracks' | 'playlists' | 'artists'
@@ -105,6 +106,9 @@ export default function WorkspaceShell() {
   const [highlightedImportIds, setHighlightedImportIds] = useState<string[]>([])
   const [modal, setModal] = useState<ModalState | null>(null)
   const [prefsReady, setPrefsReady] = useState(false)
+  const [persistedPlayback, setPersistedPlayback] = useState<PersistedPlaybackState | null | undefined>(undefined)
+  const [playbackPersistenceReady, setPlaybackPersistenceReady] = useState(false)
+  const lastPlaybackSnapshotRef = useRef<string>('')
 
   const tracks = useLibraryStore((state) => state.tracks)
   const libraryLoading = useLibraryStore((state) => state.loading)
@@ -129,6 +133,7 @@ export default function WorkspaceShell() {
 
   const tidalConnected = useTidalStore((state) => state.tidalConnected)
   const selectedPlaylist = usePlaybackSessionStore((state) => state.selectedPlaylist)
+  const restorePersistedSession = usePlaybackSessionStore((state) => state.restorePersistedSession)
   const playPlaylist = usePlaybackSessionStore((state) => state.playPlaylist)
   const playTracks = usePlaybackSessionStore((state) => state.playTracks)
   const errorMessage = usePlaybackSessionStore((state) => state.errorMessage)
@@ -172,7 +177,7 @@ export default function WorkspaceShell() {
 
   useEffect(() => {
     void hydrateAppStateFromBackend()
-      .then(() => {
+      .then((snapshot) => {
         const persisted = getPersistentUiState()
         if (persisted.activeTab && WORKSPACE_TAB_VALUES.includes(persisted.activeTab)) {
           setActiveTab(persisted.activeTab)
@@ -180,6 +185,7 @@ export default function WorkspaceShell() {
         if (persisted.libraryFilter && LIBRARY_FILTER_VALUES.includes(persisted.libraryFilter)) {
           setLibraryFilter(persisted.libraryFilter)
         }
+        setPersistedPlayback(snapshot.playback ?? null)
         void resumePendingGeneration()
       })
       .finally(() => {
@@ -192,6 +198,9 @@ export default function WorkspaceShell() {
       if (usePlaylistGeneratorStore.getState().status === 'running') {
         requestGeneratorCompletionNotification()
       }
+      const snapshot = buildPersistedPlaybackState(usePlaybackSessionStore.getState())
+      setPersistentPlaybackState(snapshot)
+      void pushAppStateSnapshot()
     }
 
     function handleVisible() {
@@ -218,6 +227,50 @@ export default function WorkspaceShell() {
       window.removeEventListener('focus', handleVisible)
     }
   }, [requestGeneratorCompletionNotification, resumePendingGeneration])
+
+  useEffect(() => {
+    if (persistedPlayback === undefined) return
+    if (queuedTracks.length > 0) {
+      setPlaybackPersistenceReady(true)
+      return
+    }
+
+    restorePersistedSession(persistedPlayback, tracks)
+    setPlaybackPersistenceReady(true)
+  }, [persistedPlayback, queuedTracks.length, restorePersistedSession, tracks])
+
+  useEffect(() => {
+    if (!playbackPersistenceReady) return
+
+    let timeoutId: number | undefined
+    const initialSnapshot = buildPersistedPlaybackState(usePlaybackSessionStore.getState())
+    lastPlaybackSnapshotRef.current = JSON.stringify(initialSnapshot)
+    setPersistentPlaybackState(initialSnapshot)
+
+    const unsubscribe = usePlaybackSessionStore.subscribe((state) => {
+      const snapshot = buildPersistedPlaybackState(state)
+      const serialized = JSON.stringify(snapshot)
+      if (serialized === lastPlaybackSnapshotRef.current) return
+
+      lastPlaybackSnapshotRef.current = serialized
+      setPersistentPlaybackState(snapshot)
+
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId)
+      }
+      timeoutId = window.setTimeout(() => {
+        void pushAppStateSnapshot()
+      }, 1500)
+    })
+
+    return () => {
+      unsubscribe()
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId)
+        void pushAppStateSnapshot()
+      }
+    }
+  }, [playbackPersistenceReady])
 
   useEffect(() => {
     if (!prefsReady) return

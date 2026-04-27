@@ -42,6 +42,7 @@ class AppStateSnapshotRequest(BaseModel):
     listen_events: list[dict[str, Any]] = Field(default_factory=list, alias="listenEvents")
     mixes: list[dict[str, Any]] = Field(default_factory=list)
     taste_profile: dict[str, Any] | None = Field(default=None, alias="tasteProfile")
+    playback: dict[str, Any] | None = Field(default=None)
     settings: dict[str, Any] = Field(default_factory=dict)
     ui: dict[str, Any] = Field(default_factory=dict)
 

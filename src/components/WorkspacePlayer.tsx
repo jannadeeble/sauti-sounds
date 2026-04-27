@@ -118,10 +118,14 @@ function PlayerIconButton({
 }
 
 function PlayerRuntime({
+  initialCurrentTime,
+  initialIsPlaying,
   playableTracks,
   playlist,
   startIndex,
 }: {
+  initialCurrentTime: number
+  initialIsPlaying: boolean
   playableTracks: Track[]
   playlist: ResolvedPlayerTrack[]
   startIndex: number
@@ -138,15 +142,17 @@ function PlayerRuntime({
   const initialTrackId = playlist[startIndex]?.trackId ?? playlist[0]?.trackId ?? null
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const initialResumeTime = Math.max(0, initialCurrentTime || 0)
   const lastLoadedTrackIdRef = useRef<string | null>(null)
   const lastLoadedSrcRef = useRef<string | null>(null)
   const lastRecordedTrackIdRef = useRef<string | null>(null)
+  const initialSeekRef = useRef(initialResumeTime)
   const pendingPlayRef = useRef(false)
-  const isPlayingRef = useRef(true)
+  const isPlayingRef = useRef(initialIsPlaying)
 
   const [activeTrackId, setActiveTrackId] = useState<string | null>(initialTrackId)
-  const [isPlaying, setIsPlaying] = useState(true)
-  const [currentTime, setCurrentTime] = useState(0)
+  const [isPlaying, setIsPlaying] = useState(initialIsPlaying)
+  const [currentTime, setCurrentTime] = useState(initialResumeTime)
   const [duration, setDuration] = useState(0)
   const [playbackPending, setPlaybackPending] = useState(true)
   const [showActions, setShowActions] = useState(false)
@@ -319,7 +325,7 @@ function PlayerRuntime({
     }
 
     pendingPlayRef.current = false
-    setPlaybackPending(false)
+    window.queueMicrotask(() => setPlaybackPending(false))
     audio.pause()
   }, [attemptPlayback, isPlaying, resolvedTrack])
 
@@ -429,7 +435,14 @@ function PlayerRuntime({
             attemptPlayback()
           }
         }}
-        onLoadedMetadata={(event) => setDuration(event.currentTarget.duration || 0)}
+        onLoadedMetadata={(event) => {
+          setDuration(event.currentTarget.duration || 0)
+          if (initialSeekRef.current > 0) {
+            event.currentTarget.currentTime = initialSeekRef.current
+            setCurrentTime(initialSeekRef.current)
+            initialSeekRef.current = 0
+          }
+        }}
         onDurationChange={(event) => setDuration(event.currentTarget.duration || 0)}
         onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
         onPlay={() => {
@@ -607,6 +620,8 @@ export default function WorkspacePlayer() {
   const sessionId = usePlaybackSessionStore((state) => state.sessionId)
   const startIndex = usePlaybackSessionStore((state) => state.startIndex)
   const requestedTrackId = usePlaybackSessionStore((state) => state.requestedTrackId)
+  const currentTime = usePlaybackSessionStore((state) => state.currentTime)
+  const isPlaying = usePlaybackSessionStore((state) => state.isPlaying)
   const setErrorMessage = usePlaybackSessionStore((state) => state.setErrorMessage)
 
   const { playableTracks, playlist, currentIndex: resolvedStartIndex, errors, loading } = useResolvedPlayerTracks(
@@ -638,6 +653,8 @@ export default function WorkspacePlayer() {
     <div className="pointer-events-none fixed inset-x-0 bottom-[76px] z-30 px-2 sm:bottom-[88px] sm:px-4">
       <PlayerRuntime
         key={sessionId}
+        initialCurrentTime={currentTime}
+        initialIsPlaying={isPlaying}
         playableTracks={playableTracks}
         playlist={playlist}
         startIndex={resolvedStartIndex}

@@ -1,5 +1,5 @@
 import { db } from '../db'
-import type { AppNotification, HistoryEntry, ListenEvent, Mix } from '../types'
+import type { AppNotification, HistoryEntry, ListenEvent, Mix, PersistedPlaybackState } from '../types'
 import {
   getAppStateSnapshot,
   saveAppStateSnapshot,
@@ -26,6 +26,7 @@ export const DEFAULT_PERSISTENT_SETTINGS: PersistentSettingsState = {
 
 let persistentSettingsState: PersistentSettingsState = { ...DEFAULT_PERSISTENT_SETTINGS }
 let persistentUiState: PersistentUiState = {}
+let persistentPlaybackState: PersistedPlaybackState | null = null
 let hydrated = false
 let hydrationPromise: Promise<AppStateSnapshot> | null = null
 
@@ -85,6 +86,7 @@ function normalizeSnapshot(snapshot?: Partial<AppStateSnapshot> | null): AppStat
     listenEvents: Array.isArray(snapshot?.listenEvents) ? snapshot.listenEvents as ListenEvent[] : [],
     mixes: Array.isArray(snapshot?.mixes) ? snapshot.mixes as Mix[] : [],
     tasteProfile: snapshot?.tasteProfile ?? null,
+    playback: snapshot?.playback ?? null,
     settings: normalizeSettings(snapshot?.settings),
     ui: normalizeUi(snapshot?.ui),
   }
@@ -97,6 +99,7 @@ function backendHasData(snapshot: AppStateSnapshot): boolean {
     || snapshot.listenEvents.length
     || snapshot.mixes.length
     || snapshot.tasteProfile
+    || snapshot.playback
     || hasSettingsData(snapshot.settings)
     || hasUiData(snapshot.ui),
   )
@@ -194,6 +197,7 @@ async function readSnapshotFromClient(): Promise<AppStateSnapshot> {
     listenEvents,
     mixes,
     tasteProfile: tasteProfile ?? null,
+    playback: persistentPlaybackState,
     settings: { ...persistentSettingsState },
     ui: {
       ...persistentUiState,
@@ -217,6 +221,7 @@ async function readLegacyClientSnapshot(): Promise<AppStateSnapshot> {
     listenEvents,
     mixes,
     tasteProfile: tasteProfile ?? null,
+    playback: null,
     settings: parseLegacySettings(),
     ui: parseLegacyUi(),
   }
@@ -225,6 +230,7 @@ async function readLegacyClientSnapshot(): Promise<AppStateSnapshot> {
 function applyInMemorySnapshot(snapshot: AppStateSnapshot): void {
   persistentSettingsState = normalizeSettings(snapshot.settings)
   persistentUiState = normalizeUi(snapshot.ui)
+  persistentPlaybackState = snapshot.playback ?? null
 }
 
 async function ensureHydrated(): Promise<AppStateSnapshot> {
@@ -251,6 +257,14 @@ export function getPersistentUiState(): PersistentUiState {
 
 export function setPersistentUiState(patch: Partial<PersistentUiState>): void {
   persistentUiState = normalizeUi({ ...persistentUiState, ...patch })
+}
+
+export function getPersistentPlaybackState(): PersistedPlaybackState | null {
+  return persistentPlaybackState
+}
+
+export function setPersistentPlaybackState(snapshot: PersistedPlaybackState | null): void {
+  persistentPlaybackState = snapshot
 }
 
 export async function hydrateAppStateFromBackend(force = false): Promise<AppStateSnapshot> {
@@ -295,6 +309,7 @@ export async function resetPersistentAppStateCache(): Promise<void> {
   hydrationPromise = null
   persistentSettingsState = { ...DEFAULT_PERSISTENT_SETTINGS }
   persistentUiState = {}
+  persistentPlaybackState = null
   await db.transaction('rw', [db.notifications, db.history, db.listenEvents, db.mixes, db.tasteProfile], async () => {
     await db.notifications.clear()
     await db.history.clear()

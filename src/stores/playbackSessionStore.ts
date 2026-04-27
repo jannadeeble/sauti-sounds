@@ -1,18 +1,8 @@
 import { create } from 'zustand'
 import type { RectLike } from '../lib/rect'
-import type { Track } from '../types'
+import type { PersistedPlaybackState, PersistedQueueItem, PlaybackContext, SelectedPlaylist, Track } from '../types'
 
-export type PlaybackContext =
-  | 'library'
-  | 'search-local'
-  | 'search-tidal'
-  | 'app-playlist'
-  | 'tidal-playlist'
-
-export interface SelectedPlaylist {
-  kind: 'app' | 'tidal'
-  id: string
-}
+export type { PlaybackContext, SelectedPlaylist } from '../types'
 
 interface SyncedPlayerState {
   currentTrack: Track | null
@@ -42,6 +32,7 @@ interface PlaybackSessionState extends SyncedPlayerState {
   clearSession: () => void
   setPlayerOpen: (open: boolean, originRect?: RectLike | null) => void
   setErrorMessage: (message: string | null) => void
+  restorePersistedSession: (snapshot: PersistedPlaybackState | null | undefined, libraryTracks: Track[]) => void
   syncPlayerState: (state: Partial<SyncedPlayerState>) => void
 }
 
@@ -56,6 +47,51 @@ const initialSyncedState: SyncedPlayerState = {
 function normalizeStartIndex(tracks: Track[], startIndex: number) {
   if (tracks.length === 0) return 0
   return Math.max(0, Math.min(startIndex, tracks.length - 1))
+}
+
+function serializeTrack(track: Track): PersistedQueueItem {
+  const snapshot = Object.fromEntries(
+    Object.entries(track).filter(([key]) => !['audioBlob', 'artworkBlob', 'fileHandle', 'waveformData'].includes(key)),
+  ) as PersistedQueueItem['track']
+
+  return {
+    id: track.id,
+    source: track.source,
+    providerTrackId: track.providerTrackId,
+    track: snapshot,
+  }
+}
+
+function resolvePersistedTrack(item: PersistedQueueItem, libraryTracks: Track[]): Track | null {
+  const match = libraryTracks.find((track) => {
+    if (track.id === item.id) return true
+    return Boolean(item.providerTrackId && track.providerTrackId === item.providerTrackId)
+  })
+  if (match) return match
+
+  if (!item.track?.id || !item.track.title || !item.track.artist || !item.track.source) {
+    return null
+  }
+  return {
+    ...item.track,
+    album: item.track.album ?? '',
+    duration: item.track.duration ?? 0,
+  }
+}
+
+export function buildPersistedPlaybackState(state: PlaybackSessionState): PersistedPlaybackState | null {
+  if (state.tracks.length === 0) return null
+  return {
+    context: state.context,
+    queue: state.tracks.map(serializeTrack),
+    currentTrackId: state.currentTrack?.id ?? state.requestedTrackId ?? state.tracks[state.startIndex]?.id ?? null,
+    currentIndex: state.currentIndex >= 0 ? state.currentIndex : state.startIndex,
+    currentTime: Math.max(0, Math.floor(state.currentTime || 0)),
+    duration: Math.max(0, Math.floor(state.duration || 0)),
+    wasPlaying: state.isPlaying,
+    selectedPlaylist: state.selectedPlaylist,
+    updatedAt: Date.now(),
+  }
 }
 
 export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
@@ -82,6 +118,7 @@ export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
       sessionId: state.sessionId + 1,
       errorMessage: null,
       ...initialSyncedState,
+      isPlaying: true,
     }))
   },
 
@@ -97,6 +134,7 @@ export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
       sessionId: state.sessionId + 1,
       errorMessage: null,
       ...initialSyncedState,
+      isPlaying: true,
     }))
   },
 
@@ -168,6 +206,41 @@ export const usePlaybackSessionStore = create<PlaybackSessionState>((set) => ({
     set({
       errorMessage,
       ...(errorMessage ? { loadingTrackId: null } : {}),
+    })
+  },
+
+  restorePersistedSession: (snapshot, libraryTracks) => {
+    if (!snapshot?.queue?.length) return
+    set((state) => {
+      if (state.tracks.length > 0) return state
+
+      const tracks = snapshot.queue
+        .map((item) => resolvePersistedTrack(item, libraryTracks))
+        .filter((track): track is Track => Boolean(track))
+      if (tracks.length === 0) return state
+
+      const persistedIndex = Math.max(0, Math.min(snapshot.currentIndex, tracks.length - 1))
+      const currentIndex = snapshot.currentTrackId
+        ? Math.max(0, tracks.findIndex((track) => track.id === snapshot.currentTrackId))
+        : persistedIndex
+      const startIndex = currentIndex >= 0 ? currentIndex : persistedIndex
+      const currentTrack = tracks[startIndex] ?? null
+
+      return {
+        context: snapshot.context,
+        currentTrack,
+        currentIndex: startIndex,
+        currentTime: snapshot.currentTime,
+        duration: snapshot.duration,
+        isPlaying: false,
+        loadingTrackId: currentTrack?.id ?? null,
+        tracks,
+        startIndex,
+        requestedTrackId: currentTrack?.id ?? null,
+        sessionId: state.sessionId + 1,
+        selectedPlaylist: snapshot.selectedPlaylist,
+        errorMessage: null,
+      }
     })
   },
 

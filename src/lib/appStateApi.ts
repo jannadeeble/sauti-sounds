@@ -3,6 +3,7 @@ import type {
   HistoryEntry,
   ListenEvent,
   Mix,
+  PersistedPlaybackState,
   TasteProfileRecord,
 } from '../types'
 import type { LLMProvider } from './llm'
@@ -32,6 +33,7 @@ export interface AppStateSnapshot {
   listenEvents: ListenEvent[]
   mixes: Mix[]
   tasteProfile: TasteProfileRecord | null
+  playback: PersistedPlaybackState | null
   settings: PersistentSettingsState
   ui: PersistentUiState
 }

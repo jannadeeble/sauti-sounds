@@ -158,6 +158,7 @@ def _read_app_state_payload(db: Session, user_id: str) -> dict[str, Any]:
             "listenEvents": [],
             "mixes": [],
             "tasteProfile": None,
+            "playback": None,
             "settings": {},
             "ui": {},
         }

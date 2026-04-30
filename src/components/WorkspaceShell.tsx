@@ -69,7 +69,6 @@ const LIBRARY_FILTERS: { value: LibraryFilter; label: string }[] = [
   { value: 'artists', label: 'Artists' },
   { value: 'tracks', label: 'Tracks' },
 ]
-
 function normalizeLibrarySort(filter: LibraryFilter, sort: LibrarySort): LibrarySort {
   if (filter === 'artists') {
     return sort === 'artist' ? 'recent' : sort
@@ -567,17 +566,25 @@ export default function WorkspaceShell() {
             ? 'pb-[calc(16rem+env(safe-area-inset-bottom))]'
             : 'pb-[calc(7rem+env(safe-area-inset-bottom))]'
         }`}>
-          <header className="pointer-events-none fixed inset-x-0 top-0 z-30 border-b border-transparent bg-white px-2 py-2 sm:px-6 sm:py-4 lg:px-8">
-            <div className="pointer-events-auto mx-auto flex max-w-[1180px] flex-col items-start gap-2 px-1 sm:px-3 lg:px-6">
+          <header className="border-b border-black/6 bg-white px-2 py-2 sm:px-6 sm:py-4 lg:px-8">
+            <div className="mx-auto flex max-w-[1180px] flex-col items-start gap-2 px-1 sm:px-3 lg:px-6">
               <div className="flex w-full justify-start">
                 <div className="flex shrink-0 items-center gap-2">
                   <TabButton active={activeTab === 'home'} onClick={() => setActiveTab('home')}>Discover</TabButton>
                   <TabButton active={activeTab === 'library'} onClick={() => setActiveTab('library')}>Library</TabButton>
+                  <button
+                    type="button"
+                    className="sauti-nav-pill sauti-nav-pill--primary sauti-settings-nav"
+                    onClick={(event) => openModal('settings', rectFromElement(event.currentTarget))}
+                  >
+                    <Settings size={16} />
+                    Settings
+                  </button>
                 </div>
               </div>
               {activeTab === 'library' ? (
                 <div className="flex w-full justify-start overflow-x-auto">
-                  <div className="flex min-w-max gap-2">
+                  <div className="flex min-w-max items-center gap-2">
                     {LIBRARY_FILTERS.map((filter) => (
                       <button
                         key={filter.value}
@@ -589,13 +596,46 @@ export default function WorkspaceShell() {
                         {filter.label}
                       </button>
                     ))}
+                    <LibraryToolbar
+                      filter={effectiveLibraryFilter}
+                      sort={librarySort}
+                      viewMode={libraryViewMode}
+                      onSortChange={setLibrarySort}
+                      onViewModeChange={setLibraryViewMode}
+                    />
                   </div>
                 </div>
               ) : null}
+              <div className="workspace-action-cluster">
+                {showGenerateAction ? (
+                  <TopActionButton
+                    label="Generate"
+                    icon={playlistGenerating ? <LoaderCircle size={17} className="animate-spin" /> : <Sparkles size={17} />}
+                    active={playlistGenerating}
+                    onClick={(event) => openModal('generator', rectFromElement(event.currentTarget))}
+                  />
+                ) : null}
+                {showNewPlaylistAction ? (
+                  <TopActionButton
+                    label="New playlist"
+                    icon={<Plus size={17} />}
+                    onClick={() => void handleCreatePlaylist('app')}
+                  />
+                ) : null}
+                <TopActionButton
+                  label="Search"
+                  icon={<Search size={17} />}
+                  onClick={(event) => openModal('search', rectFromElement(event.currentTarget))}
+                />
+                {showNotificationsAction ? (
+                  <NotificationBell buttonClassName="workspace-action-button workspace-action-button--icon relative" />
+                ) : null}
+              </div>
+              <BatchActionsBar />
             </div>
           </header>
 
-          <main className={`flex-1 ${activeTab === 'home' ? 'pt-[100px] sm:pt-[112px]' : 'pt-[104px] sm:pt-[116px]'}`}>
+          <main className="flex-1 pt-6">
             <div className="mx-auto w-full max-w-[1180px] space-y-8 px-1 sm:px-3 lg:px-6">
               {errorMessage ? <Banner>{errorMessage}</Banner> : null}
               {playlistGenerationStatus === 'error' && playlistGenerationError ? (
@@ -604,7 +644,7 @@ export default function WorkspaceShell() {
               {importNotice ? <Banner>{importNotice}</Banner> : null}
 
               {importing && importProgress && modal?.kind !== 'upload' ? (
-                <div className="rounded-[24px] border border-black/8 bg-white px-5 py-4 shadow-[0_1px_0_rgba(17,17,22,0.03)]">
+                <div className="sauti-surface border border-black/8 bg-white px-5 py-4 shadow-[0_1px_0_rgba(17,17,22,0.03)]">
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <p className="text-sm font-medium text-[#111116]">Uploading music…</p>
@@ -655,16 +695,6 @@ export default function WorkspaceShell() {
 
               {activeTab === 'library' ? (
                 <div className="space-y-6">
-                  <div className="flex flex-wrap items-center justify-end gap-3">
-                    <LibraryToolbar
-                      filter={effectiveLibraryFilter}
-                      sort={librarySort}
-                      viewMode={libraryViewMode}
-                      onSortChange={setLibrarySort}
-                      onViewModeChange={setLibraryViewMode}
-                    />
-                  </div>
-
                   {libraryDetail ? (
                     <LibraryDetailView
                       detail={libraryDetail}
@@ -795,38 +825,6 @@ export default function WorkspaceShell() {
           </main>
         </div>
 
-        <div className="workspace-action-cluster" data-player-visible={playerVisible ? 'true' : 'false'}>
-          {showGenerateAction ? (
-            <BottomActionButton
-              label="Generate"
-              icon={playlistGenerating ? <LoaderCircle size={17} className="animate-spin" /> : <Sparkles size={17} />}
-              active={playlistGenerating}
-              onClick={(event) => openModal('generator', rectFromElement(event.currentTarget))}
-            />
-          ) : null}
-          {showNewPlaylistAction ? (
-            <BottomActionButton
-              label="New playlist"
-              icon={<Plus size={17} />}
-              onClick={() => void handleCreatePlaylist('app')}
-            />
-          ) : null}
-          <BottomActionButton
-            label="Search"
-            icon={<Search size={17} />}
-            onClick={(event) => openModal('search', rectFromElement(event.currentTarget))}
-          />
-          {showNotificationsAction ? (
-            <NotificationBell buttonClassName="workspace-action-button workspace-action-button--icon relative" />
-          ) : null}
-          <BottomActionButton
-            label="Settings"
-            icon={<Settings size={17} />}
-            iconOnly
-            onClick={(event) => openModal('settings', rectFromElement(event.currentTarget))}
-          />
-        </div>
-
         <WorkspacePlayer />
 
         <BottomSheet
@@ -896,7 +894,6 @@ export default function WorkspaceShell() {
 
         <QueueSheet open={playerOpen} onClose={() => setPlayerOpen(false)} />
 
-        <BatchActionsBar />
         <AIModalHost />
       </div>
     </div>
@@ -924,7 +921,7 @@ function TabButton({
   )
 }
 
-function BottomActionButton({
+function TopActionButton({
   label,
   icon,
   active = false,
@@ -974,7 +971,7 @@ function SectionHeader({
 
 function Banner({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-[22px] border border-[#f4c6cc] bg-[#fff4f6] px-5 py-4 text-sm text-[#8d3140]">
+    <div className="sauti-surface border border-[#f4c6cc] bg-[#fff4f6] px-5 py-4 text-sm text-[#8d3140]">
       {children}
     </div>
   )
@@ -1014,8 +1011,8 @@ function LibraryToolbar({
   const validSort = options.some((option) => option.value === sort) ? sort : 'recent'
 
   return (
-    <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-      <label className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-3 py-2 text-sm text-[#555661]">
+    <div className="flex shrink-0 items-center gap-2 pl-2">
+      <label className="inline-flex h-9 items-center gap-2 border border-black/8 bg-white px-3 text-sm text-[#555661]">
         <SlidersHorizontal size={14} />
         <select
           value={validSort}
@@ -1027,14 +1024,14 @@ function LibraryToolbar({
           ))}
         </select>
       </label>
-      <div className="inline-flex rounded-full border border-black/8 bg-white p-1">
+      <div className="inline-flex h-9 border border-black/8 bg-white p-0.5">
         <button
           type="button"
           aria-label="List view"
           title="List view"
           data-active={viewMode === 'list'}
           onClick={() => onViewModeChange('list')}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#686973] transition-colors data-[active=true]:bg-[#111116] data-[active=true]:text-white"
+          className="inline-flex h-8 w-8 items-center justify-center text-[#686973] transition-colors data-[active=true]:bg-[#111116] data-[active=true]:text-white"
         >
           <List size={15} />
         </button>
@@ -1044,7 +1041,7 @@ function LibraryToolbar({
           title="Grid view"
           data-active={viewMode === 'grid'}
           onClick={() => onViewModeChange('grid')}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#686973] transition-colors data-[active=true]:bg-[#111116] data-[active=true]:text-white"
+          className="inline-flex h-8 w-8 items-center justify-center text-[#686973] transition-colors data-[active=true]:bg-[#111116] data-[active=true]:text-white"
         >
           <Grid3X3 size={15} />
         </button>
@@ -1055,7 +1052,7 @@ function LibraryToolbar({
 
 function PlainListCard({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-[24px] border border-black/8 bg-white shadow-[0_1px_0_rgba(17,17,22,0.03)]">
+    <div className="sauti-surface overflow-hidden border border-black/8 bg-white shadow-[0_1px_0_rgba(17,17,22,0.03)]">
       {children}
     </div>
   )
@@ -1076,7 +1073,7 @@ function SurfaceCard({
         <h3 className="deezer-display text-[1.6rem] leading-none text-[#111116]">{title}</h3>
         {meta ? <p className="mt-2 text-sm text-[#7a7b86]">{meta}</p> : null}
       </div>
-      <div className="overflow-hidden rounded-[24px] border border-black/8 bg-white shadow-[0_1px_0_rgba(17,17,22,0.03)]">{children}</div>
+      <div className="sauti-surface overflow-hidden border border-black/8 bg-white shadow-[0_1px_0_rgba(17,17,22,0.03)]">{children}</div>
     </section>
   )
 }
@@ -1091,7 +1088,7 @@ function EmptyState({
   action?: ReactNode
 }) {
   return (
-    <div className="rounded-[28px] border border-black/8 bg-white px-6 py-12 text-center shadow-[0_1px_0_rgba(17,17,22,0.03)]">
+    <div className="sauti-surface border border-black/8 bg-white px-6 py-12 text-center shadow-[0_1px_0_rgba(17,17,22,0.03)]">
       <h3 className="deezer-display text-[1.9rem] leading-none text-[#111116]">{title}</h3>
       <p className="mx-auto mt-3 max-w-[42rem] text-sm leading-6 text-[#686973]">{description}</p>
       {action ? <div className="mt-6 flex justify-center">{action}</div> : null}
@@ -1114,10 +1111,10 @@ function ActionButton({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition-colors ${
+      className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${
         accent
           ? 'bg-accent text-white hover:bg-accent-dark'
-          : 'border border-black/8 bg-white text-[#555661] hover:border-black/14 hover:text-[#111116]'
+          : 'border border-accent/20 bg-[#fff4f6] text-[#8d3140] hover:border-accent/30 hover:bg-accent hover:text-white'
       }`}
     >
       {icon}
@@ -1166,7 +1163,7 @@ function SearchPanel({
       </label>
 
       {!query.trim() ? (
-        <div className="rounded-[22px] border border-black/8 bg-[#f8f8f9] px-4 py-5 text-sm text-[#7a7b86]">
+        <div className="sauti-surface border border-black/8 bg-[#f8f8f9] px-4 py-5 text-sm text-[#7a7b86]">
           Start typing to search your library. Press enter to extend the search to TIDAL.
         </div>
       ) : null}
@@ -1193,7 +1190,7 @@ function SearchPanel({
             <button
               type="button"
               onClick={onTidalSearch}
-              className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-4 py-2 text-sm text-accent transition-colors hover:bg-[#fafafb]"
+              className="inline-flex items-center gap-2 border border-black/8 bg-white px-4 py-2 text-sm text-accent transition-colors hover:bg-[#fafafb]"
             >
               <Radio size={15} />
               Search TIDAL for "{query}"
@@ -1201,7 +1198,7 @@ function SearchPanel({
           ) : null}
 
           {tidalLoading ? (
-            <div className="rounded-[22px] border border-black/8 bg-[#f8f8f9] px-4 py-4 text-sm text-[#7a7b86]">Searching TIDAL...</div>
+            <div className="sauti-surface border border-black/8 bg-[#f8f8f9] px-4 py-4 text-sm text-[#7a7b86]">Searching TIDAL...</div>
           ) : null}
 
           {tidalSearched && tidalResults.length > 0 ? (
@@ -1227,7 +1224,7 @@ function SearchPanel({
       ) : null}
 
       {query.trim() && !localResults.length && (!tidalSearched || !tidalResults.length) && !tidalLoading ? (
-        <div className="rounded-[22px] border border-black/8 bg-[#f8f8f9] px-4 py-5 text-sm text-[#7a7b86]">
+        <div className="sauti-surface border border-black/8 bg-[#f8f8f9] px-4 py-5 text-sm text-[#7a7b86]">
           No matches yet. {tidalConnected ? 'Try another term or run the TIDAL search.' : 'Connect TIDAL to widen the catalog.'}
         </div>
       ) : null}
@@ -1264,7 +1261,7 @@ function RecentTrackCard({ track, onClick, highlighted = false }: { track: Track
   const artworkUrl = useTrackArtworkUrl(track)
   return (
     <button type="button" onClick={onClick} className="group flex min-w-0 flex-col gap-2 text-left">
-      <div className={`overflow-hidden rounded-[20px] border bg-white ${highlighted ? 'border-[#f4aebb] ring-2 ring-[#fff0f3]' : 'border-black/8'}`}>
+      <div className={`sauti-artwork-frame overflow-hidden border bg-white ${highlighted ? 'border-[#f4aebb] ring-2 ring-[#fff0f3]' : 'border-black/8'}`}>
         <div className="aspect-square w-full">
           {artworkUrl ? (
             <img src={artworkUrl} alt="" className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]" />
@@ -1292,8 +1289,8 @@ function ArtistCard({
 }) {
   const artworkUrl = useTrackArtworkUrl(tracks[0] ?? {})
   return (
-    <button type="button" onClick={onClick} className="group rounded-[22px] border border-black/8 bg-white p-3 text-left transition-colors hover:bg-[#fafafb]">
-      <div className="overflow-hidden rounded-[18px]">
+    <button type="button" onClick={onClick} className="sauti-surface group border border-black/8 bg-white p-3 text-left transition-colors hover:bg-[#fafafb]">
+      <div className="sauti-artwork-frame overflow-hidden">
         <div className="aspect-square w-full">
           {artworkUrl ? (
             <img src={artworkUrl} alt="" className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]" />
@@ -1322,7 +1319,7 @@ function ArtistRow({
   const artworkUrl = useTrackArtworkUrl(tracks[0] ?? {})
   return (
     <button type="button" onClick={onOpen} className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-[#fafafb]">
-      <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-[#f1f1f4]">
+      <div className="sauti-artwork-frame h-11 w-11 shrink-0 overflow-hidden bg-[#f1f1f4]">
         {artworkUrl ? (
           <img src={artworkUrl} alt="" className="h-full w-full object-cover" />
         ) : (
@@ -1350,8 +1347,8 @@ function PlaylistCard({
   onPlay: () => void
 }) {
   return (
-    <article className={`rounded-[24px] border p-4 transition-colors ${active ? 'border-accent/22 bg-accent/5' : 'border-black/8 bg-white hover:bg-[#fafafb]'}`}>
-      <div className="grid grid-cols-2 gap-1 overflow-hidden rounded-[18px] bg-[#f3f3f6]">
+    <article className={`sauti-surface border p-4 transition-colors ${active ? 'border-accent/22 bg-accent/5' : 'border-black/8 bg-white hover:bg-[#fafafb]'}`}>
+      <div className="sauti-artwork-frame grid grid-cols-2 gap-1 overflow-hidden bg-[#f3f3f6]">
         <GradientArtwork seed={`${playlist.name}-a`} className="aspect-square" />
         <GradientArtwork seed={`${playlist.name}-b`} className="aspect-square" />
         <GradientArtwork seed={`${playlist.name}-c`} className="aspect-square" />
@@ -1364,14 +1361,14 @@ function PlaylistCard({
             {playlist.trackCount} tracks · {playlist.label}
           </p>
         </div>
-        <button type="button" onClick={onPlay} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/8 bg-[#f8f8f9] text-[#555661] transition-colors hover:text-[#111116]">
+        <button type="button" onClick={onPlay} className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-black/8 bg-[#f8f8f9] text-[#555661] transition-colors hover:text-[#111116]">
           <Play size={14} />
         </button>
       </div>
       <button
         type="button"
         onClick={onOpen}
-        className="mt-4 inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-3 py-2 text-sm text-[#555661] transition-colors hover:border-black/14 hover:text-[#111116]"
+        className="mt-4 inline-flex items-center gap-2 border border-black/8 bg-white px-3 py-2 text-sm text-[#555661] transition-colors hover:border-black/14 hover:text-[#111116]"
       >
         Open collection
         <ChevronRight size={14} />
@@ -1393,7 +1390,7 @@ function PlaylistRow({
 }) {
   return (
     <article className={`flex items-center gap-3 px-5 py-3 transition-colors ${active ? 'bg-[#fff4f6]' : 'hover:bg-[#fafafb]'}`}>
-      <button type="button" onClick={onOpen} className="grid h-12 w-12 shrink-0 grid-cols-2 gap-0.5 overflow-hidden rounded-xl bg-[#f3f3f6]">
+      <button type="button" onClick={onOpen} className="sauti-artwork-frame grid h-12 w-12 shrink-0 grid-cols-2 gap-0.5 overflow-hidden bg-[#f3f3f6]">
         <GradientArtwork seed={`${playlist.name}-a`} className="h-full w-full" />
         <GradientArtwork seed={`${playlist.name}-b`} className="h-full w-full" />
         <GradientArtwork seed={`${playlist.name}-c`} className="h-full w-full" />
@@ -1403,10 +1400,10 @@ function PlaylistRow({
         <p className="truncate text-sm font-medium text-[#111116]">{playlist.name}</p>
         <p className="truncate text-xs text-[#7a7b86]">{playlist.trackCount} tracks · {playlist.label}</p>
       </button>
-      <button type="button" onClick={onPlay} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/8 bg-[#f8f8f9] text-[#555661] transition-colors hover:text-[#111116]">
+      <button type="button" onClick={onPlay} className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-black/8 bg-[#f8f8f9] text-[#555661] transition-colors hover:text-[#111116]">
         <Play size={14} />
       </button>
-      <button type="button" onClick={onOpen} className="rounded-full p-2 text-[#9ea0aa] transition-colors hover:bg-black/4 hover:text-[#111116]" aria-label={`Open ${playlist.name}`}>
+      <button type="button" onClick={onOpen} className="p-2 text-[#9ea0aa] transition-colors hover:bg-black/4 hover:text-[#111116]" aria-label={`Open ${playlist.name}`}>
         <ChevronRight size={16} />
       </button>
     </article>
@@ -1492,7 +1489,7 @@ function DetailBackBar({ title, onBack }: { title: string; onBack: () => void })
       <button
         type="button"
         onClick={onBack}
-        className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/8 bg-white text-[#555661] transition-colors hover:border-black/14 hover:text-[#111116]"
+        className="inline-flex h-10 w-10 items-center justify-center border border-black/8 bg-white text-[#555661] transition-colors hover:border-black/14 hover:text-[#111116]"
         aria-label="Back"
       >
         <ArrowLeft size={16} />
@@ -1549,11 +1546,11 @@ function PlaylistDetailView({
       : sortTracks(tidalDetail?.tracks || [], sort)
 
   if (playlistDetail.playlistKind === 'app' && !appPlaylist) {
-    return <div className="rounded-[24px] border border-black/8 bg-white px-4 py-4 text-sm text-[#7a7b86]">Playlist not found.</div>
+    return <div className="sauti-surface border border-black/8 bg-white px-4 py-4 text-sm text-[#7a7b86]">Playlist not found.</div>
   }
 
   if (playlistDetail.playlistKind === 'tidal' && !tidalDetail) {
-    return <div className="rounded-[24px] border border-black/8 bg-white px-4 py-4 text-sm text-[#7a7b86]">Loading TIDAL playlist…</div>
+    return <div className="sauti-surface border border-black/8 bg-white px-4 py-4 text-sm text-[#7a7b86]">Loading TIDAL playlist…</div>
   }
 
   const playlist = playlistDetail.playlistKind === 'app' ? appPlaylist! : tidalDetail!.playlist
@@ -1581,14 +1578,14 @@ function PlaylistDetailView({
       </div>
 
       {tracks.length === 0 ? (
-        <div className="rounded-[24px] border border-black/8 bg-white px-4 py-5 text-sm text-[#7a7b86]">
+        <div className="sauti-surface border border-black/8 bg-white px-4 py-5 text-sm text-[#7a7b86]">
           This playlist is empty.
         </div>
       ) : (
         viewMode === 'grid' ? (
           <TrackGrid tracks={tracks} playContext={playlistDetail.playlistKind === 'app' ? 'app-playlist' : 'tidal-playlist'} />
         ) : (
-          <div className="divide-y divide-black/6 rounded-[24px] border border-black/8 bg-white">
+          <div className="sauti-surface divide-y divide-black/6 border border-black/8 bg-white">
           {playlistDetail.playlistKind === 'app'
             ? displayedAppPlaylistTracks.map(({ item, track, index }, displayIndex) => {
                 const extraActions: TrackAction[] = [

@@ -174,7 +174,7 @@ export default function TrackRow({
             type="button"
             onClick={() => toggleSelection(track.id)}
             aria-label={isSelected ? `Deselect ${track.title}` : `Select ${track.title}`}
-            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+            className={`flex h-6 w-6 shrink-0 items-center justify-center border-2 transition-colors ${
               isSelected
                 ? 'border-[#ef5466] bg-[#ef5466] text-white'
                 : 'border-[#c9cad2] bg-white text-transparent'
@@ -208,7 +208,7 @@ export default function TrackRow({
           }}
           className="group/row flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
         >
-          <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-[#f1f1f4]">
+          <div className="sauti-artwork-frame relative h-10 w-10 shrink-0 overflow-hidden bg-[#f1f1f4]">
             {artworkUrl ? (
               <img src={artworkUrl} alt="" className="h-full w-full object-cover" />
             ) : (
@@ -237,7 +237,7 @@ export default function TrackRow({
                 {track.title}
               </p>
               {track.source === 'tidal' ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-cyan-500/8 px-2 py-0.5 text-[10px] uppercase tracking-wide text-cyan-700">
+                <span className="inline-flex items-center gap-1 bg-cyan-500/8 px-2 py-0.5 text-[10px] uppercase tracking-wide text-cyan-700">
                   <Radio size={10} />
                   TIDAL
                 </span>
@@ -257,7 +257,7 @@ export default function TrackRow({
             <button
               type="button"
               onClick={() => onAddToLibrary(track)}
-              className="rounded-full border border-black/8 bg-white p-2 text-[#555661] transition-colors hover:border-black/16 hover:text-[#111116]"
+              className="border border-black/8 bg-white p-2 text-[#555661] transition-colors hover:border-black/16 hover:text-[#111116]"
               aria-label={`Add ${track.title} to library`}
             >
               <Plus size={16} />
@@ -270,7 +270,7 @@ export default function TrackRow({
                 setOriginRect(rectFromElement(event.currentTarget))
                 setShowActions(true)
               }}
-              className="rounded-full p-2 text-[#8c8d96] transition-colors hover:bg-black/4 hover:text-[#111116]"
+              className="p-2 text-[#8c8d96] transition-colors hover:bg-black/4 hover:text-[#111116]"
               aria-label={`More actions for ${track.title}`}
             >
               <MoreVertical size={16} />
@@ -290,7 +290,7 @@ export default function TrackRow({
         align="bottom"
       >
         <div className="sauti-modal-card-muted mb-3 flex items-center gap-3 px-3 py-3">
-          <div className="h-12 w-12 overflow-hidden rounded-[14px] bg-white">
+          <div className="sauti-artwork-frame h-12 w-12 overflow-hidden bg-white">
             {artworkUrl ? (
               <img src={artworkUrl} alt="" className="h-full w-full object-cover" />
             ) : (

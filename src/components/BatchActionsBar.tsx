@@ -40,13 +40,13 @@ export default function BatchActionsBar() {
 
   return (
     <>
-      <div className="pointer-events-none fixed inset-x-0 bottom-[64px] z-40 flex justify-center px-4 pb-2 lg:bottom-4">
-        <div className="pointer-events-auto flex w-full max-w-[520px] items-center justify-between gap-2 rounded-full border border-black/8 bg-white/95 px-4 py-2 shadow-[0_12px_40px_rgba(17,17,22,0.18)] backdrop-blur-md">
+      <div className="flex w-full justify-end">
+        <div className="sauti-surface flex w-full max-w-[520px] items-center justify-between gap-2 border border-black/8 bg-white px-3 py-2 shadow-[0_1px_0_rgba(17,17,22,0.03)]">
           <button
             type="button"
             onClick={exitSelection}
             aria-label="Cancel selection"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#555661] transition-colors hover:bg-black/5 hover:text-[#111116]"
+            className="inline-flex h-10 w-10 items-center justify-center bg-[#ef5466] text-white transition-colors hover:bg-[#e0364a]"
           >
             <X size={18} />
           </button>
@@ -64,7 +64,7 @@ export default function BatchActionsBar() {
               }}
               disabled={count === 0}
               aria-label="Add selected to playlist"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#111116] transition-colors hover:bg-black/5 disabled:opacity-40"
+              className="inline-flex h-10 w-10 items-center justify-center bg-[#ef5466] text-white transition-colors hover:bg-[#e0364a] disabled:opacity-40"
             >
               <ListPlus size={18} />
             </button>
@@ -73,7 +73,7 @@ export default function BatchActionsBar() {
               onClick={() => void handleRemove()}
               disabled={count === 0}
               aria-label="Remove selected from library"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#c4394d] transition-colors hover:bg-[#fff4f6] disabled:opacity-40"
+              className="inline-flex h-10 w-10 items-center justify-center bg-[#ef5466] text-white transition-colors hover:bg-[#e0364a] disabled:opacity-40"
             >
               <Trash2 size={18} />
             </button>

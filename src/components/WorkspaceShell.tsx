@@ -574,16 +574,20 @@ export default function WorkspaceShell() {
                   <TabButton active={activeTab === 'library'} onClick={() => setActiveTab('library')}>Library</TabButton>
                   <button
                     type="button"
-                    className="sauti-nav-pill sauti-nav-pill--primary sauti-settings-nav"
+                    aria-label="Settings"
+                    title="Settings"
+                    className="sauti-nav-pill sauti-nav-pill--primary sauti-settings-nav sauti-nav-icon-only"
                     onClick={(event) => openModal('settings', rectFromElement(event.currentTarget))}
                   >
                     <Settings size={16} />
-                    Settings
                   </button>
+                  {showNotificationsAction ? (
+                    <NotificationBell buttonClassName="sauti-nav-pill sauti-nav-pill--primary sauti-settings-nav sauti-nav-icon-only relative" />
+                  ) : null}
                 </div>
               </div>
               {activeTab === 'library' ? (
-                <div className="flex w-full justify-start overflow-x-auto">
+                <div className="sauti-filter-scroll flex w-full justify-start overflow-x-auto">
                   <div className="flex min-w-max items-center gap-2">
                     {LIBRARY_FILTERS.map((filter) => (
                       <button
@@ -627,9 +631,6 @@ export default function WorkspaceShell() {
                   icon={<Search size={17} />}
                   onClick={(event) => openModal('search', rectFromElement(event.currentTarget))}
                 />
-                {showNotificationsAction ? (
-                  <NotificationBell buttonClassName="workspace-action-button workspace-action-button--icon relative" />
-                ) : null}
               </div>
               <BatchActionsBar />
             </div>

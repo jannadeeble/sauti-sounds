@@ -639,7 +639,7 @@ export default function WorkspacePlayer() {
 
   if (loading && playlist.length === 0) {
     return (
-      <div className="pointer-events-none fixed inset-x-0 bottom-[76px] z-30 px-2 sm:bottom-[88px] sm:px-4">
+      <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+8px)] z-30 px-2 sm:bottom-[calc(env(safe-area-inset-bottom,0px)+16px)] sm:px-4">
         <div className="sauti-surface pointer-events-auto mx-auto max-w-[980px] border border-white/10 bg-surface-900/95 px-5 py-4 shadow-[0_12px_40px_rgba(17,17,22,0.22)] backdrop-blur-2xl">
           <p className="text-sm text-gray-400">Preparing playback…</p>
         </div>
@@ -650,7 +650,7 @@ export default function WorkspacePlayer() {
   if (playlist.length === 0) return null
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[76px] z-30 px-2 sm:bottom-[88px] sm:px-4">
+    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+8px)] z-30 px-2 sm:bottom-[calc(env(safe-area-inset-bottom,0px)+16px)] sm:px-4">
       <PlayerRuntime
         key={sessionId}
         initialCurrentTime={currentTime}

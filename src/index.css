@@ -33,9 +33,9 @@
   --deezer-player-bg: #121216;
   --deezer-player-panel: #1b1b22;
   --deezer-player-border: rgba(255, 255, 255, 0.08);
-  --sauti-radius-sm: 999px;
-  --sauti-radius-md: 999px;
-  --sauti-radius-lg: 999px;
+  --sauti-radius-sm: 32px;
+  --sauti-radius-md: 32px;
+  --sauti-radius-lg: 32px;
 }
 
 html,
@@ -110,9 +110,9 @@ img {
 }
 
 .workspace-shell {
-  --sauti-radius-sm: 999px;
-  --sauti-radius-md: 999px;
-  --sauti-radius-lg: 999px;
+  --sauti-radius-sm: 32px;
+  --sauti-radius-md: 32px;
+  --sauti-radius-lg: 32px;
   min-height: 100dvh;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(248, 248, 249, 0.98)),
@@ -669,6 +669,19 @@ input[type="range"]::-moz-range-thumb {
   min-height: 46px;
   padding: 0 20px;
   font-size: 16px;
+}
+
+.sauti-nav-icon-only {
+  width: 46px;
+  padding: 0;
+}
+
+.sauti-filter-scroll {
+  scrollbar-width: none;
+}
+
+.sauti-filter-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .sauti-nav-pill:hover {

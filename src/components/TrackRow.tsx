@@ -159,7 +159,7 @@ export default function TrackRow({
   return (
     <>
       <article
-        className={`group flex items-center gap-3 px-5 py-3 transition-colors ${
+        className={`sauti-track-row group flex items-center gap-3 px-5 py-3 transition-colors ${
           highlighted
             ? 'bg-[#fff0f3] ring-1 ring-inset ring-[#f7c6cd]'
             : isSelected

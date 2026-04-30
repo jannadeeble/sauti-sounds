@@ -566,8 +566,8 @@ export default function WorkspaceShell() {
             ? 'pb-[calc(16rem+env(safe-area-inset-bottom))]'
             : 'pb-[calc(7rem+env(safe-area-inset-bottom))]'
         }`}>
-          <header className="border-b border-black/6 bg-white px-2 py-2 sm:px-6 sm:py-4 lg:px-8">
-            <div className="mx-auto flex max-w-[1180px] flex-col items-start gap-2 px-1 sm:px-3 lg:px-6">
+          <header className="bg-white px-2 py-3 sm:px-6 sm:py-5 lg:px-8">
+            <div className="workspace-header-inner mx-auto flex max-w-[1180px] flex-col items-start px-1 sm:px-3 lg:px-6">
               <div className="flex w-full justify-start">
                 <div className="flex shrink-0 items-center gap-2">
                   <TabButton active={activeTab === 'home'} onClick={() => setActiveTab('home')}>Discover</TabButton>
@@ -587,7 +587,7 @@ export default function WorkspaceShell() {
                 </div>
               </div>
               {activeTab === 'library' ? (
-                <div className="sauti-filter-scroll flex w-full justify-start overflow-x-auto">
+                <div className="sauti-filter-scroll sauti-edge-scroll flex w-full justify-start overflow-x-auto">
                   <div className="flex min-w-max items-center gap-2">
                     {LIBRARY_FILTERS.map((filter) => (
                       <button
@@ -610,7 +610,7 @@ export default function WorkspaceShell() {
                   </div>
                 </div>
               ) : null}
-              <div className="workspace-action-cluster">
+              <div className="workspace-action-cluster sauti-edge-scroll">
                 {showGenerateAction ? (
                   <TopActionButton
                     label="Generate"

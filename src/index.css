@@ -220,6 +220,25 @@ img {
   border-radius: 0;
 }
 
+.workspace-shell [class*="divide-y"] > * {
+  border-radius: 0 !important;
+}
+
+.sauti-header-panel {
+  border-radius: var(--sauti-radius-lg);
+}
+
+@media (max-width: 639px) {
+  .workspace-shell .sauti-artwork-frame,
+  .sauti-artwork-frame {
+    border-radius: 14px;
+  }
+
+  .workspace-shell .sauti-media-card {
+    border-radius: 18px;
+  }
+}
+
 .deezer-search-shell {
   display: flex;
   align-items: center;

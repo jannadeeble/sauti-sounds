@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
+  Bell,
   ChevronRight,
   Grid3X3,
   List,
@@ -18,7 +19,7 @@ import BatchActionsBar from './BatchActionsBar'
 import BottomSheet from './BottomSheet'
 import HomeSuggestions from './HomeSuggestions'
 import ImportPanel, { type ImportDoneResult } from './ImportPanel'
-import NotificationBell from './NotificationBell'
+import { NotificationsPanel } from './NotificationBell'
 import PlaylistGeneratorPanel from './PlaylistGeneratorPanel'
 import QueueSheet from './QueueSheet'
 import SettingsPanel from './SettingsPanel'
@@ -48,6 +49,7 @@ import { useTidalStore } from '../stores/tidalStore'
 import type { PersistedPlaybackState, Playlist, Track } from '../types'
 
 type WorkspaceTab = 'home' | 'library'
+type HeaderPanel = 'settings' | 'notifications'
 type LibraryFilter = 'tracks' | 'playlists' | 'artists'
 type LibrarySort = 'recent' | 'title' | 'artist' | 'tracks'
 type LibraryViewMode = 'list' | 'grid'
@@ -58,7 +60,6 @@ type LibraryDetail =
 type ModalState =
   | { kind: 'search'; originRect: RectLike | null }
   | { kind: 'upload'; originRect: RectLike | null }
-  | { kind: 'settings'; originRect: RectLike | null }
   | { kind: 'generator'; originRect: RectLike | null }
 
 const WORKSPACE_TAB_VALUES: readonly WorkspaceTab[] = ['home', 'library']
@@ -93,6 +94,7 @@ function sortTracks(tracks: Track[], sort: LibrarySort): Track[] {
 
 export default function WorkspaceShell() {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('home')
+  const [headerPanel, setHeaderPanel] = useState<HeaderPanel | null>(null)
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('tracks')
   const [librarySort, setLibrarySort] = useState<LibrarySort>('recent')
   const [libraryViewMode, setLibraryViewMode] = useState<LibraryViewMode>('list')
@@ -157,7 +159,7 @@ export default function WorkspaceShell() {
   const effectiveLibraryFilter = libraryDetail ? 'tracks' : libraryFilter
   const showGenerateAction = playlistGenerating || activeTab === 'home' || (activeTab === 'library' && libraryFilter === 'playlists')
   const showNewPlaylistAction = activeTab === 'library' && libraryFilter === 'playlists' && !libraryDetail
-  const showNotificationsAction = notifications.length > 0
+  const unreadNotificationCount = notifications.filter((notification) => !notification.readAt).length
 
   useEffect(() => {
     void loadTracks()
@@ -543,6 +545,7 @@ export default function WorkspaceShell() {
   }
 
   function selectLibraryFilter(filter: LibraryFilter) {
+    setHeaderPanel(null)
     setActiveTab('library')
     setLibraryFilter(filter)
     setLibrarySort((current) => normalizeLibrarySort(filter, current))
@@ -568,22 +571,39 @@ export default function WorkspaceShell() {
         }`}>
           <header className="bg-white px-2 py-3 sm:px-6 sm:py-5 lg:px-8">
             <div className="workspace-header-inner mx-auto flex max-w-[1180px] flex-col items-start px-1 sm:px-3 lg:px-6">
-              <div className="flex w-full justify-start">
+              <div className="sauti-edge-scroll flex w-full justify-start">
                 <div className="flex shrink-0 items-center gap-2">
-                  <TabButton active={activeTab === 'home'} onClick={() => setActiveTab('home')}>Discover</TabButton>
-                  <TabButton active={activeTab === 'library'} onClick={() => setActiveTab('library')}>Library</TabButton>
+                  <TabButton active={activeTab === 'home' && headerPanel === null} onClick={() => {
+                    setHeaderPanel(null)
+                    setActiveTab('home')
+                  }}>Discover</TabButton>
+                  <TabButton active={activeTab === 'library' && headerPanel === null} onClick={() => {
+                    setHeaderPanel(null)
+                    setActiveTab('library')
+                  }}>Library</TabButton>
                   <button
                     type="button"
                     aria-label="Settings"
                     title="Settings"
-                    className="sauti-nav-pill sauti-nav-pill--primary sauti-settings-nav sauti-nav-icon-only"
-                    onClick={(event) => openModal('settings', rectFromElement(event.currentTarget))}
+                    data-active={headerPanel === 'settings' ? 'true' : 'false'}
+                    className="sauti-nav-pill sauti-nav-pill--primary sauti-nav-icon-only"
+                    onClick={() => setHeaderPanel((current) => current === 'settings' ? null : 'settings')}
                   >
                     <Settings size={16} />
                   </button>
-                  {showNotificationsAction ? (
-                    <NotificationBell buttonClassName="sauti-nav-pill sauti-nav-pill--primary sauti-settings-nav sauti-nav-icon-only relative" />
-                  ) : null}
+                  <button
+                    type="button"
+                    aria-label={unreadNotificationCount > 0 ? `Notifications (${unreadNotificationCount} unread)` : 'Notifications'}
+                    title="Notifications"
+                    data-active={headerPanel === 'notifications' ? 'true' : 'false'}
+                    className="sauti-nav-pill sauti-nav-pill--primary sauti-nav-icon-only relative"
+                    onClick={() => setHeaderPanel((current) => current === 'notifications' ? null : 'notifications')}
+                  >
+                    <Bell size={16} />
+                    {unreadNotificationCount > 0 ? (
+                      <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-accent ring-2 ring-white" />
+                    ) : null}
+                  </button>
                 </div>
               </div>
               {activeTab === 'library' ? (
@@ -608,6 +628,18 @@ export default function WorkspaceShell() {
                       onViewModeChange={setLibraryViewMode}
                     />
                   </div>
+                </div>
+              ) : null}
+              {headerPanel ? (
+                <div className="sauti-header-panel w-full border border-black/8 bg-[#f8f8f9] p-3 sm:p-4">
+                  {headerPanel === 'settings' ? (
+                    <SettingsPanel onOpenUpload={(event) => {
+                      setHeaderPanel(null)
+                      openModal('upload', rectFromElement(event.currentTarget))
+                    }} />
+                  ) : (
+                    <NotificationsPanel maxHeightClassName="max-h-[48vh]" />
+                  )}
                 </div>
               ) : null}
               <div className="workspace-action-cluster sauti-edge-scroll">
@@ -868,19 +900,6 @@ export default function WorkspaceShell() {
         </BottomSheet>
 
         <BottomSheet
-          open={modal?.kind === 'settings'}
-          title="Settings"
-          description="Account, TIDAL, and AI configuration for this workspace."
-          onClose={closeModal}
-          variant="light"
-          originRect={modal?.kind === 'settings' ? modal.originRect : null}
-          size="lg"
-          maxHeightClassName="max-h-[88vh]"
-        >
-          <SettingsPanel onOpenUpload={(event) => openModal('upload', rectFromElement(event.currentTarget))} />
-        </BottomSheet>
-
-        <BottomSheet
           open={modal?.kind === 'generator'}
           title="Playlist generator"
           description="Turn a prompt into a saved playlist."
@@ -1012,7 +1031,7 @@ function LibraryToolbar({
   const validSort = options.some((option) => option.value === sort) ? sort : 'recent'
 
   return (
-    <div className="flex shrink-0 items-center gap-2 pl-2">
+    <div className="flex shrink-0 items-center gap-2">
       <label className="inline-flex h-9 items-center gap-2 border border-black/8 bg-white px-3 text-sm text-[#555661]">
         <SlidersHorizontal size={14} />
         <select
@@ -1261,7 +1280,7 @@ function TrackGrid({
 function RecentTrackCard({ track, onClick, highlighted = false }: { track: Track; onClick: () => void; highlighted?: boolean }) {
   const artworkUrl = useTrackArtworkUrl(track)
   return (
-    <button type="button" onClick={onClick} className="group flex min-w-0 flex-col gap-2 text-left">
+    <button type="button" onClick={onClick} className="sauti-media-card group flex min-w-0 flex-col gap-2 text-left">
       <div className={`sauti-artwork-frame overflow-hidden border bg-white ${highlighted ? 'border-[#f4aebb] ring-2 ring-[#fff0f3]' : 'border-black/8'}`}>
         <div className="aspect-square w-full">
           {artworkUrl ? (
@@ -1290,7 +1309,7 @@ function ArtistCard({
 }) {
   const artworkUrl = useTrackArtworkUrl(tracks[0] ?? {})
   return (
-    <button type="button" onClick={onClick} className="sauti-surface group border border-black/8 bg-white p-3 text-left transition-colors hover:bg-[#fafafb]">
+    <button type="button" onClick={onClick} className="sauti-surface sauti-media-card group border border-black/8 bg-white p-3 text-left transition-colors hover:bg-[#fafafb]">
       <div className="sauti-artwork-frame overflow-hidden">
         <div className="aspect-square w-full">
           {artworkUrl ? (
@@ -1348,7 +1367,7 @@ function PlaylistCard({
   onPlay: () => void
 }) {
   return (
-    <article className={`sauti-surface border p-4 transition-colors ${active ? 'border-accent/22 bg-accent/5' : 'border-black/8 bg-white hover:bg-[#fafafb]'}`}>
+    <article className={`sauti-surface sauti-media-card border p-4 transition-colors ${active ? 'border-accent/22 bg-accent/5' : 'border-black/8 bg-white hover:bg-[#fafafb]'}`}>
       <div className="sauti-artwork-frame grid grid-cols-2 gap-1 overflow-hidden bg-[#f3f3f6]">
         <GradientArtwork seed={`${playlist.name}-a`} className="aspect-square" />
         <GradientArtwork seed={`${playlist.name}-b`} className="aspect-square" />

@@ -1,7 +1,6 @@
 import { type MouseEvent, useEffect, useMemo, useState } from 'react'
-import { Bell, Brain, Download, Eye, EyeOff, HardDrive, Info, KeyRound, LogOut, Radio, RefreshCw, Server, Trash2, Upload } from 'lucide-react'
+import { Brain, Download, Eye, EyeOff, HardDrive, Info, KeyRound, LogOut, Radio, RefreshCw, Server, Trash2, Upload } from 'lucide-react'
 import AIStatsPanel from './AIStatsPanel'
-import NotificationBell from './NotificationBell'
 import { clearPersistedLibrary } from '../lib/librarySync'
 import { listOpenRouterModels, type LLMProvider, type OpenRouterModel } from '../lib/llm'
 import { promptPwaInstall, subscribePwaInstall } from '../lib/pwaInstall'
@@ -236,19 +235,6 @@ export default function SettingsPanel({ onOpenUpload }: SettingsPanelProps) {
           <Download size={16} />
           {appInstalled ? 'Installed' : 'Install Sauti'}
         </button>
-      </section>
-
-      <section className="rounded-[24px] border border-black/8 bg-white p-4 sm:hidden">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h3 className="flex items-center gap-2 text-sm font-medium text-[#686973]">
-              <Bell size={16} />
-              Notifications
-            </h3>
-            <p className="mt-1 text-xs text-[#7a7b86]">Review recent app updates and import messages.</p>
-          </div>
-          <NotificationBell buttonClassName="relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-black/8 bg-[#f8f8f9] text-[#555661] transition-colors hover:bg-[#f1f1f4] hover:text-[#111116]" />
-        </div>
       </section>
 
       <section className="rounded-[24px] border border-black/8 bg-white p-4">

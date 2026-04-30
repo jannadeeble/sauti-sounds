@@ -33,10 +33,6 @@ export default function NotificationBell({
 
   const notifications = useNotificationStore(state => state.notifications)
   const loadNotifications = useNotificationStore(state => state.loadNotifications)
-  const markRead = useNotificationStore(state => state.markRead)
-  const markAllRead = useNotificationStore(state => state.markAllRead)
-  const remove = useNotificationStore(state => state.remove)
-  const clearAll = useNotificationStore(state => state.clearAll)
 
   useEffect(() => {
     void loadNotifications()
@@ -73,49 +69,74 @@ export default function NotificationBell({
         align="top-right"
         bodyClassName="!pt-3"
       >
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {unreadCount > 0 ? (
-              <button
-                type="button"
-                onClick={() => void markAllRead()}
-                className="sauti-modal-secondary-button px-3 py-1.5 text-xs"
-              >
-                <Check size={12} /> Mark all read
-              </button>
-            ) : null}
-          </div>
-          {notifications.length > 0 ? (
+        <NotificationsPanel />
+      </MorphSurface>
+    </div>
+  )
+}
+
+export function NotificationsPanel({
+  maxHeightClassName = 'max-h-[60vh]',
+}: {
+  maxHeightClassName?: string
+} = {}) {
+  const notifications = useNotificationStore(state => state.notifications)
+  const loadNotifications = useNotificationStore(state => state.loadNotifications)
+  const markRead = useNotificationStore(state => state.markRead)
+  const markAllRead = useNotificationStore(state => state.markAllRead)
+  const remove = useNotificationStore(state => state.remove)
+  const clearAll = useNotificationStore(state => state.clearAll)
+
+  useEffect(() => {
+    void loadNotifications()
+  }, [loadNotifications])
+
+  const unreadCount = notifications.filter(n => !n.readAt).length
+
+  return (
+    <>
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {unreadCount > 0 ? (
             <button
               type="button"
-              aria-label="Clear all notifications"
-              title="Clear all"
-              onClick={() => void clearAll()}
-              className="sauti-modal-icon-button"
+              onClick={() => void markAllRead()}
+              className="sauti-modal-secondary-button px-3 py-1.5 text-xs"
             >
-              <Trash2 size={13} />
+              <Check size={12} /> Mark all read
             </button>
           ) : null}
         </div>
+        {notifications.length > 0 ? (
+          <button
+            type="button"
+            aria-label="Clear all notifications"
+            title="Clear all"
+            onClick={() => void clearAll()}
+            className="sauti-modal-icon-button"
+          >
+            <Trash2 size={13} />
+          </button>
+        ) : null}
+      </div>
 
-        <div className="sauti-modal-card max-h-[60vh] overflow-y-auto">
-          {notifications.length === 0 ? (
-            <div className="px-4 py-8 text-center text-xs text-[#7a7b86]">You're all caught up.</div>
-          ) : (
-            <ul className="divide-y divide-black/6">
-              {notifications.map(n => (
-                <NotificationItem
-                  key={n.id}
-                  notification={n}
-                  onMarkRead={() => void markRead(n.id)}
-                  onRemove={() => void remove(n.id)}
-                />
-              ))}
-            </ul>
-          )}
-        </div>
-      </MorphSurface>
-    </div>
+      <div className={`sauti-modal-card overflow-y-auto ${maxHeightClassName}`}>
+        {notifications.length === 0 ? (
+          <div className="px-4 py-8 text-center text-xs text-[#7a7b86]">You're all caught up.</div>
+        ) : (
+          <ul className="divide-y divide-black/6">
+            {notifications.map(n => (
+              <NotificationItem
+                key={n.id}
+                notification={n}
+                onMarkRead={() => void markRead(n.id)}
+                onRemove={() => void remove(n.id)}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
   )
 }
 

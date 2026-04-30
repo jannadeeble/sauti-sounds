@@ -56,6 +56,12 @@ type LibraryViewMode = 'list' | 'grid'
 type LibraryDetail =
   | { kind: 'artist'; artist: string }
   | { kind: 'playlist'; playlistKind: 'app' | 'tidal'; playlistId: string }
+type PlaylistRowModel = Playlist & {
+  label: string
+  trackCount: number
+  sourceKind: 'app' | 'tidal'
+  previewTracks: Track[]
+}
 
 type ModalState =
   | { kind: 'search'; originRect: RectLike | null }
@@ -385,18 +391,31 @@ export default function WorkspaceShell() {
       label: playlist.origin === 'generated' ? 'Generated' : playlist.origin === 'imported' ? 'Imported' : 'Playlist',
       trackCount: playlist.trackCount ?? playlist.items.length,
       sourceKind: 'app' as const,
+      previewTracks: playlist.items
+        .map((item) => item.source === 'local' ? trackById.get(item.trackId) : providerTrackById.get(item.providerTrackId))
+        .filter((track): track is Track => Boolean(track))
+        .slice(0, 4),
     }))
     const tidal = tidalPlaylists
       .filter((playlist) => Boolean(playlist.providerPlaylistId))
-      .map((playlist) => ({
-        ...playlist,
-        id: playlist.providerPlaylistId!,
-        label: 'TIDAL',
-        trackCount: playlist.trackCount ?? playlist.items.length,
-        sourceKind: 'tidal' as const,
-      }))
+      .map((playlist) => {
+        const providerPlaylistId = playlist.providerPlaylistId!
+        const detailTracks = tidalPlaylistDetails[providerPlaylistId]?.tracks ?? []
+        const cachedTracks = playlist.items
+          .map((item) => item.source === 'tidal' ? providerTrackById.get(item.providerTrackId) : trackById.get(item.trackId))
+          .filter((track): track is Track => Boolean(track))
+
+        return {
+          ...playlist,
+          id: providerPlaylistId,
+          label: 'TIDAL',
+          trackCount: playlist.trackCount ?? playlist.items.length,
+          sourceKind: 'tidal' as const,
+          previewTracks: (detailTracks.length > 0 ? detailTracks : cachedTracks).slice(0, 4),
+        }
+      })
     return [...app, ...tidal].sort((left, right) => right.updatedAt - left.updatedAt)
-  }, [appPlaylists, tidalPlaylists])
+  }, [appPlaylists, providerTrackById, tidalPlaylistDetails, tidalPlaylists, trackById])
 
   const sortedArtistGroups = useMemo(() => {
     const next = [...artistGroups]
@@ -506,7 +525,7 @@ export default function WorkspaceShell() {
     playPlaylist(kind, playlistId, playlistTracks, 0)
   }
 
-  async function handlePlaylistRowPlayback(playlist: Playlist & { label: string; trackCount: number; sourceKind: 'app' | 'tidal' }) {
+  async function handlePlaylistRowPlayback(playlist: PlaylistRowModel) {
     if (playlist.sourceKind === 'app') {
       const current = appPlaylists.find((candidate) => candidate.id === playlist.id)
       if (!current) return
@@ -1361,19 +1380,14 @@ function PlaylistCard({
   onOpen,
   onPlay,
 }: {
-  playlist: Playlist & { label: string; trackCount: number; sourceKind: 'app' | 'tidal' }
+  playlist: PlaylistRowModel
   active: boolean
   onOpen: () => void
   onPlay: () => void
 }) {
   return (
     <article className={`sauti-surface sauti-media-card border p-4 transition-colors ${active ? 'border-accent/22 bg-accent/5' : 'border-black/8 bg-white hover:bg-[#fafafb]'}`}>
-      <div className="sauti-artwork-frame grid grid-cols-2 gap-1 overflow-hidden bg-[#f3f3f6]">
-        <GradientArtwork seed={`${playlist.name}-a`} className="aspect-square" />
-        <GradientArtwork seed={`${playlist.name}-b`} className="aspect-square" />
-        <GradientArtwork seed={`${playlist.name}-c`} className="aspect-square" />
-        <GradientArtwork seed={`${playlist.name}-d`} className="aspect-square" />
-      </div>
+      <PlaylistArtworkGrid playlistName={playlist.name} tracks={playlist.previewTracks} className="gap-1" />
       <div className="mt-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-[#111116]">{playlist.name}</p>
@@ -1403,18 +1417,15 @@ function PlaylistRow({
   onOpen,
   onPlay,
 }: {
-  playlist: Playlist & { label: string; trackCount: number; sourceKind: 'app' | 'tidal' }
+  playlist: PlaylistRowModel
   active: boolean
   onOpen: () => void
   onPlay: () => void
 }) {
   return (
     <article className={`flex items-center gap-3 px-5 py-3 transition-colors ${active ? 'bg-[#fff4f6]' : 'hover:bg-[#fafafb]'}`}>
-      <button type="button" onClick={onOpen} className="sauti-artwork-frame grid h-12 w-12 shrink-0 grid-cols-2 gap-0.5 overflow-hidden bg-[#f3f3f6]">
-        <GradientArtwork seed={`${playlist.name}-a`} className="h-full w-full" />
-        <GradientArtwork seed={`${playlist.name}-b`} className="h-full w-full" />
-        <GradientArtwork seed={`${playlist.name}-c`} className="h-full w-full" />
-        <GradientArtwork seed={`${playlist.name}-d`} className="h-full w-full" />
+      <button type="button" onClick={onOpen} className="shrink-0" aria-label={`Open ${playlist.name}`}>
+        <PlaylistArtworkGrid playlistName={playlist.name} tracks={playlist.previewTracks} className="h-12 w-12 gap-0.5" />
       </button>
       <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
         <p className="truncate text-sm font-medium text-[#111116]">{playlist.name}</p>
@@ -1427,6 +1438,50 @@ function PlaylistRow({
         <ChevronRight size={16} />
       </button>
     </article>
+  )
+}
+
+function PlaylistArtworkGrid({
+  playlistName,
+  tracks,
+  className = '',
+}: {
+  playlistName: string
+  tracks: Track[]
+  className?: string
+}) {
+  const cells = Array.from({ length: 4 }, (_, index) => tracks[index] ?? null)
+
+  return (
+    <div className={`sauti-artwork-frame grid grid-cols-2 overflow-hidden bg-[#f3f3f6] ${className}`}>
+      {cells.map((track, index) => (
+        <PlaylistArtworkCell
+          key={track ? `${track.id}-${index}` : `${playlistName}-${index}`}
+          track={track}
+          playlistName={playlistName}
+        />
+      ))}
+    </div>
+  )
+}
+
+function PlaylistArtworkCell({
+  track,
+  playlistName,
+}: {
+  track: Track | null
+  playlistName: string
+}) {
+  const artworkUrl = useTrackArtworkUrl(track ?? {})
+
+  if (artworkUrl) {
+    return <img src={artworkUrl} alt="" className="aspect-square h-full w-full object-cover" />
+  }
+
+  return (
+    <div className="flex aspect-square h-full w-full items-center justify-center bg-[#ececf0] text-[10px] font-semibold uppercase text-[#8c8d96]">
+      {(track?.title || playlistName).slice(0, 1)}
+    </div>
   )
 }
 
@@ -1449,7 +1504,7 @@ function LibraryDetailView({
 }: {
   detail: LibraryDetail
   artistTracks: Track[]
-  playlistRow?: Playlist & { label: string; trackCount: number; sourceKind: 'app' | 'tidal' }
+  playlistRow?: PlaylistRowModel
   playlistDetail: Extract<LibraryDetail, { kind: 'playlist' }> | null
   appPlaylist?: Playlist
   appPlaylistTracks: Array<{ item: Playlist['items'][number]; track: Track; index: number }>
@@ -1535,7 +1590,7 @@ function PlaylistDetailView({
   onRemoveItem,
 }: {
   playlistDetail: Extract<LibraryDetail, { kind: 'playlist' }>
-  playlistRow?: Playlist & { label: string; trackCount: number; sourceKind: 'app' | 'tidal' }
+  playlistRow?: PlaylistRowModel
   appPlaylist?: Playlist
   appPlaylistTracks: Array<{ item: Playlist['items'][number]; track: Track; index: number }>
   tidalDetail?: { playlist: Playlist; tracks: Track[] }
